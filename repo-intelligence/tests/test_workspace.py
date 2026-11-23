@@ -550,3 +550,18 @@ def test_canvas_layout_moves_cards_without_rerunning_placement(workspace):
     stale = client.post("/v1/business-maps/layout", headers=AUTH, json={"expected_version": 1, "layout": "lanes", "positions": {}})
     unknown = client.post("/v1/business-maps/layout", headers=AUTH, json={"expected_version": view["map"]["version"], "layout": "lanes", "positions": {"nope": {"x": 1, "y": 1}}})
     assert (stale.status_code, unknown.status_code) == (409, 400)
+
+
+def test_explicit_placement_retries_when_a_background_run_saved_first(workspace):
+    from repo_intel import business_map
+    client, service, _ = workspace
+    _create_map(client)
+    real, calls = service._place_once, []
+    def racing(repository_id):
+        calls.append(1)
+        if len(calls) == 1:
+            raise business_map.StaleVersion("This map changed. Reload it before saving.")
+        return real(repository_id)
+    service._place_once = racing
+    assert _post(client, "business-maps/run-placement", {})["map"]["version"] >= 1
+    assert len(calls) == 2

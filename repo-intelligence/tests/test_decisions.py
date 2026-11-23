@@ -407,3 +407,47 @@ def test_azure_token_is_reused_and_a_failed_sign_in_is_model_unavailable():
     with pytest.raises(ModelUnavailable, match="credential unavailable"):
         client.choose("s", "Which?", {"a": "A", "b": "B"})
     assert not sent
+
+
+def test_chat_model_answers_by_letter_probabilities():
+    import math
+    from repo_intel.decisions.gateway import azure_openai_chat
+
+    sent = []
+    def handler(request):
+        sent.append(json.loads(request.content))
+        top = [{"token": "B", "logprob": math.log(0.7)}, {"token": "A", "logprob": math.log(0.2)}, {"token": "Sure", "logprob": math.log(0.05)}, {"token": " C", "logprob": math.log(0.05)}]
+        return httpx.Response(200, json={"model": "gpt-4.1-mini", "choices": [{"logprobs": {"content": [{"token": "B", "logprob": math.log(0.7), "top_logprobs": top}]}}], "usage": {"prompt_tokens": 120}})
+    client = azure_openai_chat("https://r.openai.azure.com/", "mini", api_key="k", transport=httpx.MockTransport(handler))
+    answer = client.choose({"http_endpoints": 3}, "What kind of component is this?", {"library": "importable code", "service": "serves requests", "worker": "consumes a queue"})
+    assert answer.choice == "service" and round(answer.probabilities["service"], 3) == round(0.7 / 0.95, 3)
+    assert round(sum(answer.probabilities.values()), 6) == 1 and answer.input_tokens == 120
+    body = sent[0]
+    assert body["model"] == "mini" and body["max_tokens"] == 1 and body["logprobs"] is True
+    assert "B. service: serves requests" in body["messages"][1]["content"]
+
+    def chatty(request):
+        top = [{"token": "I", "logprob": math.log(0.9)}, {"token": "A", "logprob": math.log(0.1)}]
+        return httpx.Response(200, json={"choices": [{"logprobs": {"content": [{"top_logprobs": top}]}}]})
+    with pytest.raises(ModelUnavailable, match="unusable answer"):
+        azure_openai_chat("https://r.openai.azure.com", "mini", api_key="k", transport=httpx.MockTransport(chatty)).choose({}, "Which?", {"a": "A", "b": "B"})
+
+
+def test_hosted_embedding_retries_a_dropped_connection(tmp_path, monkeypatch):
+    from repo_intel.decisions import placement
+    from repo_intel.settings import PlacementPolicy
+    from repo_intel.store import ObjectStore
+
+    attempts = []
+    def handler(request):
+        attempts.append(request.headers["authorization"])
+        if len(attempts) == 1:
+            raise httpx.ConnectError("SSL: UNEXPECTED_EOF_WHILE_READING", request=request)
+        return httpx.Response(200, json={"data": [{"embedding": [1.0] + [0.0] * (placement.DIMENSIONS - 1)}]})
+    real_client = httpx.Client
+    monkeypatch.setattr(placement.httpx, "Client", lambda **kw: real_client(transport=httpx.MockTransport(handler), **kw))
+    monkeypatch.setattr(placement, "sleep", lambda seconds: None)
+    monkeypatch.setenv("RKP_EMBEDDING_URL", "https://r.openai.azure.com/openai/v1")
+    monkeypatch.setenv("RKP_EMBEDDING_API_KEY", "k")
+    embed = placement.embedding(PlacementPolicy(embedding_provider="openai-embeddings"), ("openai-embeddings",), ObjectStore(tmp_path, "t"))
+    assert embed("orders")[0] == 1.0 and attempts == ["Bearer k", "Bearer k"]

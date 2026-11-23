@@ -84,21 +84,22 @@ def samples(store: ObjectStore, directory: Path, include_public: bool) -> tuple[
     return rows, commits
 
 
-def run(store: ObjectStore, rows: list[dict], model_aliases: list[str], threshold: float) -> dict:
-    policy = PlacementPolicy(threshold=threshold)
+def run(store: ObjectStore, rows: list[dict], model_aliases: list[str], threshold: float, embedding_provider: str = "local") -> dict:
+    policy = PlacementPolicy(threshold=threshold, embedding_provider=embedding_provider)
+    allowed = tuple(p for p in os.environ.get("RKP_ALLOW_PROVIDERS", "").split(",") if p)
+    embed = placement.embedding(policy, allowed, store)  # the same shortlist vectors placement will use
     caps = tuple(Capability(id=key, name=name, description=description) for key, name, description in CAPABILITIES)
     sample_map = BusinessMap(stages=(Stage(id="sample", name="Sample capabilities", capabilities=caps),))
-    vectors = {c.id: placement.local_embedding(placement._cap_text(c)) for c in caps}
+    vectors = {c.id: embed(placement._cap_text(c)) for c in caps}
     details, summary = [], {}
     eligible = [row for row in rows if row["component_kind"] in policy.component_kinds]
     for row in rows:
-        ranked = placement.rank_candidates(placement.local_embedding(placement._subject_text(row["features"])), vectors)
+        ranked = placement.rank_candidates(embed(placement._subject_text(row["features"])), vectors)
         details.append({
             "repository": row["repository_id"], "root": row["root"], "name": row["name"],
             "kind": row["component_kind"], "eligible": row in eligible, "expected": row["expected"], "shortlist": ranked,
         })
     positives = [row for row in details if row["eligible"] and row["expected"]]
-    allowed = tuple(p for p in os.environ.get("RKP_ALLOW_PROVIDERS", "").split(",") if p)
     gateway = Gateway.from_env(frozenset(allowed)) if model_aliases else None
     for alias in [None, *model_aliases]:
         if alias is not None:
@@ -124,7 +125,8 @@ def run(store: ObjectStore, rows: list[dict], model_aliases: list[str], threshol
             "components": len(rows), "eligible": len(eligible), "eligible_with_label": len(positives),
             "shortlist_hits": sum(row["expected"] in row["shortlist"] for row in positives),
         },
-        "threshold_tested": threshold, "decisions": summary, "labels": details,
+        "threshold_tested": threshold, "embedding": "local" if embed is placement.local_embedding else embedding_provider,
+        "shortlist_first": sum(row["shortlist"][:1] == (row["expected"],) for row in positives), "decisions": summary, "labels": details,
     }
 
 
@@ -133,12 +135,13 @@ def main() -> int:
     parser.add_argument("--public", action="store_true", help="include the three pinned public samples")
     parser.add_argument("--model", action="append", default=[], help="configured model alias, requires an explicit egress allow-list")
     parser.add_argument("--threshold", type=float, default=0.88)
+    parser.add_argument("--embedding", choices=("local", "openai-embeddings"), default="local", help="shortlist vectors; the provider must also be allowed")
     args = parser.parse_args()
     with TemporaryDirectory(prefix="rkp-placement-bench-") as tmp:
         directory = Path(tmp)
         store = ObjectStore(directory / "store", "benchmark")
         rows, commits = samples(store, directory, args.public)
-        result = run(store, rows, args.model, args.threshold)
+        result = run(store, rows, args.model, args.threshold, args.embedding)
     print(json.dumps({"commits": commits, **result}, indent=2, sort_keys=True))
     return 0
 

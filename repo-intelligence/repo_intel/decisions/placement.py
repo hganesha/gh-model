@@ -9,10 +9,11 @@ import os
 import re
 from collections.abc import Callable
 from typing import Any
-from urllib.request import Request, build_opener
+from time import sleep
+
+import httpx
 
 from ..business_map import BusinessMap, Capability, Placement
-from ..connectors import NoRedirect
 from ..contracts import DecisionSpec
 from ..hashing import canonical, digest
 from ..settings import ModelSelection, PlacementPolicy
@@ -72,24 +73,58 @@ def normalized(values: list[float]) -> list[float]:
     return [v / norm for v in values] if norm else values
 
 
+def _signed(authorization: Callable[[], dict[str, str]]) -> dict[str, str]:
+    """A failed sign-in counts as the provider being down, so the shortlist falls back to local vectors."""
+    try:
+        return authorization()
+    except Exception as exc:
+        raise OSError(f"embedding sign-in failed ({type(exc).__name__})") from exc
+
+
 def embedding(policy: PlacementPolicy, allowed: tuple[str, ...], store: ObjectStore) -> Callable[[str], list[float]]:
     if policy.embedding_provider == "local" or "openai-embeddings" not in allowed:
         return local_embedding
     model = os.environ.get("RKP_EMBEDDING_MODEL", "text-embedding-3-small")
     base = os.environ.get("RKP_EMBEDDING_URL", "https://api.openai.com/v1").rstrip("/")
     key = os.environ.get("RKP_EMBEDDING_API_KEY")
-    if not key or not base.startswith("https://"):
+    if os.environ.get("RKP_EMBEDDING_AUTH") == "azure-cli" and not key:
+        # Azure OpenAI v1 (`https://<resource>.openai.azure.com/openai/v1`): the existing `az login` session, no key.
+        from azure.identity import AzureCliCredential
+        from .gateway import ENTRA_SCOPE, bearer
+        authorization = bearer(AzureCliCredential(process_timeout=60), ENTRA_SCOPE)
+    elif key:
+        authorization = lambda: {"Authorization": f"Bearer {key}"}
+    else:
         return local_embedding
+    if not base.startswith("https://"):
+        return local_embedding
+
+    http = httpx.Client(timeout=15, follow_redirects=False)  # one connection for the whole run
+
+    def post(body: bytes) -> httpx.Response:
+        # A connection that was never opened is retried: the request was not sent.
+        # Azure occasionally drops a new TLS handshake; one reused connection makes that rare.
+        for attempt in range(3):
+            try:
+                return http.post(f"{base}/embeddings", content=body, headers={**_signed(authorization), "Content-Type": "application/json"})
+            except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
+                if attempt == 2:
+                    raise OSError(f"embedding provider unreachable ({type(exc).__name__})") from exc
+                sleep(0.5 * (attempt + 1))
+        raise AssertionError("unreachable")
 
     def call(content: str) -> list[float]:
         cache_key = digest([base, model, DIMENSIONS, content])
         prior = store.index_get("embeddings", cache_key)
         if prior:
             return store.get_json(prior)
-        body = canonical({"input": content, "model": model, "dimensions": DIMENSIONS})
-        request = Request(f"{base}/embeddings", data=body, headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"})
-        with build_opener(NoRedirect()).open(request, timeout=15) as response:
-            v = json.loads(response.read(256 * 1024))["data"][0]["embedding"]
+        try:
+            response = post(canonical({"input": content, "model": model, "dimensions": DIMENSIONS}))
+        except httpx.HTTPError as exc:
+            raise OSError(f"embedding request failed ({type(exc).__name__})") from exc
+        if response.status_code != 200:
+            raise OSError(f"embedding provider returned HTTP {response.status_code}")
+        v = json.loads(response.content[: 256 * 1024])["data"][0]["embedding"]
         if len(v) != DIMENSIONS or any(not isinstance(n, (int, float)) or not math.isfinite(n) for n in v):
             raise ValueError("Embedding dimensions or values are invalid.")
         vector = normalized(v)
