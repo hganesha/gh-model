@@ -123,6 +123,58 @@ test("edit the map in place and pick starter capabilities", async ({ page }) => 
   await expect(page.getByRole("region", { name: "Order fulfilment", exact: true }).getByRole("button", { name: "@acme/api", exact: true })).toBeVisible();
 });
 
+test("arrange capabilities freely on the canvas", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.goto("/?workspace=business");
+  await page.getByRole("button", { name: "Edit map" }).click();
+  await page.getByRole("button", { name: "Add stage" }).click();
+  await page.getByLabel("Stage name").last().fill("Deliver");
+  await page.getByRole("button", { name: "Save map" }).click();
+  await expect(page.getByRole("heading", { name: "Deliver" })).toBeVisible();
+
+  await page.getByRole("group", { name: "Map layout" }).getByRole("button", { name: "Canvas" }).click();
+  const board = page.getByRole("region", { name: "Value chain canvas" });
+  await expect(board).toBeVisible();
+  await expect(page.getByRole("button", { name: "Canvas" })).toHaveAttribute("aria-pressed", "true");
+
+  // Drag Order fulfilment by its handle into the second column: it moves to that stage and stays where it was dropped.
+  const grip = page.getByRole("button", { name: "Move Order fulfilment" });
+  await page.setViewportSize({ width: 1280, height: 1100 });
+  await grip.scrollIntoViewIfNeeded();
+  const from = (await grip.boundingBox())!;
+  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(from.x + 200, from.y + 60, { steps: 6 });
+  await page.mouse.move(from.x + 330, from.y + 90, { steps: 6 });
+  await page.mouse.up();
+  const deliver = board.getByRole("region", { name: "Deliver", exact: true });
+  await expect(deliver.getByRole("region", { name: "Order fulfilment", exact: true })).toBeVisible();
+  const card = page.getByRole("region", { name: "Order fulfilment", exact: true });
+  const dropped = (await card.boundingBox())!;
+
+  // The arrow follows the card, the component placed in it stays, and the keyboard can nudge it.
+  await expect(page.locator("path.business-arrow")).toHaveCount(1);
+  await expect(card.getByRole("button", { name: "@acme/api", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Move Order fulfilment" }).focus();
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("ArrowDown");
+  await expect.poll(async () => Math.round((await card.boundingBox())!.y - dropped.y)).toBe(32);
+
+  // The arrangement is saved with the map.
+  await page.waitForResponse((response) => response.url().includes("business-maps/layout") && response.ok());
+  await page.reload();
+  const after = (await page.getByRole("region", { name: "Order fulfilment", exact: true }).boundingBox())!;
+  expect(Math.round(after.x - dropped.x)).toBe(0);
+  expect(Math.round(after.y - dropped.y)).toBe(32);
+
+  // Back to lanes: the stage change holds there too.
+  await page.getByRole("button", { name: "Lanes" }).click();
+  await expect(page.getByRole("region", { name: "Value chain" }).getByRole("heading", { name: "Deliver" })).toBeVisible();
+  await expect(page.locator(".business-lane").filter({ hasText: "Deliver" }).getByRole("region", { name: "Order fulfilment", exact: true })).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
 test("components stay inside their capability card at phone width", async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 812 });
   await page.goto("/?workspace=business");

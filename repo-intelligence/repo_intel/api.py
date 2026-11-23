@@ -268,9 +268,22 @@ def create_app(conninfo: str, tenant_id: str, dev_token: str | None, store: Obje
                 business_map.save(conn, tenant, edited, actor)
         except business_map.StaleVersion as exc:
             raise HTTPException(409, str(exc)) from exc
-        if current_map.capabilities() and edited.capabilities() != current_map.capabilities():
+        meaning = lambda m: sorted(cap.meaning() for cap in m.capabilities().values())
+        if current_map.capabilities() and meaning(edited) != meaning(current_map):
             system.queue_placement()
         return system.map_view()
+
+    @app.post("/v1/business-maps/layout")
+    def arrange_map(body: business_map.ArrangeMap, admin: Admin):
+        tenant, actor = admin
+        try:
+            with projection.connect(conninfo, tenant) as conn:
+                business_map.save(conn, tenant, business_map.arrange(business_map.read(conn, tenant), body), actor)
+        except business_map.StaleVersion as exc:
+            raise HTTPException(409, str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        return svc().map_view()
 
     @app.post("/v1/business-maps/placements")
     def review_placement(body: business_map.ReviewPlacement, admin: Admin):

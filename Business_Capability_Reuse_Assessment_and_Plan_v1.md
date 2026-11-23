@@ -195,6 +195,8 @@ Independent of Phase B and can run alongside it.
 | GI-057 | Architecture amendments (§8) | Spec and code agree | 1.0 |
 | GI-058 | Cross-repository links: published package to consumer, OpenAPI operation to caller, across snapshots of different repositories; candidate grade | Two fixture repositories link; unresolved calls are unknowns | 3.0 |
 
+Status, 2026-11-23: a free-form canvas is available beside the lane view. Capability positions and the chosen layout are stored in the map document. Dropping a card in another stage's column moves it to that stage, and arranging the canvas never reruns placement. Every move has a keyboard route (arrow keys on the card's handle).
+
 ### Order
 
 A, then B. Read the benchmark from GI-041 before committing to D. C can start at any time and does not wait on that result.

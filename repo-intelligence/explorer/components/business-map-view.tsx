@@ -1,7 +1,7 @@
 "use client";
 
-import { ArrowLeft, ArrowRight, Check, GripVertical, Library, Plus, Sparkles, Trash2, X } from "lucide-react";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent, type RefObject } from "react";
+import { ArrowLeft, ArrowRight, Check, Columns3, GripVertical, LayoutDashboard, Library, Move, Plus, Sparkles, Trash2, X } from "lucide-react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type ReactNode, type RefObject } from "react";
 import { api, useApi } from "@/lib/api";
 import { starterGroups, templates } from "@/lib/business-map-data";
 import type { EvidenceExcerpt } from "@/lib/types";
@@ -297,6 +297,81 @@ function useArrows(container: RefObject<HTMLDivElement | null>, edges: Workspace
   return state;
 }
 
+/* ---------- free-form canvas ---------- */
+
+const COLUMN = 300; // width of one stage column on the canvas
+const CARD = 264;   // width of a capability card on the canvas
+const NUDGE = 16;   // keyboard step
+
+type Point = { x: number; y: number };
+type Arrange = (id: string, at: Point, stageId: string) => void;
+
+function stageAt(stages: Stage[], x: number): string {
+  const index = Math.min(stages.length - 1, Math.max(0, Math.floor((x + CARD / 2) / COLUMN)));
+  return stages[index].id;
+}
+
+/** A capability card that can be dragged anywhere on the canvas, or nudged with the arrow keys. */
+function CanvasCard({ cap, stages, canvas, at, busy, onArrange, onMoving, children }: {
+  cap: Capability; stages: Stage[]; canvas: RefObject<HTMLDivElement | null>; at: Point | null; busy: boolean; onArrange: Arrange; onMoving: () => void;
+  children: (grip: ReactNode, style: CSSProperties | undefined) => ReactNode;
+}) {
+  const [moving, setMoving] = useState<Point | null>(null);
+  const start = useRef<{ pointer: Point; card: Point } | null>(null);
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(timer.current), []);
+  const shown = moving ?? at;
+
+  function origin(handle: HTMLElement): Point {
+    if (at) return at;
+    const root = canvas.current!.getBoundingClientRect();
+    const box = handle.closest<HTMLElement>("[data-capability]")!.getBoundingClientRect();
+    return { x: Math.round(box.left - root.left), y: Math.round(box.top - root.top) };
+  }
+  const clamp = (p: Point): Point => ({ x: Math.max(0, Math.min(stages.length * COLUMN - CARD, Math.round(p.x))), y: Math.max(0, Math.round(p.y)) });
+  const commit = (p: Point) => onArrange(cap.id, p, stageAt(stages, p.x));
+
+  const grip = (
+    <button type="button" className="canvas-grip" aria-label={`Move ${cap.name}`} disabled={busy}
+      aria-description="Drag, or use the arrow keys, to move this capability. Dropping it in another column moves it to that stage."
+      onPointerDown={(event) => {
+        if (event.button !== 0) return;
+        event.currentTarget.setPointerCapture(event.pointerId);
+        const card = origin(event.currentTarget);
+        start.current = { pointer: { x: event.clientX, y: event.clientY }, card };
+        setMoving(card);
+      }}
+      onPointerMove={(event) => {
+        const from = start.current;
+        if (!from) return;
+        setMoving(clamp({ x: from.card.x + event.clientX - from.pointer.x, y: from.card.y + event.clientY - from.pointer.y }));
+        onMoving();
+      }}
+      onPointerUp={() => {
+        const from = start.current;
+        start.current = null;
+        if (from && moving && (moving.x !== from.card.x || moving.y !== from.card.y || !at)) commit(moving);
+        else setMoving(null);
+      }}
+      onPointerCancel={() => { start.current = null; setMoving(null); }}
+      onKeyDown={(event) => {
+        const step = { ArrowLeft: [-NUDGE, 0], ArrowRight: [NUDGE, 0], ArrowUp: [0, -NUDGE], ArrowDown: [0, NUDGE] }[event.key];
+        if (!step) return;
+        event.preventDefault();
+        const next = clamp({ x: (shown ?? origin(event.currentTarget)).x + step[0], y: (shown ?? origin(event.currentTarget)).y + step[1] });
+        setMoving(next);
+        onMoving();
+        clearTimeout(timer.current);
+        timer.current = setTimeout(() => commit(next), 600); // one revision per pause, not per key press
+      }}>
+      <Move size={14} aria-hidden="true" />
+    </button>
+  );
+  // Keep the dragged position on screen until the saved map comes back with it.
+  useEffect(() => { if (moving && at && at.x === moving.x && at.y === moving.y && !start.current) setMoving(null); }, [at, moving]);
+  return <>{children(grip, shown ? { position: "absolute", left: shown.x, top: shown.y, width: CARD } : undefined)}</>;
+}
+
 /* ---------- the view ---------- */
 
 export function BusinessMapView({ onOpen, onOpenSettings }: { onOpen: OpenEntity; onOpenSettings: () => void }) {
@@ -315,7 +390,9 @@ export function BusinessMapView({ onOpen, onOpenSettings }: { onOpen: OpenEntity
   const byPlacement = useMemo(() => new Map(data?.map.placements.map((row) => [row.lineage_id, row])), [data]);
   const names = useMemo(() => new Map(data?.map.stages.flatMap((row) => row.capabilities.map((cap) => [cap.id, cap.name] as const))), [data]);
   const edges = data?.dependencies ?? NO_EDGES;
-  const drawn = useArrows(lanes, editing ? NO_EDGES : edges, data);
+  const [moved, setMoved] = useState(0); // re-measures arrows while a card is dragged
+  const revision = useMemo(() => [data, moved], [data, moved]);
+  const drawn = useArrows(lanes, editing ? NO_EDGES : edges, revision);
 
   if (source.loading && !data) return <Loading label="Loading business map" />;
   if (source.error && !data) return <ErrorNote error={source.error} onRetry={source.reload} what="the business map" />;
@@ -368,12 +445,53 @@ export function BusinessMapView({ onOpen, onOpenSettings }: { onOpen: OpenEntity
     const id = event.dataTransfer.getData(SUBJECT_DRAG);
     if (!busy && active.has(id)) void review(id, "move", capability);
   }
+  const canvas = data.map.layout === "canvas";
+  const arrange = (layout: "lanes" | "canvas", positions: Record<string, Point & { stage_id?: string }> = {}) =>
+    request("business-maps/layout", { expected_version: data.map.version, layout, positions });
+  const place: Arrange = (id, at, stageId) => { setRan(null); void arrange("canvas", { [id]: { ...at, stage_id: stageId } }); };
+  const placedBottom = Math.max(0, ...capabilities.map((cap) => (cap.y ?? 0)));
+  const onMoving = () => setMoved((n) => n + 1);
+
+  function card(cap: Capability, grip?: ReactNode, style?: CSSProperties) {
+    const subjects = data!.subjects.filter((subject) => {
+      const row = byPlacement.get(subject.lineage_id);
+      return row?.capability_id === cap.id && isPlaced(row);
+    });
+    const technical = [...new Set(subjects.flatMap((subject) => subject.technical_capabilities))].sort();
+    const outgoing = data!.dependencies.filter((row) => row.from === cap.id);
+    return <section key={cap.id} id={`capability-${cap.id}`} data-capability={cap.id} style={style} className={`business-capability ${over === cap.id ? "is-drop-target" : ""} ${grip ? "is-canvas" : ""}`} aria-label={cap.name}
+      onDragOver={(event) => { if (event.dataTransfer.types.includes(SUBJECT_DRAG)) { event.preventDefault(); setOver(cap.id); } }}
+      onDragLeave={() => setOver((current) => (current === cap.id ? null : current))}
+      onDrop={(event) => drop(event, cap.id)}>
+      {grip ? <div className="canvas-card-head"><h4>{cap.name}</h4>{grip}</div> : <h4>{cap.name}</h4>}
+      <p className={cap.description ? "" : "group-note"}>{cap.description || "No description. Placement uses the name alone."}</p>
+      {technical.length > 0 && <p className="business-tech">{technical.map((name) => <span key={name}>{name}</span>)}</p>}
+      {outgoing.length > 0 && <p className="business-depends">Depends on {outgoing.map((edge, i) => <span key={edge.to}>{i > 0 && ", "}<a href={`#capability-${edge.to}`}>{names.get(edge.to)}</a>{edge.resolution !== "exact" && <em> (candidate)</em>}</span>)}</p>}
+      {subjects.length > 0
+        ? <ul className="business-subjects">{subjects.map((subject) => <Subject key={subject.lineage_id} compact subject={subject} placement={byPlacement.get(subject.lineage_id)} capabilities={capabilities} busy={busy} onReview={review} onOpen={onOpen} />)}</ul>
+        : <p className="business-empty">Drop a component here</p>}
+      <details className="business-cap-id"><summary>Capability ID</summary><code>{cap.id}</code></details>
+    </section>;
+  }
+  const arrows = drawn.arrows.length > 0 && (
+    <svg className="business-arrows" width={drawn.width} height={drawn.height} aria-hidden="true">
+      <defs>
+        <marker id="rkp-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L8 4 L0 8 z" className="business-arrow-head" /></marker>
+        <marker id="rkp-arrow-candidate" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L8 4 L0 8 z" className="business-arrow-head is-candidate" /></marker>
+      </defs>
+      {drawn.arrows.map((arrow) => <path key={arrow.key} d={arrow.d} className={`business-arrow ${arrow.candidate ? "is-candidate" : ""}`} markerEnd={`url(#${arrow.candidate ? "rkp-arrow-candidate" : "rkp-arrow"})`} />)}
+    </svg>
+  );
 
   return (
     <section className="work-tool">
       <header className="work-tool-header">
         <div><h2>{data.map.title}</h2><p>Group repository components by the capabilities they support.</p></div>
         <div className="work-tool-actions">
+          {!editing && data.map.version > 0 && capabilities.length > 0 && <div className="layout-switch" role="group" aria-label="Map layout">
+            <button type="button" aria-pressed={!canvas} disabled={busy} onClick={() => { if (canvas) void arrange("lanes"); }}><Columns3 size={14} aria-hidden="true" /> Lanes</button>
+            <button type="button" aria-pressed={canvas} disabled={busy} onClick={() => { if (!canvas) void arrange("canvas"); }}><LayoutDashboard size={14} aria-hidden="true" /> Canvas</button>
+          </div>}
           <button type="button" className="btn btn-quiet" onClick={() => { setResponse(undefined); setRan(null); source.reload(); revisions.reload(); }} disabled={busy || editing}>Reload</button>
           {!editing && <button type="button" className="btn btn-quiet" disabled={busy || !capabilities.length} onClick={() => void runPlacement()}><Sparkles size={14} aria-hidden="true" /> Run placement</button>}
           {!editing && <button type="button" className="btn btn-primary" disabled={busy} onClick={() => setEditing(true)}>{data.map.version ? "Edit map" : "Create map"}</button>}
@@ -405,44 +523,37 @@ export function BusinessMapView({ onOpen, onOpenSettings }: { onOpen: OpenEntity
         if (await request("business-maps", { expected_version: data.map.version, title, stages })) setEditing(false);
       }} /> : <>
         {data.map.stages.length === 0 && <p className="group-note">Create stages and capabilities to start mapping components.</p>}
-        <div className="business-lanes" aria-label="Value chain" ref={lanes}>
-          {drawn.arrows.length > 0 && (
-            <svg className="business-arrows" width={drawn.width} height={drawn.height} aria-hidden="true">
-              <defs>
-                <marker id="rkp-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L8 4 L0 8 z" className="business-arrow-head" /></marker>
-                <marker id="rkp-arrow-candidate" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L8 4 L0 8 z" className="business-arrow-head is-candidate" /></marker>
-              </defs>
-              {drawn.arrows.map((arrow) => <path key={arrow.key} d={arrow.d} className={`business-arrow ${arrow.candidate ? "is-candidate" : ""}`} markerEnd={`url(#${arrow.candidate ? "rkp-arrow-candidate" : "rkp-arrow"})`} />)}
-            </svg>
-          )}
+        {canvas ? <>
+          <p className="group-note">Drag a capability by its handle to arrange the canvas. Dropping it in another column moves it to that stage; components stay where they are placed.</p>
+          <div className="business-canvas-scroll">
+            <div className="business-canvas" role="region" aria-label="Value chain canvas" ref={lanes}
+              style={{ width: data.map.stages.length * COLUMN, minHeight: placedBottom + 420, gridTemplateColumns: `repeat(${data.map.stages.length}, ${COLUMN}px)` }}>
+              {arrows}
+              {data.map.stages.map((item, index) => (
+                <section className="canvas-column" key={item.id} aria-label={item.name}>
+                  <h3><span className="eyebrow">{String(index + 1).padStart(2, "0")}</span>{item.name}</h3>
+                  {item.capabilities.length === 0 && <p className="group-note">No capabilities yet.</p>}
+                  {/* A card that has never been moved stays in its column; a moved one sits where it was put. */}
+                  {item.capabilities.map((cap) => (
+                    <CanvasCard key={cap.id} cap={cap} stages={data.map.stages} canvas={lanes} busy={busy} onArrange={place} onMoving={onMoving}
+                      at={cap.x != null && cap.y != null ? { x: cap.x, y: cap.y } : null}>
+                      {(grip, style) => card(cap, grip, style)}
+                    </CanvasCard>
+                  ))}
+                </section>
+              ))}
+            </div>
+          </div>
+        </> : <div className="business-lanes" aria-label="Value chain" ref={lanes}>
+          {arrows}
           {data.map.stages.map((item, index) => (
             <section className="business-lane" key={item.id}>
               <h3><span className="eyebrow">{String(index + 1).padStart(2, "0")}</span>{item.name}</h3>
               {item.capabilities.length === 0 && <p className="group-note">No capabilities yet.</p>}
-              {item.capabilities.map((cap) => {
-                const subjects = data.subjects.filter((subject) => {
-                  const row = byPlacement.get(subject.lineage_id);
-                  return row?.capability_id === cap.id && isPlaced(row);
-                });
-                const technical = [...new Set(subjects.flatMap((subject) => subject.technical_capabilities))].sort();
-                const outgoing = data.dependencies.filter((row) => row.from === cap.id);
-                return <section key={cap.id} id={`capability-${cap.id}`} data-capability={cap.id} className={`business-capability ${over === cap.id ? "is-drop-target" : ""}`} aria-label={cap.name}
-                  onDragOver={(event) => { if (event.dataTransfer.types.includes(SUBJECT_DRAG)) { event.preventDefault(); setOver(cap.id); } }}
-                  onDragLeave={() => setOver((current) => (current === cap.id ? null : current))}
-                  onDrop={(event) => drop(event, cap.id)}>
-                  <h4>{cap.name}</h4>
-                  <p className={cap.description ? "" : "group-note"}>{cap.description || "No description. Placement uses the name alone."}</p>
-                  {technical.length > 0 && <p className="business-tech">{technical.map((name) => <span key={name}>{name}</span>)}</p>}
-                  {outgoing.length > 0 && <p className="business-depends">Depends on {outgoing.map((edge, i) => <span key={edge.to}>{i > 0 && ", "}<a href={`#capability-${edge.to}`}>{names.get(edge.to)}</a>{edge.resolution !== "exact" && <em> (candidate)</em>}</span>)}</p>}
-                  {subjects.length > 0
-                    ? <ul className="business-subjects">{subjects.map((subject) => <Subject key={subject.lineage_id} compact subject={subject} placement={byPlacement.get(subject.lineage_id)} capabilities={capabilities} busy={busy} onReview={review} onOpen={onOpen} />)}</ul>
-                    : <p className="business-empty">Drop a component here</p>}
-                  <details className="business-cap-id"><summary>Capability ID</summary><code>{cap.id}</code></details>
-                </section>;
-              })}
+              {item.capabilities.map((cap) => card(cap))}
             </section>
           ))}
-        </div>
+        </div>}
         {edges.length > 0 && <p className="business-legend" aria-hidden="true"><span className="legend-line" /> depends on <span className="legend-line is-candidate" /> candidate, not fully resolved</p>}
 
         {capabilities.length > 0 && <section className="work-tool-panel">

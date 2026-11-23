@@ -277,11 +277,26 @@ class _Linker:
     # -- event topics (Tier B)
 
     def _constant(self, path: str, name: str) -> dict[str, Any] | None:
-        """The string constant `name` refers to in `path`: defined there, or imported by name."""
-        target, original = (path, name) if "." not in name else (path, name.split(".")[-1])
+        """The string constant `name` refers to in `path`: defined there, or imported by name.
+
+        `Topics.ORDERS` is an object member when `Topics` is defined or imported
+        here; a Python `module.NAME` falls back to `NAME` in this file.
+        """
+        head, _, rest = name.partition(".")
+        candidates = []
         if name in self.bindings[path]:
-            target, original = self.bindings[path][name]
-        return next((o for o in _of(self.files.get(target, {"observations": []}), "string_constant") if o["payload"]["name"] == original), None)
+            candidates.append(self.bindings[path][name])
+        if rest and head in self.bindings[path]:
+            target, original = self.bindings[path][head]
+            candidates.append((target, f"{original}.{rest}"))
+        candidates.append((path, name))
+        if rest:
+            candidates.append((path, name.split(".")[-1]))
+        for target, original in candidates:
+            found = next((o for o in _of(self.files.get(target, {"observations": []}), "string_constant") if o["payload"]["name"] == original), None)
+            if found is not None:
+                return found
+        return None
 
     def link_topics(self) -> dict[str, int]:
         counts = {"literal": 0, "constant": 0, "unresolved": 0}
@@ -382,7 +397,7 @@ def _unit_link(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, Any]:
     return {"unit": unit["name"], "observations": linker.out, "unknowns": linker.unknowns, "coverage": coverage, "exports": linker.exports()}
 
 
-UNIT_LINK = Step("unit.link", "0.4.0", _unit_link)
+UNIT_LINK = Step("unit.link", "0.5.0", _unit_link)
 
 
 # ---------------------------------------------------------------- repo-level

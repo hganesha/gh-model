@@ -365,3 +365,45 @@ def test_rerank_adapter_maps_options_to_documents_and_normalises_scores():
         cohere_rerank_azure("https://r", "d", api_key="k", transport=httpx.MockTransport(lambda r: httpx.Response(200, json={"results": [{"index": 0, "relevance_score": 1}]}))).choose("s", "q", {"a": "A", "b": "B"})
     with pytest.raises(ValueError):
         cohere_rerank_azure("https://r", "d")
+
+
+def test_provider_file_applies_settings_but_refuses_keys(tmp_path):
+    import pytest
+    from repo_intel.serve import load_provider_file
+
+    assert load_provider_file(tmp_path, {}) == []
+    (tmp_path / "providers.env").write_text(
+        "# Azure decision model\nRKP_MSDECISION_ENDPOINT=https://example.services.ai.azure.com\n"
+        "RKP_MSDECISION_DEPLOYMENT=ms-decision-1-1\nRKP_MSDECISION_AUTH=azure-cli\nRKP_ALLOW_PROVIDERS=microsoft-decision\n")
+    env = {"RKP_ALLOW_PROVIDERS": ""}
+    assert load_provider_file(tmp_path, env) == ["RKP_MSDECISION_ENDPOINT", "RKP_MSDECISION_DEPLOYMENT", "RKP_MSDECISION_AUTH"]
+    assert env["RKP_ALLOW_PROVIDERS"] == "", "the process environment wins"
+
+    (tmp_path / "providers.env").write_text("RKP_MSDECISION_API_KEY=sk-not-a-real-key\n")
+    with pytest.raises(SystemExit) as refused:
+        load_provider_file(tmp_path, {})
+    assert "sk-not-a-real-key" not in str(refused.value)
+
+
+def test_azure_token_is_reused_and_a_failed_sign_in_is_model_unavailable():
+    from types import SimpleNamespace
+    from repo_intel.decisions.gateway import bearer, microsoft_decision
+
+    calls, now = [], [1000.0]
+    class Credential:
+        def get_token(self, scope):
+            calls.append(scope)
+            return SimpleNamespace(token=f"t{len(calls)}", expires_on=now[0] + 3600)
+    header = bearer(Credential(), "scope", clock=lambda: now[0])
+    assert header() == header() == {"Authorization": "Bearer t1"} and len(calls) == 1
+    now[0] += 3400  # inside five minutes of expiry: refresh
+    assert header() == {"Authorization": "Bearer t2"}
+
+    class SignedOut:
+        def get_token(self, scope):
+            raise TimeoutError("az timed out")
+    sent = []
+    client = microsoft_decision("https://x.services.ai.azure.com", "d", credential=SignedOut(), transport=httpx.MockTransport(lambda r: sent.append(r)))
+    with pytest.raises(ModelUnavailable, match="credential unavailable"):
+        client.choose("s", "Which?", {"a": "A", "b": "B"})
+    assert not sent

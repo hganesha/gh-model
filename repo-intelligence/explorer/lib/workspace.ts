@@ -4,6 +4,9 @@ export interface Capability {
   id: string;
   name: string;
   description: string;
+  /** Position on the free-form canvas; absent until the card is moved there. */
+  x?: number | null;
+  y?: number | null;
 }
 
 export interface Stage {
@@ -25,6 +28,7 @@ export interface Placement {
 
 export interface MapDocument {
   title: string;
+  layout?: "lanes" | "canvas";
   version: number;
   stages: Stage[];
   placements: Placement[];

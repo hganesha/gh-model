@@ -65,6 +65,21 @@ def _session(client: Any) -> httpx.Client:
     return client._http
 
 
+def bearer(credential: Any, scope: str, clock: Callable[[], float] = time.time) -> Callable[[], dict[str, str]]:
+    """Authorization header from an Azure credential, reusing the token until five
+    minutes before it expires. `AzureCliCredential` runs `az` on every call, which
+    takes seconds; a compile asks many decisions."""
+    cached: dict[str, Any] = {}
+
+    def header() -> dict[str, str]:
+        if not cached or clock() > cached["expires_on"] - 300:
+            token = credential.get_token(scope)
+            cached.update(token=token.token, expires_on=float(getattr(token, "expires_on", 0) or 0))  # no expiry: never reused
+        return {"Authorization": f"Bearer {cached['token']}"}
+
+    return header
+
+
 def _post(client: Any, body: dict[str, Any]) -> httpx.Response:
     """POST with bounded retry on HTTP 429 and on a connection that was never established.
 
@@ -73,11 +88,15 @@ def _post(client: Any, body: dict[str, Any]) -> httpx.Response:
     Timeouts after the request went out are not retried.
     """
     try:
+        auth = client.auth() if client.auth else {}
+    except Exception as exc:  # a sign-in that fails or times out makes the model unavailable, not the request
+        raise ModelUnavailable(f"{client.provider}: credential unavailable ({type(exc).__name__})") from exc
+    try:
         http = _session(client)
         for attempt in range(client.max_retries + 1):
             last = attempt == client.max_retries
             try:
-                response = http.post(client.url, json=body, headers={"Content-Type": "application/json", "Accept": "application/json", **client.headers, **(client.auth() if client.auth else {})})
+                response = http.post(client.url, json=body, headers={"Content-Type": "application/json", "Accept": "application/json", **client.headers, **auth})
             except (httpx.ConnectError, httpx.ConnectTimeout):
                 if last:
                     raise
@@ -218,7 +237,7 @@ def cohere_rerank_azure(endpoint: str, deployment: str, api_key: str | None = No
         raise ValueError("give exactly one of api_key or credential")
     url = endpoint.rstrip("/") + "/providers/cohere/v2/rerank"
     if credential is not None:
-        return RerankClient("cohere-rerank", url, deployment, {}, auth=lambda: {"Authorization": f"Bearer {credential.get_token(ENTRA_SCOPE).token}"}, **kw)
+        return RerankClient("cohere-rerank", url, deployment, {}, auth=bearer(credential, ENTRA_SCOPE), **kw)
     return RerankClient("cohere-rerank", url, deployment, {"api-key": api_key}, **kw)
 
 
@@ -241,7 +260,7 @@ def microsoft_decision(endpoint: str, deployment: str, api_key: str | None = Non
         raise ValueError("give exactly one of api_key, entra_token or credential")
     url = endpoint.rstrip("/") + "/providers/microsoft/v1/systemone"
     if credential is not None:
-        return SystemOneClient("microsoft-decision", url, deployment, {}, auth=lambda: {"Authorization": f"Bearer {credential.get_token(ENTRA_SCOPE).token}"}, **kw)
+        return SystemOneClient("microsoft-decision", url, deployment, {}, auth=bearer(credential, ENTRA_SCOPE), **kw)
     headers = {"api-key": api_key} if api_key else {"Authorization": f"Bearer {entra_token}"}
     return SystemOneClient("microsoft-decision", url, deployment, headers, **kw)
 
@@ -305,13 +324,13 @@ class Gateway:
                 aliases["microsoft-decision"] = microsoft_decision(env["RKP_MSDECISION_ENDPOINT"], env["RKP_MSDECISION_DEPLOYMENT"], api_key=env["RKP_MSDECISION_API_KEY"])
             elif env.get("RKP_MSDECISION_AUTH") == "azure-cli":  # use the existing `az login` session; no key is handled
                 from azure.identity import AzureCliCredential
-                aliases["microsoft-decision"] = microsoft_decision(env["RKP_MSDECISION_ENDPOINT"], env["RKP_MSDECISION_DEPLOYMENT"], credential=AzureCliCredential())
+                aliases["microsoft-decision"] = microsoft_decision(env["RKP_MSDECISION_ENDPOINT"], env["RKP_MSDECISION_DEPLOYMENT"], credential=AzureCliCredential(process_timeout=60))
         if env.get("RKP_COHERE_RERANK_ENDPOINT") and env.get("RKP_COHERE_RERANK_DEPLOYMENT"):
             if env.get("RKP_COHERE_RERANK_API_KEY"):
                 aliases["cohere-rerank"] = cohere_rerank_azure(env["RKP_COHERE_RERANK_ENDPOINT"], env["RKP_COHERE_RERANK_DEPLOYMENT"], api_key=env["RKP_COHERE_RERANK_API_KEY"])
             elif env.get("RKP_COHERE_RERANK_AUTH") == "azure-cli":
                 from azure.identity import AzureCliCredential
-                aliases["cohere-rerank"] = cohere_rerank_azure(env["RKP_COHERE_RERANK_ENDPOINT"], env["RKP_COHERE_RERANK_DEPLOYMENT"], credential=AzureCliCredential())
+                aliases["cohere-rerank"] = cohere_rerank_azure(env["RKP_COHERE_RERANK_ENDPOINT"], env["RKP_COHERE_RERANK_DEPLOYMENT"], credential=AzureCliCredential(process_timeout=60))
         default = env.get("RKP_DECISION_DEFAULT")
         if default in aliases:
             aliases["decision-default"] = aliases[default]

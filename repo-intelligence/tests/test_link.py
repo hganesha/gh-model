@@ -181,3 +181,20 @@ def test_tsconfig_path_aliases_resolve():
     linker.resolve_imports()
     assert linker.imports["internal"] == 4 and linker.unresolved_imports == ["web/src/page.tsx: @/missing"]
     assert linker.lookup("web/src/page.tsx", "Button") == ("web/src/components/ui/button.tsx", "Button")
+
+
+def test_typescript_topic_through_an_imported_object_constant():
+    files = [
+        _summary("svc/package.json", ("package_declaration", {"ecosystem": "npm", "name": "svc", "manifest_dir": "svc"})),
+        _summary("svc/src/topics.ts", ("string_constant", {"name": "Topics.SHIPPED", "value": "orders.shipped"})),
+        _summary("svc/src/publisher.ts",
+                 ("import", {"specifier": "./topics", "names": ["Topics"], "form": "import"}),
+                 ("topic_use", {"role": "publish", "transport": "kafka", "name": "Topics.SHIPPED"}),
+                 ("topic_use", {"role": "publish", "transport": "kafka", "name": "Topics.MISSING"})),
+    ]
+    linker = _Linker({"name": "svc", "paths": []}, files, [])
+    linker.resolve_imports()
+    assert linker.link_topics() == {"literal": 0, "constant": 1, "unresolved": 1}
+    topics = [o["payload"]["name"] for o in linker.out if o["kind"] == "entity" and o["payload"]["kind"] == "EventTopic"]
+    assert topics == ["orders.shipped"]
+    assert [u["reason"] for u in linker.unknowns] == ["topic Topics.MISSING does not resolve to a string constant in this unit"]

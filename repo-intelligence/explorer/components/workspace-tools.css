@@ -96,3 +96,20 @@
 
 .business-cap-id { font-size: .8rem; margin-bottom: .45rem; color: var(--muted); }
 .business-evidence { overflow: auto; max-height: 18rem; white-space: pre-wrap; background: var(--paper-2); padding: .6rem; }
+
+/* Layout switch and free-form canvas */
+.layout-switch { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.layout-switch button { display: inline-flex; align-items: center; gap: .3rem; border: 0; background: transparent; color: var(--muted); font: inherit; font-size: 13px; padding: .45rem .7rem; cursor: pointer; }
+.layout-switch button + button { border-left: 1px solid var(--line); }
+.layout-switch button[aria-pressed="true"] { background: var(--paper-2); color: var(--ink); font-weight: 600; }
+.layout-switch button:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+.business-canvas-scroll { overflow: auto; max-width: 100%; border: 1px solid var(--line); border-radius: 10px; background: var(--paper-2); }
+.business-canvas { position: relative; display: grid; align-items: start; }
+.canvas-column { display: grid; gap: .65rem; align-content: start; padding: .75rem .9rem 1.5rem; min-height: 100%; border-right: 1px dashed var(--line); }
+.canvas-column:last-of-type { border-right: 0; }
+.canvas-column > h3 { display: flex; align-items: baseline; gap: .5rem; margin: 0; padding-bottom: .5rem; border-bottom: 1px solid var(--line); }
+.business-capability.is-canvas { z-index: 2; box-shadow: 0 1px 2px color-mix(in srgb, var(--ink) 8%, transparent); }
+.canvas-card-head { display: flex; justify-content: space-between; align-items: start; gap: .5rem; }
+.canvas-grip { flex: none; display: inline-grid; place-items: center; width: 26px; height: 26px; border: 1px solid var(--line); border-radius: 5px; background: var(--paper); color: var(--muted); cursor: grab; touch-action: none; }
+.canvas-grip:active { cursor: grabbing; }
+.canvas-grip:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }

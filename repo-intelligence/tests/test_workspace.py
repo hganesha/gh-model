@@ -524,3 +524,29 @@ def test_topic_passed_by_imported_constant_resolves_and_secrets_are_not_copied()
     # No broker client imported: a method that happens to be called `send` is not a topic use.
     plain = PythonSource().extract("svc/mail.py", b'mailer.send("hello")\n', "0" * 64).observations
     assert not [o for o in plain if o.kind == "topic_use"]
+
+
+def test_canvas_layout_moves_cards_without_rerunning_placement(workspace):
+    client, service, _ = workspace
+    view = _create_map(client)
+    view = _post(client, "business-maps", {"expected_version": view["map"]["version"], "title": "Value chain", "stages": [
+        *view["map"]["stages"], {"id": "deliver", "name": "Deliver", "capabilities": []}]})
+    queued = []
+    service.queue_placement = lambda *a, **k: queued.append(1)
+
+    view = _post(client, "business-maps/layout", {"expected_version": view["map"]["version"], "layout": "canvas", "positions": {
+        "sales": {"x": 40, "y": 60}, "inventory": {"x": 340, "y": 80, "stage_id": "deliver"}}})
+    stages = {stage["id"]: stage for stage in view["map"]["stages"]}
+    assert view["map"]["layout"] == "canvas"
+    assert [(c["id"], c["x"], c["y"]) for c in stages["sell"]["capabilities"]] == [("sales", 40, 60)]
+    assert [(c["id"], c["x"], c["y"]) for c in stages["deliver"]["capabilities"]] == [("inventory", 340, 80)]
+    assert stages["deliver"]["capabilities"][0]["description"] == "Manage warehouse items."
+
+    # The editor does not send the layout; saving keeps the canvas and its positions, and moving cards never queues placement.
+    view = _post(client, "business-maps", {"expected_version": view["map"]["version"], "title": "Renamed", "stages": view["map"]["stages"]})
+    assert view["map"]["layout"] == "canvas" and view["map"]["stages"][0]["capabilities"][0]["x"] == 40
+    assert queued == []
+
+    stale = client.post("/v1/business-maps/layout", headers=AUTH, json={"expected_version": 1, "layout": "lanes", "positions": {}})
+    unknown = client.post("/v1/business-maps/layout", headers=AUTH, json={"expected_version": view["map"]["version"], "layout": "lanes", "positions": {"nope": {"x": 1, "y": 1}}})
+    assert (stale.status_code, unknown.status_code) == (409, 400)
