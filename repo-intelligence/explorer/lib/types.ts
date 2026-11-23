@@ -127,6 +127,7 @@ export interface Assertion {
   evidence_ids: string[];
   resolution: string;
   decision_ref: string | null;
+  confidence?: number | null;
 }
 
 export interface EntityDetail {

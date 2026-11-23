@@ -221,7 +221,9 @@ function Models({ view, draft, update, setStatus }: {
         <label className="field"><span>Model</span><select value={draft.compile.model_functions[id]?.alias ?? ""} onChange={(e) => choice(id, "alias", e.target.value || null)}>
           <option value="">Workspace default</option>{aliases.map((alias) => <option value={alias} key={alias}>{alias}</option>)}
         </select></label>
-        <label className="field"><span>Acceptance threshold</span><input type="number" step="0.01" min={0} max={1} value={draft.compile.model_functions[id]?.threshold ?? ""} onChange={(e) => choice(id, "threshold", e.target.value === "" ? null : Number(e.target.value))} /></label>
+        {id === "dm.capability-placement"
+          ? <p className="group-note work-tool-control-wide">Acceptance threshold: set once as the placement threshold under Business map below.</p>
+          : <label className="field"><span>Acceptance threshold</span><input type="number" step="0.01" min={0} max={1} value={draft.compile.model_functions[id]?.threshold ?? ""} onChange={(e) => choice(id, "threshold", e.target.value === "" ? null : Number(e.target.value))} /></label>}
         <label className="field"><span>Minimum margin</span><input type="number" step="0.01" min={0} max={1} value={draft.compile.model_functions[id]?.margin ?? ""} onChange={(e) => choice(id, "margin", e.target.value === "" ? null : Number(e.target.value))} /></label>
       </div>
     </div>)}
@@ -252,7 +254,9 @@ function SettingsForm({ initial, reload }: { initial: SettingsResponse; reload: 
   async function save() {
     setBusy(true);
     try {
-      const next = await api<SettingsResponse>("settings", { body: { ...draft, expected_version: view.version } });
+      const functions = { ...draft.compile.model_functions };
+      if (functions["dm.capability-placement"]) functions["dm.capability-placement"] = { ...functions["dm.capability-placement"], threshold: null };
+      const next = await api<SettingsResponse>("settings", { body: { ...draft, compile: { ...draft.compile, model_functions: functions }, expected_version: view.version } });
       setView(next);
       setDraft(next.settings);
       setStatus({ ok: true, text: "Workspace settings saved." });

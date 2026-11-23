@@ -10,6 +10,8 @@ Configuration VALUES are never copied: a config key contributes its name only.
 
 from __future__ import annotations
 
+import re
+
 import posixpath
 
 from collections.abc import Iterator
@@ -29,6 +31,12 @@ FASTAPI_FACTORIES = {"FastAPI", "APIRouter"}
 COLUMN_CALLS = {"mapped_column", "Column"}
 NON_COLUMN_CALLS = {"relationship", "backref", "association_proxy", "synonym", "composite", "column_property", "query_expression", "deferred"}
 TABLE_OPS = {"create_table", "drop_table"}
+# Message-broker clients whose publish and subscribe calls name a topic (Tier B: Kafka only).
+MESSAGING_MODULES = {"confluent_kafka": "kafka", "kafka": "kafka", "aiokafka": "kafka"}
+PUBLISH_CALLS = {"produce", "send", "send_and_wait"}
+SUBSCRIBE_CALLS = {"subscribe"}
+_TOPIC_NAME = re.compile(r"^[A-Za-z0-9._-]{1,249}$")  # the characters a Kafka topic may contain
+_SECRET_LIKE = re.compile(r"KEY|SECRET|TOKEN|PASSWORD|PASSWD|CREDENTIAL", re.I)
 
 
 def _text(node: Node | None) -> str:
@@ -251,7 +259,7 @@ SQL_CALLS = {"text", "execute", "exec_driver_sql"}
 
 class PythonSource:
     id = "python.source"
-    version = "1.3.0"
+    version = "1.4.0"
 
     def __init__(self) -> None:
         self._parser = Parser(_LANGUAGE)
@@ -281,6 +289,9 @@ class PythonSource:
         if run.alembic_op:
             run.migration(statements, nodes)
         run.config_keys(nodes)
+        run.string_constants(statements)
+        if run.messaging:
+            run.topic_uses(nodes)
         base = posixpath.basename(path)
         is_test_file = base.startswith("test_") or base.endswith("_test.py")
         for name, definition in _functions(statements):
@@ -308,6 +319,7 @@ class _Run:
         self.getenv_names: set[str] = set()  # local names bound to os.getenv
         self.assigned_from: dict[str, str] = {}  # module-level name -> callee it was built from
         self.router_prefix: dict[str, str | None] = {}  # router name -> literal prefix (None: not literal)
+        self.messaging: str | None = None  # transport, once a message-broker client is imported
 
     def at(self, node: Node):
         return span(self.data, node.start_byte, node.end_byte)
@@ -357,6 +369,7 @@ class _Run:
                     self.emit(obs("import", self.blob, self.at(node), payload, ast_node_kind=node.type))
 
     def _bind_module(self, module: str, alias: str | None) -> None:
+        self.messaging = self.messaging or MESSAGING_MODULES.get(module.split(".")[0])
         if module == "fastapi" or module.startswith("fastapi."):
             self.fastapi = True
         if module == "sqlmodel" or module.startswith("sqlmodel."):
@@ -367,6 +380,7 @@ class _Run:
             self.alembic_op.add(alias)
 
     def _bind_names(self, module: str, names: list[str], aliases: dict[str, str]) -> None:
+        self.messaging = self.messaging or MESSAGING_MODULES.get(module.split(".")[0])
         if module == "fastapi" or module.startswith("fastapi."):
             self.fastapi = True
             for name in names:
@@ -403,6 +417,58 @@ class _Run:
             if self._factory(callee) == "APIRouter":
                 prefix = _args(right)[1].get("prefix")
                 self.router_prefix[_text(left)] = "" if prefix is None else _literal(prefix)
+
+    # -- event topics ------------------------------------------------------------
+
+    def string_constants(self, statements: list[Node]) -> None:
+        """Module-level `NAME = "value"` where the value could be a topic name.
+
+        Kept for the linker, which resolves a topic passed by name. Names that
+        read like credentials are skipped so a value that may be a secret never
+        enters a payload.
+        """
+        for statement in statements:
+            assignment = _assignment(statement)
+            if assignment is None:
+                continue
+            left, value = assignment.child_by_field_name("left"), _literal(assignment.child_by_field_name("right"))
+            if left is None or left.type != "identifier" or value is None:
+                continue
+            name = _text(left)
+            if _TOPIC_NAME.match(value) and not _SECRET_LIKE.search(name):
+                self.emit(obs("string_constant", self.blob, self.at(assignment), {"name": name, "value": value}, ast_node_kind="assignment"))
+
+    def topic_uses(self, nodes: list[Node]) -> None:
+        """`producer.produce(topic, ...)` and `consumer.subscribe([topic, ...])`.
+
+        A topic is recorded as a literal, as a name for the linker to resolve,
+        or as dynamic when it is computed at run time.
+        """
+        for call in nodes:
+            if call.type != "call":
+                continue
+            function = call.child_by_field_name("function")
+            if function is None or function.type != "attribute":
+                continue
+            method = _text(function.child_by_field_name("attribute"))
+            role = "publish" if method in PUBLISH_CALLS else "subscribe" if method in SUBSCRIBE_CALLS else None
+            if role is None:
+                continue
+            positional, keywords = _args(call)
+            target = positional[0] if positional else keywords.get("topic") or keywords.get("topics")
+            if target is None:
+                continue
+            items = list(target.named_children) if target.type in ("list", "tuple", "set") else [target]
+            for item in items or [target]:
+                payload: dict[str, Any] = {"role": role, "transport": self.messaging}
+                literal = _literal(item)
+                if literal is not None and _TOPIC_NAME.match(literal):
+                    payload["topic"] = literal
+                elif item.type == "identifier" or (item.type == "attribute" and _dotted(item)):
+                    payload["name"] = _text(item)
+                else:
+                    payload["dynamic"] = True
+                self.emit(obs("topic_use", self.blob, self.at(call), payload, ast_node_kind="call"))
 
     def _factory(self, callee: str) -> str | None:
         """"FastAPI" / "APIRouter" if `callee` constructs one, else None."""

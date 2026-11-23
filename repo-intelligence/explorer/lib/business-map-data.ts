@@ -109,3 +109,23 @@ export const starter = [
   {"id":"cap-77","name":"Carbon & Climate Management","description":"Scope 1-3 emissions tracking and net zero roadmap"},
   {"id":"cap-78","name":"Ethics & Business Conduct","description":"Code of conduct, ethics hotline and investigation"},
 ];
+
+/** The eight business functions the starter capabilities came from, by capability number. */
+const STARTER_GROUPS: { name: string; from: number; to: number }[] = [
+  { name: "Strategy & Corporate Development", from: 1, to: 10 },
+  { name: "Innovation & Product", from: 11, to: 21 },
+  { name: "Customer & Market", from: 22, to: 35 },
+  { name: "Operations & Supply Chain", from: 36, to: 44 },
+  { name: "Technology & Digital", from: 45, to: 55 },
+  { name: "Finance & Risk", from: 56, to: 63 },
+  { name: "People & Organization", from: 64, to: 72 },
+  { name: "Legal & Governance", from: 73, to: 78 },
+];
+
+export const starterGroups = STARTER_GROUPS.map((group) => ({
+  name: group.name,
+  capabilities: starter.filter((item) => {
+    const n = Number(item.id.slice(4));
+    return n >= group.from && n <= group.to;
+  }),
+}));

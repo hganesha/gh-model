@@ -21,6 +21,7 @@ from .contracts import Manifest
 from .decisions import placement
 from .decisions.gateway import Gateway
 from .decisions.runner import Budget
+from .capabilities import CapabilityCatalogue, match_package
 from .pipeline import PublishGateError, load_manifest, stage_compile, stage_snapshot, toolchain_hash
 from .store import ObjectStore
 
@@ -448,6 +449,7 @@ class Service:
         if not current.placements:
             return {"components": {}}
         capabilities = current.capabilities()
+        kinds = set(self.workspace_settings()[1].business_map.component_kinds)
         entities, _ = business_graph.graph(self.store, manifest)
         with projection.connect(self.conninfo, self.store.tenant_id) as conn:
             aliases = business_graph.identities(conn, self.store.tenant_id, manifest.rkp_hash)
@@ -460,6 +462,11 @@ class Service:
             },
             "version": current.version,
             "capabilities": [{"id": cap.id, "name": cap.name} for cap in capabilities.values()],
+            # Components of a kind the placement policy covers; the denominator for "components placed".
+            "eligible_components": sum(
+                entity["kind"] == "Component" and entity["attributes"].get("component_kind") in kinds
+                for entity in entities.values()
+            ),
         }
 
     def dependency_groups(self, manifest: Manifest) -> dict[str, Any]:
@@ -473,7 +480,43 @@ class Service:
             "capability": entities[key], "dependencies": sorted(rows, key=lambda r: (r["name"], r["id"])),
         } for key, rows in memberships.items()]
         other = sorted((row for key, row in entities.items() if row["kind"] == "ExternalDependency" and key not in classified), key=lambda r: (r["name"], r["id"]))
-        return {"groups": sorted(groups, key=lambda g: g["capability"]["name"]), "unclassified": other}
+        # Where one component declares more than one package for the same capability, name them.
+        adjacent, _ = business_graph.related_graph(entities, edges)
+        overlaps = []
+        for component in (row for row in entities.values() if row["kind"] == "Component"):
+            by_capability: dict[str, set[str]] = {}
+            for contained in adjacent[component["id"]]["CONTAINS"]:
+                if entities.get(contained["object"], {}).get("kind") != "Package":
+                    continue
+                for dependency in adjacent[contained["object"]]["DEPENDS_ON"]:
+                    for provided in adjacent[dependency["object"]]["PROVIDES"]:
+                        if provided["object"] in entities and dependency["object"] in entities:
+                            by_capability.setdefault(provided["object"], set()).add(dependency["object"])
+            overlaps.extend({
+                "component": component, "capability": entities[capability],
+                "dependencies": sorted((entities[d] for d in found), key=lambda r: (r["name"], r["id"])),
+            } for capability, found in by_capability.items() if len(found) > 1)
+        overlaps.sort(key=lambda row: (row["component"]["name"], row["capability"]["name"]))
+        # The catalogue this snapshot was compiled with, not today's: its version and why each package maps.
+        catalogue, rationales = None, {}
+        try:
+            pinned = CapabilityCatalogue.model_validate(self.store.get_json(self.store.get_json(manifest.toolchain_hash)["capability_catalogue_hash"]))
+        except (KeyError, ValueError, FileNotFoundError):
+            pinned = None
+        if pinned is not None:
+            catalogue = {"name": pinned.taxonomy.name, "version": pinned.taxonomy.version}
+            names = {item.key: item.name for item in pinned.capabilities}
+            by_package = pinned.package_mappings()
+            for capability, rows in memberships.items():
+                for dependency in rows:
+                    key = dependency["natural_key"]
+                    for mapping in match_package(by_package, key.get("ecosystem", ""), key.get("name", "")):
+                        if names.get(mapping.capability) == entities[capability]["name"]:
+                            rationales.setdefault(dependency["id"], {})[capability] = mapping.rationale
+        return {
+            "groups": sorted(groups, key=lambda g: g["capability"]["name"]), "unclassified": other, "overlaps": overlaps,
+            "catalogue": catalogue, "rationales": rationales,
+        }
 
     # -- reading a snapshot
 

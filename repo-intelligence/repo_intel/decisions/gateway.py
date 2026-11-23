@@ -57,20 +57,40 @@ class DecisionModel(Protocol):
     def choose(self, state: Any, instructions: str, options: Mapping[str, str]) -> ChoiceAnswer: ...
 
 
+def _session(client: Any) -> httpx.Client:
+    """One connection pool per provider client, so a compile that asks many
+    decisions opens one TLS connection instead of one per question."""
+    if client._http is None:
+        client._http = httpx.Client(timeout=client.timeout, transport=client.transport)
+    return client._http
+
+
 def _post(client: Any, body: dict[str, Any]) -> httpx.Response:
-    """POST with bounded retry on HTTP 429, honoring the provider's stated wait."""
+    """POST with bounded retry on HTTP 429 and on a connection that was never established.
+
+    A rate limit honors the provider's stated wait. A failed connect is retried
+    because the request was not sent, so repeating it cannot double a decision.
+    Timeouts after the request went out are not retried.
+    """
     try:
-        with httpx.Client(timeout=client.timeout, transport=client.transport) as http:
-            for attempt in range(client.max_retries + 1):
+        http = _session(client)
+        for attempt in range(client.max_retries + 1):
+            last = attempt == client.max_retries
+            try:
                 response = http.post(client.url, json=body, headers={"Content-Type": "application/json", "Accept": "application/json", **client.headers, **(client.auth() if client.auth else {})})
-                if response.status_code != 429 or attempt == client.max_retries:
-                    break
-                try:
-                    wait = float(response.headers.get("retry-after") or response.headers.get("x-ratelimit-reset-requests") or "")
-                except ValueError:
-                    wait = 2.0 * (attempt + 1)
-                client.sleep(min(max(wait, 0.5), client.max_wait))
-            return response
+            except (httpx.ConnectError, httpx.ConnectTimeout):
+                if last:
+                    raise
+                client.sleep(min(0.5 * (attempt + 1), client.max_wait))
+                continue
+            if response.status_code != 429 or last:
+                break
+            try:
+                wait = float(response.headers.get("retry-after") or response.headers.get("x-ratelimit-reset-requests") or "")
+            except ValueError:
+                wait = 2.0 * (attempt + 1)
+            client.sleep(min(max(wait, 0.5), client.max_wait))
+        return response
     except httpx.HTTPError as exc:
         raise ModelUnavailable(f"{client.provider}: {type(exc).__name__}") from exc
 
@@ -86,9 +106,10 @@ class SystemOneClient:
     timeout: float = 20.0
     transport: httpx.BaseTransport | None = None  # injected in tests
     auth: Callable[[], dict[str, str]] | None = None  # fresh auth headers per call (short-lived tokens)
-    max_retries: int = 3  # on HTTP 429 only
+    max_retries: int = 3  # on HTTP 429, and on a connection that could not be opened
     max_wait: float = 20.0
     sleep: Callable[[float], None] = time.sleep
+    _http: httpx.Client | None = field(default=None, init=False, repr=False, compare=False)
 
     def choose(self, state: Any, instructions: str, options: Mapping[str, str]) -> ChoiceAnswer:
         body = {"model": self.model, "state": state, "questions": {"decision": {"type": "choice", "instructions": instructions, "criteria": dict(options)}}}
@@ -170,6 +191,7 @@ class RerankClient:
     max_retries: int = 3
     max_wait: float = 20.0
     sleep: Callable[[float], None] = time.sleep
+    _http: httpx.Client | None = field(default=None, init=False, repr=False, compare=False)
 
     def choose(self, state: Any, instructions: str, options: Mapping[str, str]) -> ChoiceAnswer:
         names = list(options)

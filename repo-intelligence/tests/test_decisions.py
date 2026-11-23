@@ -320,6 +320,33 @@ def test_rate_limit_is_retried_within_a_bound():
         always.choose("s", "Which?", {"a": "A", "b": "B"})
 
 
+def test_failed_connection_is_retried_but_a_sent_request_is_not():
+    answer = {"model": "m", "answers": {"decision": {"type": "choice", "choice": "a", "probabilities": {"a": 0.9, "b": 0.1}}}}
+    seen, waits = [], []
+    def flaky(request):
+        seen.append(1)
+        if len(seen) < 3:
+            raise httpx.ConnectError("no route", request=request)
+        return httpx.Response(200, json=answer)
+    client = jev("k", transport=httpx.MockTransport(flaky), sleep=waits.append)
+    assert client.choose("s", "Which?", {"a": "A", "b": "B"}).choice == "a" and waits == [0.5, 1.0]
+
+    def refused(request):
+        raise httpx.ConnectError("no route", request=request)
+    down = jev("k", transport=httpx.MockTransport(refused), sleep=waits.append, max_retries=2)
+    with pytest.raises(ModelUnavailable):
+        down.choose("s", "Which?", {"a": "A", "b": "B"})
+
+    # A read timeout means the request went out; asking again could count one decision twice.
+    sent = []
+    def slow(request):
+        sent.append(1)
+        raise httpx.ReadTimeout("slow", request=request)
+    with pytest.raises(ModelUnavailable):
+        jev("k", transport=httpx.MockTransport(slow), sleep=waits.append).choose("s", "Which?", {"a": "A", "b": "B"})
+    assert len(sent) == 1
+
+
 def test_rerank_adapter_maps_options_to_documents_and_normalises_scores():
     from repo_intel.decisions.gateway import cohere_rerank_azure, render_state
     sent = []

@@ -443,3 +443,84 @@ def test_installation_token_signs_app_jwt_and_caches_credential(monkeypatch):
     client = connectors.InstallationTokens(secrets)
     assert client.get(cfg) == client.get(cfg) == "fake-installation-credential"
     assert len(calls) == 1 and client.permissions["app"] == ["contents:read"]
+
+
+def test_shortlist_ranks_by_what_a_component_does():
+    """Field names and technical capabilities are shared by every component, so they must not steer the shortlist."""
+    from repo_intel.decisions import placement
+
+    caps = {
+        "orders": "Order capture. Accept, create and track customer orders.",
+        "store": "Storefront experience. Web shop pages customers browse and buy from.",
+        "notify": "Customer notifications. Notify customers by email when an order is created.",
+        "catalogue": "Product catalogue. Maintain products, items and prices offered for sale.",
+    }
+    vectors = {key: placement.local_embedding(text) for key, text in caps.items()}
+
+    def top(features: dict) -> str:
+        base = {"kind": "service", "routes": [], "data": [], "consumes": [], "technical_capabilities": [], "repository_description": ""}
+        return placement.rank_candidates(placement.local_embedding(placement._subject_text(base | features)), vectors)[0]
+
+    technical = ["Web Application Framework", "Relational Database Access"]
+    assert top({"name": "notifier-service", "technical_capabilities": ["Message Queues and Job Processing"]}) == "notify"
+    assert top({"name": "catalog-backend", "routes": ["GET /products", "GET /products/{product_id}"], "technical_capabilities": technical}) == "catalogue"
+    assert top({"name": "@acme/api", "routes": ["GET /orders", "POST /orders"], "data": ["orders"], "technical_capabilities": technical}) == "orders"
+    assert "technical" not in placement._subject_text({"name": "x", "technical_capabilities": ["technical thing"]})
+
+
+def test_dependency_overlaps_name_the_component_and_packages(workspace, tmp_path):
+    client, _, _ = workspace
+    repo = tmp_path / "overlap"
+    repo.mkdir()
+    (repo / "package.json").write_text('{"name":"two-clients","version":"1.0.0","dependencies":{"axios":"1","node-fetch":"3","express":"4"}}')
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-qm", "init"], check=True)
+    sha = subprocess.run(["git", "-C", str(repo), "rev-parse", "HEAD"], check=True, capture_output=True, text=True).stdout.strip()
+    snapshot = _local(client, repo, sha)
+    found = _get(client, f"snapshots/{snapshot['rkp_hash']}/dependencies")
+    overlap, = found["overlaps"]
+    assert overlap["component"]["name"] == "two-clients"
+    assert overlap["capability"]["name"] == "HTTP Client"
+    assert [row["name"] for row in overlap["dependencies"]] == ["axios", "node-fetch"]
+    # The drawer can say which catalogue classified a package, and why.
+    assert found["catalogue"]["version"] and found["catalogue"]["name"]
+    axios = overlap["dependencies"][0]["id"]
+    assert found["rationales"][axios][overlap["capability"]["id"]]
+
+
+def test_subscriber_capability_depends_on_publisher_through_a_topic(workspace, tmp_path):
+    client, _, _ = workspace
+    repo = tmp_path / "events"
+    sha = materialize("F07-event-driven", repo)[0]
+    snapshot = _local(client, repo, sha)
+    summary = _get(client, f"snapshots/{snapshot['rkp_hash']}/summary")
+    # Two of three topic uses resolve; the audit service reads its topics from the environment.
+    assert summary["coverage_totals"]["event_topics"] == {"numerator": 2, "denominator": 3}
+    assert any(u["predicate"] == "SUBSCRIBES_TO" and "run time" in u["reason"] for u in summary["unknowns"])
+    assert summary["counts_by_kind"]["EventTopic"] == 1
+
+    view = _create_map(client)
+    by_name = {s["name"]: s["lineage_id"] for s in view["subjects"] if s["kind"] == "Component"}
+    for name, capability in (("orders-service", "sales"), ("notifier-service", "inventory")):
+        view = _post(client, "business-maps/placements", {
+            "expected_version": view["map"]["version"], "lineage_id": by_name[name], "action": "move", "capability_id": capability,
+        })
+    edge, = view["dependencies"]
+    assert (edge["from"], edge["to"]) == ("inventory", "sales")
+    assert {row["predicate"] for row in edge["evidence"]} == {"PUBLISHES_TO", "SUBSCRIBES_TO"}
+
+
+def test_topic_passed_by_imported_constant_resolves_and_secrets_are_not_copied():
+    from repo_intel.extractors.python_source import PythonSource
+
+    source = b'from confluent_kafka import Producer\nfrom .topics import ORDER_CREATED\nAPI_TOKEN = "abc123"\nLOCAL = "orders.local"\n' \
+             b'p = Producer({})\np.produce(ORDER_CREATED, b"x")\np.produce(LOCAL, b"x")\np.produce(f"orders.{region}", b"x")\n'
+    found = PythonSource().extract("svc/publisher.py", source, "0" * 64).observations
+    uses = [o.payload for o in found if o.kind == "topic_use"]
+    assert [(u.get("name"), u.get("topic"), u.get("dynamic")) for u in uses] == [("ORDER_CREATED", None, None), ("LOCAL", None, None), (None, None, True)]
+    constants = {o.payload["name"]: o.payload["value"] for o in found if o.kind == "string_constant"}
+    assert constants == {"LOCAL": "orders.local"}, "a name that reads like a credential never has its value recorded"
+    # No broker client imported: a method that happens to be called `send` is not a topic use.
+    plain = PythonSource().extract("svc/mail.py", b'mailer.send("hello")\n', "0" * 64).observations
+    assert not [o for o in plain if o.kind == "topic_use"]

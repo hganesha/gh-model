@@ -1,17 +1,23 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
-test("build and review a value chain, then update and reload settings", async ({ page }) => {
-  const fixture = await readFile(path.join("test-results", "fixture-path"), "utf8");
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+// The tests share one API and build on each other's map, so they run in order.
+test.describe.configure({ mode: "serial" });
 
-  // Compile the local fixture through the same server-side proxy the Explorer uses.
+/** Compile a local fixture through the same server-side proxy the Explorer uses. */
+async function compile(page: Page, file: string) {
+  const fixture = await readFile(path.join("test-results", file), "utf8");
   const start = await page.request.post("/api/rkp/repositories", { data: { local_path: fixture, ref: "HEAD" } });
   expect(start.ok()).toBeTruthy();
   const { id } = await start.json();
   await expect.poll(async () => (await (await page.request.get(`/api/rkp/compilations/${id}`)).json()).status).toBe("complete");
+}
+
+test("build and review a value chain, then update and reload settings", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await compile(page, "fixture-path");
 
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Orders fixture" })).toBeVisible();
@@ -42,10 +48,20 @@ test("build and review a value chain, then update and reload settings", async ({
   await card.getByRole("listitem").dragTo(fulfillment);
   await expect(fulfillment.getByRole("button", { name: "orders-api", exact: true })).toBeVisible();
 
+  // A workspace view has its own address, so a reload stays on it.
+  await expect(page).toHaveURL(/workspace=business/);
   await page.reload();
-  await expect(page.getByRole("heading", { name: "Purpose" })).toBeVisible();
-  await expect(page.getByText("Order fulfilment", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Commerce value chain" })).toBeVisible();
+
+  // The repository map gains a Purpose card that leads back to the business map.
+  await page.getByRole("button", { name: /Orders fixture/ }).click();
+  const purpose = page.getByRole("button", { name: /Open business map: 1 capability/ });
+  await expect(purpose).toBeVisible();
+  await expect(purpose.getByText("Order fulfilment", { exact: true })).toBeVisible();
+  await expect(purpose.getByText("00 · PURPOSE")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Snapshots" })).toBeVisible();
   await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Snapshots" })).toHaveCount(0);
   for (const text of ["Connections", "Repositories", "Languages and extractors", "Decision models", "Business map"]) {
     await expect(page.getByRole("heading", { name: text, exact: true }).last()).toBeVisible();
   }
@@ -56,4 +72,67 @@ test("build and review a value chain, then update and reload settings", async ({
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   await expect(page.getByLabel("Automatically place accepted components")).not.toBeChecked();
   expect(errors).toEqual([]);
+});
+
+test("placement without a model says so, and dependencies are drawn", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await compile(page, "fixture-path-monorepo");
+
+  await page.goto("/?workspace=business");
+  await expect(page.getByRole("heading", { name: "Commerce value chain" })).toBeVisible();
+  await page.getByRole("button", { name: "Run placement" }).click();
+  const status = page.getByRole("status").filter({ hasText: "Automatic placement has no model to use." });
+  await expect(status).toBeVisible();
+  await expect(status).toContainText("Nothing was placed by AI");
+
+  // Each unplaced component says why, and offers its closest capabilities as one-click placements.
+  const api = page.getByRole("listitem").filter({ has: page.getByRole("button", { name: "@acme/api", exact: true }) });
+  await expect(api).toContainText("No decision model is configured");
+  await api.getByRole("button", { name: "Place @acme/api in Order fulfilment" }).click();
+  const web = page.getByRole("listitem").filter({ has: page.getByRole("button", { name: "@acme/web", exact: true }) });
+  await web.getByRole("combobox", { name: "Capability for @acme/web" }).selectOption({ label: "Customer management" });
+  await web.getByRole("button", { name: "Place", exact: true }).click();
+
+  // The web app calls the API, so its capability depends on the API's: one arrow, and the same in words.
+  const customers = page.getByRole("region", { name: "Customer management", exact: true });
+  await expect(customers.getByText("Depends on")).toContainText("Order fulfilment");
+  await expect(page.locator("path.business-arrow")).toHaveCount(1);
+
+  await status.getByRole("button", { name: "Open decision model settings" }).click();
+  await expect(page.getByRole("heading", { name: "Decision models", exact: true })).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test("edit the map in place and pick starter capabilities", async ({ page }) => {
+  await page.goto("/?workspace=business");
+  await page.getByRole("button", { name: "Edit map" }).click();
+  // Editing keeps the lane layout: every stage is a column with its capabilities inside it.
+  const lane = page.getByRole("region", { name: "Sell", exact: true });
+  await expect(lane.getByLabel("Capability name").first()).toHaveValue("Customer management");
+
+  await page.getByRole("button", { name: "Starter capabilities" }).click();
+  const picker = page.getByRole("region", { name: "Starter capabilities" });
+  await picker.getByLabel("Search starter capabilities").fill("logistics");
+  await picker.getByLabel(/Logistics & Distribution/).check();
+  await picker.getByRole("button", { name: "Add 1 selected" }).click();
+  await expect(lane.getByLabel("Capability name").last()).toHaveValue("Logistics & Distribution");
+  await page.getByRole("button", { name: "Save map" }).click();
+  await expect(page.getByRole("heading", { name: "Logistics & Distribution" })).toBeVisible();
+  // Placements made earlier survive a map edit.
+  await expect(page.getByRole("region", { name: "Order fulfilment", exact: true }).getByRole("button", { name: "@acme/api", exact: true })).toBeVisible();
+});
+
+test("components stay inside their capability card at phone width", async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.goto("/?workspace=business");
+  await expect(page.getByRole("heading", { name: "Commerce value chain" })).toBeVisible();
+  const overflow = await page.evaluate(() => [...document.querySelectorAll<HTMLElement>(".business-capability")].flatMap((card) => {
+    const box = card.getBoundingClientRect();
+    return [...card.querySelectorAll<HTMLElement>(".business-subject, select, button")]
+      .filter((node) => node.getBoundingClientRect().width > 0 && node.getBoundingClientRect().right > box.right + 0.5)
+      .map((node) => node.className || node.tagName);
+  }));
+  expect(overflow).toEqual([]);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(0);
 });

@@ -25,9 +25,31 @@ TOKEN = re.compile(r"[a-z0-9]+")
 SPEC_ID = "dm.capability-placement"
 
 
+# Words that say how a component is built or addressed, not what business it serves.
+STOPWORDS = frozenset(
+    "a an and are as at be by for from in is it of on or that the their this to with using so can "
+    "get post put patch delete head options api apis app apps service services server backend frontend "
+    "web ui src lib main index id ids v1 v2 http https".split()
+)
+SUFFIXES = (("ies", "y"), ("sses", "ss"), ("ments", "ment"), ("ing", ""), ("ers", "er"), ("s", ""))
+
+
+def _stem(word: str) -> str:
+    """Fold plurals and common endings so "orders" meets "order" and "notifier" meets "notify"-like forms."""
+    for suffix, replacement in SUFFIXES:
+        if word.endswith(suffix) and len(word) - len(suffix) >= 3 and not (suffix == "s" and word.endswith("ss")):
+            return word[: len(word) - len(suffix)] + replacement
+    return word
+
+
+def words(content: str) -> list[str]:
+    split = re.sub(r"([a-z])([A-Z])", r"\1 \2", content).lower()
+    return [_stem(w) for w in TOKEN.findall(split) if w not in STOPWORDS and not w.isdigit()]
+
+
 def local_embedding(content: str) -> list[float]:
-    """StackGraph's signed hash embedding over words, trigrams and word pairs."""
-    words = TOKEN.findall(re.sub(r"([a-z])([A-Z])", r"\1 \2", content).lower())
+    """StackGraph's signed hash embedding over stemmed words, trigrams and word pairs."""
+    tokens = words(content)
     values = [0.0] * DIMENSIONS
 
     def add(feature: str, weight: float) -> None:
@@ -35,12 +57,12 @@ def local_embedding(content: str) -> list[float]:
         index = int.from_bytes(key[:8], "big") % DIMENSIONS
         values[index] += weight if key[8] & 1 else -weight
 
-    for word in words:
+    for word in tokens:
         add(f"word:{word}", 1)
         padded = f"^{word}$"
         for i in range(len(padded) - 2):
             add(f"tri:{padded[i:i + 3]}", 0.25)
-    for left, right in zip(words, words[1:]):
+    for left, right in zip(tokens, tokens[1:]):
         add(f"pair:{left}:{right}", 0.5)
     return normalized(values)
 
@@ -82,7 +104,14 @@ def _cap_text(cap: Capability) -> str:
 
 
 def _subject_text(features: dict[str, Any]) -> str:
-    return canonical(features).decode()[:3800]
+    """What the component is about: its name, routes, data and description.
+
+    Field names and technical capabilities are left out. They describe every
+    component alike and pull unrelated components towards the same capability.
+    """
+    parts = [features.get("name") or "", *features.get("routes", ()), *features.get("data", ()),
+             *features.get("consumes", ()), features.get("repository_description") or ""]
+    return " ".join(p for p in parts if p)[:3800]
 
 
 def rank_candidates(vector: list[float], vectors: dict[str, list[float]], rejected: tuple[str, ...] = ()) -> tuple[str, ...]:

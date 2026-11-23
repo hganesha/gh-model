@@ -199,7 +199,7 @@ Independent of Phase B and can run alongside it.
 
 A, then B. Read the benchmark from GI-041 before committing to D. C can start at any time and does not wait on that result.
 
-The [GI-041 fixture and public-repository run](repo-intelligence/benchmarks/results/business-placement-v1.md) measured 9 of 13 reference labels in the local top-five shortlist. Live-model accuracy and threshold calibration still require a configured provider. The local implementation uses one active map per tenant. A component keeps its placement across an unchanged identity or an unambiguous move with shared evidence.
+The [GI-041 fixture and public-repository run](repo-intelligence/benchmarks/results/business-placement-v1.md) measured 9 of 13 reference labels in the local top-five shortlist at first, and 12 of 13 (12 ranked first) after the shortlist text was narrowed to what a component does. A live run against Microsoft-Decision-1.1 on Azure at the 0.88 threshold placed 7 components correctly and none wrongly, and left 8 for review; lowering the threshold to 0.60 added 3 correct and 1 wrong. The sample is 15 components, so this confirms the path and the default threshold, not an accuracy figure. The local implementation uses one active map per tenant. A component keeps its placement across an unchanged identity or an unambiguous move with shared evidence.
 
 ## 7. Risks
 

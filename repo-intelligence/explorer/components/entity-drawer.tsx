@@ -225,6 +225,31 @@ function BusinessPlacement({ hash, id, onChanged }: { hash: string; id: string; 
   </section>;
 }
 
+interface DependencyCatalogue {
+  catalogue?: { name: string; version: string } | null;
+  rationales?: Record<string, Record<string, string>>;
+}
+
+function ProvidedCapabilities({ hash, id, provided, neighbours, onNavigate }: {
+  hash: string; id: string; provided: Assertion[]; neighbours: Record<string, EntityRef>; onNavigate: (id: string) => void;
+}) {
+  const source = useApi<DependencyCatalogue>(snapshotPath(hash, "dependencies"));
+  const catalogue = source.data?.catalogue;
+  return <section><h3>Technical capabilities</h3>
+    <ul>{provided.map((row) => {
+      const why = source.data?.rationales?.[id]?.[row.object];
+      return <li key={row.id}>
+        Provides <button type="button" className="link-btn" onClick={() => onNavigate(row.object)}>{neighbours[row.object]?.name ?? row.object}</button>
+        {typeof row.confidence === "number" && <span className="group-note"> · catalogue confidence {Math.round(row.confidence * 100)}%</span>}
+        {why && <p className="group-note">{why}</p>}
+      </li>;
+    })}</ul>
+    <p className="group-note">
+      Looked up in {catalogue ? <>the {catalogue.name} catalogue, version {catalogue.version},</> : "the curated package catalogue"} pinned to this snapshot; not read from how the code uses the package.
+    </p>
+  </section>;
+}
+
 function DrawerBody({ hash, id, onNavigate, onViewInGraph, onPlacementChanged }: { hash: string; id: string; onNavigate: (id: string) => void; onViewInGraph: (ref: EntityRef) => void; onPlacementChanged: () => void }) {
   const { data, error, loading, reload } = useApi<EntityDetail>(snapshotPath(hash, `entities/${encodeURIComponent(id)}`));
   const [evidenceShown, setEvidenceShown] = useState(EVIDENCE_PAGE);
@@ -252,10 +277,7 @@ function DrawerBody({ hash, id, onNavigate, onViewInGraph, onPlacementChanged }:
       </div>
 
       {entity.kind === "Component" && <BusinessPlacement hash={hash} id={id} onChanged={onPlacementChanged} />}
-      {provided.length > 0 && <section><h3>Technical capabilities</h3>
-        <ul>{provided.map((row) => <li key={row.id}><button type="button" className="link-btn" onClick={() => onNavigate(row.object)}>{data.neighbours[row.object]?.name ?? row.object}</button></li>)}</ul>
-        <p className="group-note">Curated from the declared package.</p>
-      </section>}
+      {provided.length > 0 && <ProvidedCapabilities hash={hash} id={id} provided={provided} neighbours={data.neighbours} onNavigate={onNavigate} />}
       <section>
         <h3>Natural key</h3>
         <Definitions data={entity.natural_key} empty="This entity has no natural key fields." />
