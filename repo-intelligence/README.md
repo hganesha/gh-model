@@ -102,12 +102,12 @@ After changing a contract, regenerate the schemas:
 `deploy/azure/deploy.sh` puts the API and the Explorer on Azure with a small footprint. Run it from `repo-intelligence/`, signed in with `az login`:
 
 ~~~bash
-deploy/azure/deploy.sh -g rkp --providers-file ../.rkp-store/providers.env --github-token-from-gh
+deploy/azure/deploy.sh -g rkp --entra --providers-file ../.rkp-store/providers.env --github-token-from-gh
 ~~~
 
 | Piece | Azure resource | Size |
 |---|---|---|
-| Explorer | Container App, public HTTPS, IP allow-list, scales to zero | 0.25 vCPU, 0.5 GiB |
+| Explorer | Container App, public HTTPS, Entra/OIDC sign-in and/or IP allow-list, scales to zero | 0.25 vCPU, 0.5 GiB |
 | API | Container App, internal ingress only, one replica (compile jobs run in-process) | 0.5 vCPU, 1 GiB |
 | Projection | PostgreSQL Flexible Server, reachable from Azure services only, TLS | Burstable B1ms, 32 GB |
 | Object store, git mirrors, `providers.env` | Azure Files share mounted at `/data` | Standard LRS |
@@ -116,14 +116,30 @@ deploy/azure/deploy.sh -g rkp --providers-file ../.rkp-store/providers.env --git
 
 Expect roughly USD 40–60 a month, mostly the API replica and PostgreSQL. Model calls are billed separately by use.
 
-- **Access.** The Explorer has no sign-in of its own, so by default only your current public IP may open it (the script asks a public IP-lookup service once). Add addresses with `--allow-ip CIDR`, or open it with `--allow-any`. The API is never exposed outside the environment.
-- **Secrets.** Every run generates new PostgreSQL passwords and a new Explorer-to-API token and passes them as Container App secrets; nothing is written locally. Data is kept across runs.
+- **Access.** With `--entra` (or `--oidc-issuer`, see [Sign-in](#sign-in)) people sign in and the Explorer is open to the internet unless you also pass `--allow-ip`. Without sign-in, only your current public IP may open it (the script asks a public IP-lookup service once); add addresses with `--allow-ip CIDR`, or open it with `--allow-any`. The API is never exposed outside the environment.
+- **Entra app registration.** `--entra` creates or updates `<prefix>-explorer-<group>` in your current tenant: redirect URIs `<url>/auth/callback` and `<url>/auth/signed-out`, app roles `RKP.Admin` and `RKP.Viewer`, user assignment required, and `RKP.Admin` for you. Give others access under Enterprise applications → the app → Users and groups. `az group delete` does not remove the registration; delete it with `az ad app delete`.
+- **Secrets.** Every run generates new PostgreSQL passwords, a new Explorer-to-API token and, with sign-in, a new client secret and session key (everyone signs in again), and passes them as Container App secrets; nothing is written locally. Data is kept across runs.
 - **Models.** `--providers-file` uploads a `providers.env` (the same file used locally). `azure-cli` sign-in becomes `managed-identity`, and the identity is granted "Cognitive Services User" on each Azure AI resource named in the file.
 - **Repositories.** The container has no `gh`. `--github-token-from-gh` mounts your GitHub token for the API; in Settings, add a GitHub token connection with credential reference `managed:github-token`. Local paths cannot be compiled in the hosted API.
 - **Images** are built in the registry (`az acr build`), so local Docker is not needed. `Dockerfile` and `explorer/Dockerfile` also build locally.
 - **Remove everything** with `az group delete -n rkp`.
 
 The API runs against the hosted database through `RKP_DATABASE_URL` (owner connection, used to apply the schema) and `RKP_APP_DB_PASSWORD` (the restricted role it then connects as, so row-level security still applies). `RKP_API_HOST=0.0.0.0` makes it listen inside the container.
+
+## Sign-in
+
+The Explorer can require sign-in with Microsoft Entra ID or any OpenID Connect provider. It is the only public part of RKP, so the login lives there. It uses the authorization code flow with PKCE, a nonce and a signed state cookie. The ID token is verified against the provider's published keys, issuer, audience and lifetime. The session is an HttpOnly, HMAC-signed cookie (8 hours). The Explorer's proxy then tells the internal API who is acting (`X-RKP-Actor`) and with which role (`X-RKP-Role`). The browser cannot set these headers, and the API accepts them only together with the Explorer's token. Reviews and map edits are recorded under the user's sign-in name instead of `local-admin`.
+
+| Variable (Explorer) | |
+|---|---|
+| `RKP_ENTRA_TENANT_ID` | Entra tenant; sets the issuer to `https://login.microsoftonline.com/<tenant>/v2.0` and the user id to tenant + object id |
+| `RKP_OIDC_ISSUER` | any other OIDC issuer (https) |
+| `RKP_OIDC_CLIENT_ID`, `RKP_OIDC_CLIENT_SECRET` | the app registration |
+| `RKP_PUBLIC_URL` | the Explorer's public origin; register `<url>/auth/callback` and `<url>/auth/signed-out` |
+| `RKP_SESSION_SECRET` | at least 32 characters |
+| `RKP_OIDC_ADMIN_ROLES` | optional comma-separated app roles (Entra `roles` claim) or group IDs (`groups`) that may change things; everyone else is read-only. Empty: every signed-in user can |
+
+With neither issuer variable set, sign-in is off and nothing changes locally. A half-configured sign-in refuses every request rather than run open. Read-only users can browse everything. Connecting or compiling repositories, editing the map, reviewing placements and opening Settings return 403. For Entra, prefer app roles over groups: a user in many groups gets a group-overage reference instead of the list.
 
 ## Layout
 

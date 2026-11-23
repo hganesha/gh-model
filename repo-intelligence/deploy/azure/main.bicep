@@ -1,6 +1,6 @@
 // RKP on Azure, small footprint.
 //
-//   Explorer (Container App, public, IP allow-list, scales to zero)
+//   Explorer (Container App, public, optional Entra/OIDC sign-in and IP allow-list, scales to zero)
 //     -> API (Container App, internal only, one replica)
 //          -> PostgreSQL Flexible Server (Burstable B1ms)
 //          -> Azure Files share mounted at /data (object store, git mirrors, providers.env)
@@ -37,6 +37,18 @@ param apiToken string
 @secure()
 @description('Optional GitHub token, mounted for the API as /secrets/github-token (credential reference managed:github-token).')
 param githubToken string = ''
+
+@description('Sign-in for the Explorer: an Entra tenant ID (sets the issuer), or any OIDC issuer URL. Both empty: no sign-in, and the IP allow-list is the only protection.')
+param entraTenantId string = ''
+param oidcIssuer string = ''
+param oidcClientId string = ''
+@secure()
+param oidcClientSecret string = ''
+@secure()
+@description('Signs Explorer session cookies. deploy.sh generates a new one on every run, which signs everyone out.')
+param sessionSecret string = ''
+@description('Comma-separated app roles or group IDs that may change things; everyone else signs in read-only.')
+param oidcAdminRoles string = ''
 
 param apiCpu string = '0.5'
 param apiMemory string = '1Gi'
@@ -169,6 +181,9 @@ var registryLogin = [
   }
 ]
 var hasGithubToken = !empty(githubToken)
+var signIn = !empty(entraTenantId) || !empty(oidcIssuer)
+// Known before the Explorer exists, so the app registration's redirect URIs can be set first.
+var explorerUrl = 'https://${names.explorer}.${environment.properties.defaultDomain}'
 
 resource api 'Microsoft.App/containerApps@2024-03-01' = if (deployApps) {
   name: names.api
@@ -272,7 +287,10 @@ resource explorer 'Microsoft.App/containerApps@2024-03-01' = if (deployApps) {
         }]
       }
       registries: registryLogin
-      secrets: [ { name: 'api-token', value: apiToken } ]
+      secrets: concat([ { name: 'api-token', value: apiToken } ], signIn ? [
+        { name: 'oidc-client-secret', value: oidcClientSecret }
+        { name: 'session-secret', value: sessionSecret }
+      ] : [])
     }
     template: {
       containers: [
@@ -283,10 +301,17 @@ resource explorer 'Microsoft.App/containerApps@2024-03-01' = if (deployApps) {
             cpu: json('0.25')
             memory: '0.5Gi'
           }
-          env: [
+          env: concat([
             { name: 'RKP_API_URL', value: 'http://${names.api}' }
             { name: 'RKP_DEV_TOKEN', secretRef: 'api-token' }
-          ]
+          ], signIn ? [
+            { name: empty(entraTenantId) ? 'RKP_OIDC_ISSUER' : 'RKP_ENTRA_TENANT_ID', value: empty(entraTenantId) ? oidcIssuer : entraTenantId }
+            { name: 'RKP_OIDC_CLIENT_ID', value: oidcClientId }
+            { name: 'RKP_OIDC_CLIENT_SECRET', secretRef: 'oidc-client-secret' }
+            { name: 'RKP_SESSION_SECRET', secretRef: 'session-secret' }
+            { name: 'RKP_PUBLIC_URL', value: explorerUrl }
+            { name: 'RKP_OIDC_ADMIN_ROLES', value: oidcAdminRoles }
+          ] : [])
         }
       ]
       scale: {
@@ -304,4 +329,4 @@ output storageAccount string = storage.name
 output shareName string = names.share
 output identityPrincipalId string = identity.properties.principalId
 output postgresServer string = postgres.name
-output explorerUrl string = deployApps ? 'https://${explorer!.properties.configuration.ingress.fqdn}' : ''
+output explorerUrl string = explorerUrl

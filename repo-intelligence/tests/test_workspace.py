@@ -87,6 +87,27 @@ def test_optimistic_map_write_and_tenant_isolation(workspace):
             business_map.save(conn, "tenant-a", business_map.BusinessMap(id="second"), "intruder")
 
 
+def test_signed_in_user_is_recorded_and_viewers_cannot_change_anything(workspace):
+    """With sign-in on, the Explorer names the user (X-RKP-Actor) and their role (X-RKP-Role)."""
+    client, _, _ = workspace
+    as_user = lambda role, actor="ada@example.test": AUTH | {"X-RKP-Actor": actor, "X-RKP-Role": role}
+    body = {"expected_version": 0, "title": "Value chain"}
+    saved = client.post("/v1/business-maps", headers=as_user("admin"), json=body)
+    assert saved.status_code == 200 and saved.json()["map"]["author"] == "ada@example.test"
+
+    for role in ("viewer", "", "owner"):
+        refused = client.post("/v1/business-maps", headers=as_user(role), json={**body, "expected_version": 1})
+        assert refused.status_code == 403 and refused.json()["code"] == "forbidden"
+    for path in ("repositories", "repositories/x/compilations"):
+        assert client.post(f"/v1/{path}", headers=as_user("viewer"), json={"local_path": "/nowhere"}).status_code == 403
+    assert client.get("/v1/settings", headers=as_user("viewer")).status_code == 403
+    # Viewers still read everything else.
+    assert client.get("/v1/business-maps", headers=as_user("viewer")).status_code == 200
+    # Actor names are printable and bounded; without the token the headers mean nothing.
+    assert client.post("/v1/business-maps", headers=as_user("admin", "x" * 201), json={**body, "expected_version": 1}).status_code == 400
+    assert client.post("/v1/business-maps", headers={"X-RKP-Actor": "ada@example.test", "X-RKP-Role": "admin"}, json=body).status_code == 401
+
+
 def test_placement_confirmation_and_rkp_independence(workspace, tmp_path):
     client, service, model = workspace
     repo = tmp_path / "fixture-repo"
