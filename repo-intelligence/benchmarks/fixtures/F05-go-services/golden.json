@@ -1,0 +1,103 @@
+{
+  "fixture": "F05-go-services",
+  "description": "Go module with two binaries. Exercises the unsupported-language path; the Dockerfile is still a supported build declaration. 'since' names the milestone whose compiler must produce the item.",
+  "entities": [
+    {
+      "kind": "Artifact",
+      "natural_key": {
+        "path": "go.mod"
+      },
+      "since": "M0"
+    },
+    {
+      "kind": "Artifact",
+      "natural_key": {
+        "path": "cmd/gateway/main.go"
+      },
+      "since": "M0"
+    },
+    {
+      "kind": "Artifact",
+      "natural_key": {
+        "path": "internal/store/store.go"
+      },
+      "since": "M0"
+    },
+    {
+      "kind": "Artifact",
+      "natural_key": {
+        "path": "Dockerfile"
+      },
+      "since": "M0"
+    },
+    {
+      "kind": "Package",
+      "natural_key": {
+        "ecosystem": "go",
+        "name": "example.com/shop",
+        "manifest_dir": ""
+      },
+      "since": "M1"
+    },
+    {
+      "kind": "BuildTarget",
+      "natural_key": {
+        "path": "Dockerfile"
+      },
+      "since": "M1"
+    }
+  ],
+  "edges": [],
+  "absent_entities": [],
+  "exclusions": [],
+  "forbidden_kinds": [
+    "Component",
+    "Endpoint",
+    "Table",
+    "Symbol"
+  ],
+  "expected_unknowns": [
+    {
+      "since": "M2",
+      "detail": "component boundaries unknown: cmd/gateway and cmd/billing are not classified because language go is inventory-only"
+    }
+  ],
+  "expected_conflicts": [],
+  "commits": [
+    {
+      "dir": "01-add-route",
+      "expect": "no Endpoint appears: Go routes are not extracted",
+      "added_entities": [],
+      "removed_entities": []
+    },
+    {
+      "dir": "02-add-binary",
+      "expect": "one Artifact added",
+      "added_entities": [
+        {
+          "kind": "Artifact",
+          "natural_key": {
+            "path": "cmd/reporter/main.go"
+          },
+          "since": "M0"
+        }
+      ],
+      "removed_entities": []
+    },
+    {
+      "dir": "03-add-dependency",
+      "expect": "new ExternalDependency from go.mod (M1)",
+      "added_entities": [
+        {
+          "kind": "ExternalDependency",
+          "natural_key": {
+            "ecosystem": "go",
+            "name": "github.com/jackc/pgx/v5"
+          },
+          "since": "M1"
+        }
+      ],
+      "removed_entities": []
+    }
+  ]
+}

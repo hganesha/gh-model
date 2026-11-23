@@ -1,0 +1,15 @@
+openapi: 3.0.3
+info: {title: Catalog API, version: 1.0.0}
+paths:
+  /products:
+    get:
+      operationId: listProducts
+      responses: {"200": {description: ok}}
+  /products/{product_id}:
+    get:
+      operationId: getProduct
+      responses: {"200": {description: ok}}
+  /products/{product_id}/reviews:
+    get:
+      operationId: listReviews
+      responses: {"200": {description: ok}}

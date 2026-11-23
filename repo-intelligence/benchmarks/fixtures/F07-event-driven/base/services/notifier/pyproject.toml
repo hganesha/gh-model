@@ -1,0 +1,6 @@
+[project]
+name = "notifier-service"
+version = "0.1.0"
+dependencies = [
+    "confluent-kafka>=2.10",
+]

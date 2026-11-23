@@ -1,0 +1,148 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "abstain_reason": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Abstain Reason"
+    },
+    "abstained": {
+      "title": "Abstained",
+      "type": "boolean"
+    },
+    "alternatives": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Alternatives",
+      "type": "array"
+    },
+    "attempts": {
+      "default": 1,
+      "title": "Attempts",
+      "type": "integer"
+    },
+    "confidence": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Confidence"
+    },
+    "contradicting_evidence_ids": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Contradicting Evidence Ids",
+      "type": "array"
+    },
+    "decision_id": {
+      "title": "Decision Id",
+      "type": "string"
+    },
+    "decision_method": {
+      "enum": [
+        "rules",
+        "decision_model",
+        "llm",
+        "classifier"
+      ],
+      "title": "Decision Method",
+      "type": "string"
+    },
+    "evidence_ids": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Evidence Ids",
+      "type": "array"
+    },
+    "feature_set_hash": {
+      "title": "Feature Set Hash",
+      "type": "string"
+    },
+    "model_ref": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Model Ref"
+    },
+    "option_scores": {
+      "anyOf": [
+        {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Option Scores"
+    },
+    "rule_outcome": {
+      "enum": [
+        "resolved",
+        "ambiguous",
+        "conflict",
+        "insufficient_evidence"
+      ],
+      "title": "Rule Outcome",
+      "type": "string"
+    },
+    "scope_entity": {
+      "title": "Scope Entity",
+      "type": "string"
+    },
+    "selected_label": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Selected Label"
+    },
+    "spec": {
+      "title": "Spec",
+      "type": "string"
+    }
+  },
+  "required": [
+    "decision_id",
+    "spec",
+    "scope_entity",
+    "feature_set_hash",
+    "rule_outcome",
+    "selected_label",
+    "abstained",
+    "decision_method"
+  ],
+  "title": "DecisionResult",
+  "type": "object"
+}

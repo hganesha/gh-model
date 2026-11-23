@@ -1,0 +1,7 @@
+services:
+  api:
+    build: .
+    environment:
+      DATABASE_URL: postgresql://db/status
+  db:
+    image: postgres:17

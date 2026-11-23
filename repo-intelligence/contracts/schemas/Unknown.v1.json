@@ -1,0 +1,44 @@
+{
+  "additionalProperties": false,
+  "description": "A question that was asked and has no answer. Never equivalent to false.",
+  "properties": {
+    "coverage_ref": {
+      "title": "Coverage Ref",
+      "type": "string"
+    },
+    "id": {
+      "title": "Id",
+      "type": "string"
+    },
+    "predicate": {
+      "title": "Predicate",
+      "type": "string"
+    },
+    "reason": {
+      "title": "Reason",
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "unknown",
+        "not_observed"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "subject": {
+      "title": "Subject",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "subject",
+    "predicate",
+    "status",
+    "reason",
+    "coverage_ref"
+  ],
+  "title": "Unknown",
+  "type": "object"
+}

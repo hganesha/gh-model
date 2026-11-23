@@ -1,0 +1,210 @@
+{
+  "fixture": "F03-python-ts-hybrid",
+  "description": "Python backend plus TypeScript frontend sharing an OpenAPI contract. 'since' names the milestone whose compiler must produce the item.",
+  "entities": [
+    {
+      "kind": "Package",
+      "natural_key": {
+        "ecosystem": "pypi",
+        "name": "catalog-backend",
+        "manifest_dir": "backend"
+      },
+      "since": "M0"
+    },
+    {
+      "kind": "ExternalDependency",
+      "natural_key": {
+        "ecosystem": "pypi",
+        "name": "fastapi"
+      },
+      "since": "M0"
+    },
+    {
+      "kind": "ExternalDependency",
+      "natural_key": {
+        "ecosystem": "pypi",
+        "name": "uvicorn"
+      },
+      "since": "M0"
+    },
+    {
+      "kind": "Artifact",
+      "natural_key": {
+        "path": "backend/catalog/main.py"
+      },
+      "since": "M0"
+    },
+    {
+      "kind": "Artifact",
+      "natural_key": {
+        "path": "frontend/src/App.tsx"
+      },
+      "since": "M0"
+    },
+    {
+      "kind": "Artifact",
+      "natural_key": {
+        "path": "openapi.yaml"
+      },
+      "since": "M0"
+    },
+    {
+      "kind": "Package",
+      "natural_key": {
+        "ecosystem": "npm",
+        "name": "catalog-frontend",
+        "manifest_dir": "frontend"
+      },
+      "since": "M1"
+    },
+    {
+      "kind": "Component",
+      "natural_key": {
+        "root": "backend"
+      },
+      "attributes": {
+        "component_kind": "service"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "Component",
+      "natural_key": {
+        "root": "frontend"
+      },
+      "attributes": {
+        "component_kind": "frontend_app"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "Endpoint",
+      "natural_key": {
+        "component_root": "backend",
+        "protocol": "http",
+        "method": "GET",
+        "route": "/products"
+      },
+      "since": "M1"
+    },
+    {
+      "kind": "Interface",
+      "natural_key": {
+        "path": "openapi.yaml",
+        "title": "Catalog API"
+      },
+      "since": "M1"
+    }
+  ],
+  "edges": [
+    {
+      "subject": {
+        "kind": "Package",
+        "natural_key": {
+          "ecosystem": "pypi",
+          "name": "catalog-backend",
+          "manifest_dir": "backend"
+        }
+      },
+      "predicate": "DEPENDS_ON",
+      "object": {
+        "kind": "ExternalDependency",
+        "natural_key": {
+          "ecosystem": "pypi",
+          "name": "fastapi"
+        }
+      },
+      "since": "M0"
+    },
+    {
+      "subject": {
+        "kind": "Package",
+        "natural_key": {
+          "ecosystem": "pypi",
+          "name": "catalog-backend",
+          "manifest_dir": "backend"
+        }
+      },
+      "predicate": "CONTAINS",
+      "object": {
+        "kind": "Artifact",
+        "natural_key": {
+          "path": "backend/catalog/main.py"
+        }
+      },
+      "since": "M0"
+    },
+    {
+      "subject": {
+        "kind": "Component",
+        "natural_key": {
+          "root": "frontend"
+        }
+      },
+      "predicate": "CONSUMES",
+      "object": {
+        "kind": "Endpoint",
+        "natural_key": {
+          "component_root": "backend",
+          "protocol": "http",
+          "method": "GET",
+          "route": "/products"
+        }
+      },
+      "since": "M2"
+    }
+  ],
+  "absent_entities": [
+    {
+      "kind": "Package",
+      "natural_key": {
+        "ecosystem": "pypi",
+        "name": "catalog-backend",
+        "manifest_dir": ""
+      },
+      "why": "the package lives in backend/, not at the root"
+    }
+  ],
+  "exclusions": [],
+  "forbidden_kinds": [],
+  "expected_unknowns": [],
+  "expected_conflicts": [
+    {
+      "type": "declared_vs_implemented",
+      "at_commit": 2,
+      "since": "M2",
+      "detail": "GET /products/{product_id}/reviews is declared in openapi.yaml and has no handler"
+    }
+  ],
+  "commits": [
+    {
+      "dir": "01-add-endpoint",
+      "expect": "new Endpoint matched between contract and code",
+      "added_entities": [
+        {
+          "kind": "Endpoint",
+          "natural_key": {
+            "component_root": "backend",
+            "protocol": "http",
+            "method": "GET",
+            "route": "/products/{product_id}"
+          },
+          "since": "M1"
+        }
+      ],
+      "removed_entities": []
+    },
+    {
+      "dir": "02-contract-ahead-of-code",
+      "expect": "declared_vs_implemented conflict opened; no Endpoint implementation invented",
+      "added_entities": [],
+      "removed_entities": []
+    },
+    {
+      "dir": "03-frontend-calls-new-endpoint",
+      "expect": "frontend CONSUMES edge moves to the single-product endpoint (M2)",
+      "added_entities": [],
+      "removed_entities": []
+    }
+  ]
+}

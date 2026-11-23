@@ -1,0 +1,177 @@
+{
+  "$defs": {
+    "AssertionKind": {
+      "enum": [
+        "observed_fact",
+        "derived_relation",
+        "inferred_relation",
+        "hypothesis"
+      ],
+      "title": "AssertionKind",
+      "type": "string"
+    },
+    "EpistemicStatus": {
+      "enum": [
+        "verified",
+        "supported",
+        "inferred"
+      ],
+      "title": "EpistemicStatus",
+      "type": "string"
+    },
+    "EvidenceClass": {
+      "description": "Ordered strongest to weakest; compare with `evidence_rank`.",
+      "enum": [
+        "E1",
+        "E2",
+        "E3",
+        "E4",
+        "E5"
+      ],
+      "title": "EvidenceClass",
+      "type": "string"
+    },
+    "Predicate": {
+      "enum": [
+        "CONTAINS",
+        "DEFINED_IN",
+        "IMPLEMENTS",
+        "EXPOSES",
+        "CONSUMES",
+        "CALLS",
+        "DEPENDS_ON",
+        "READS_FROM",
+        "WRITES_TO",
+        "PUBLISHES_TO",
+        "SUBSCRIBES_TO",
+        "CONFIGURED_BY",
+        "REFERENCES_CONFIG",
+        "MIGRATES",
+        "BUILT_BY",
+        "DEPLOYED_AS",
+        "DEPLOYED_TO",
+        "TESTED_BY",
+        "OWNED_BY",
+        "ALIAS_OF"
+      ],
+      "title": "Predicate",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "assertion_kind": {
+      "$ref": "#/$defs/AssertionKind"
+    },
+    "confidence": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Confidence"
+    },
+    "counterevidence_ids": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Counterevidence Ids",
+      "type": "array"
+    },
+    "decision_ref": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Decision Ref"
+    },
+    "epistemic_status": {
+      "$ref": "#/$defs/EpistemicStatus"
+    },
+    "evidence_class": {
+      "$ref": "#/$defs/EvidenceClass"
+    },
+    "evidence_ids": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Evidence Ids",
+      "type": "array"
+    },
+    "id": {
+      "title": "Id",
+      "type": "string"
+    },
+    "object": {
+      "title": "Object",
+      "type": "string"
+    },
+    "predicate": {
+      "$ref": "#/$defs/Predicate"
+    },
+    "qualifiers": {
+      "additionalProperties": true,
+      "default": {},
+      "title": "Qualifiers",
+      "type": "object"
+    },
+    "resolution": {
+      "default": "exact",
+      "enum": [
+        "exact",
+        "candidate"
+      ],
+      "title": "Resolution",
+      "type": "string"
+    },
+    "sensitivity": {
+      "default": "internal",
+      "enum": [
+        "public",
+        "internal",
+        "restricted"
+      ],
+      "title": "Sensitivity",
+      "type": "string"
+    },
+    "subject": {
+      "title": "Subject",
+      "type": "string"
+    },
+    "verification_ref": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Verification Ref"
+    }
+  },
+  "required": [
+    "id",
+    "subject",
+    "predicate",
+    "object",
+    "assertion_kind",
+    "epistemic_status",
+    "evidence_class",
+    "evidence_ids"
+  ],
+  "title": "Assertion",
+  "type": "object"
+}

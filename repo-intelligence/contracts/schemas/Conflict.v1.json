@@ -1,0 +1,67 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "assertion_ids": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Assertion Ids",
+      "type": "array"
+    },
+    "basis": {
+      "title": "Basis",
+      "type": "string"
+    },
+    "conflict_type": {
+      "enum": [
+        "functional_violation",
+        "declared_vs_implemented",
+        "label_disagreement",
+        "identity_ambiguity"
+      ],
+      "title": "Conflict Type",
+      "type": "string"
+    },
+    "evidence_ids": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Evidence Ids",
+      "type": "array"
+    },
+    "id": {
+      "title": "Id",
+      "type": "string"
+    },
+    "preferred": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Preferred"
+    },
+    "subject_ids": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Subject Ids",
+      "type": "array"
+    }
+  },
+  "required": [
+    "id",
+    "conflict_type",
+    "evidence_ids",
+    "basis"
+  ],
+  "title": "Conflict",
+  "type": "object"
+}

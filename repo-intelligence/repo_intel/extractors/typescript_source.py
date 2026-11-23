@@ -1,0 +1,371 @@
+"""TypeScript / JavaScript source: Express routes, Next.js App Router handlers,
+process.env config keys, and linker observations (imports, exported symbols,
+fetch calls).
+
+Parsing is done with tree-sitter only; repository code is never executed.
+Configuration VALUES are never copied: a ConfigKey carries its name, and an
+http_call carries only the static path text of the URL (no query string, no
+userinfo, interpolations replaced by "{}").
+"""
+
+from __future__ import annotations
+
+import posixpath
+import re
+from functools import cache
+
+from ..ontology import EntityKind, Predicate
+from .base import PACKAGE, UNIT, Extraction, diagnostic, entity, obs, ref, relation, span
+
+EXTENSIONS = (".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs")
+EXPRESS_METHODS = {"get", "post", "put", "patch", "delete"}
+NEXT_METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"}
+NEXT_ROUTE_FILES = {"route.ts", "route.js", "route.tsx"}
+_ROUTERISH = re.compile(r"(app|router|routes?|api|server)$", re.I)
+_ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_USERINFO = re.compile(r"^([A-Za-z][A-Za-z0-9+.-]*://)[^/@]*@")
+_DECLARATIONS = {
+    "function_declaration": "function", "generator_function_declaration": "function", "function_signature": "function",
+    "class_declaration": "class", "abstract_class_declaration": "class",
+    "interface_declaration": "interface", "type_alias_declaration": "type", "enum_declaration": "enum",
+    "lexical_declaration": "const", "variable_declaration": "const",
+}
+
+
+@cache
+def _parser(grammar: str):
+    from tree_sitter import Language, Parser
+
+    if grammar == "javascript":
+        import tree_sitter_javascript
+
+        return Parser(Language(tree_sitter_javascript.language()))
+    import tree_sitter_typescript
+
+    return Parser(Language(tree_sitter_typescript.language_tsx() if grammar == "tsx" else tree_sitter_typescript.language_typescript()))
+
+
+def _grammar(path: str) -> str:
+    ext = posixpath.splitext(path)[1].lower()
+    return "tsx" if ext in (".tsx", ".jsx") else "typescript" if ext == ".ts" else "javascript"
+
+
+def next_route(path: str) -> str | None:
+    """URL path of a Next.js App Router `route` file, or None if it is not one."""
+    parts = path.split("/")
+    if parts[-1] not in NEXT_ROUTE_FILES or "app" not in parts[:-1]:
+        return None
+    last_app = len(parts) - 2 - parts[-2::-1].index("app")
+    segments = [s for s in parts[last_app + 1 : -1] if not (s.startswith("(") and s.endswith(")")) and not s.startswith("@")]
+    return "/" + "/".join(segments)
+
+
+def _text(node) -> str:
+    return node.text.decode("utf-8", "replace")
+
+
+def _string(node) -> str | None:
+    """Value of a string literal, or of a template literal without interpolation."""
+    if node is None:
+        return None
+    if node.type == "string":
+        return _text(node)[1:-1]
+    if node.type == "template_string" and not any(c.type == "template_substitution" for c in node.children):
+        return _text(node)[1:-1]
+    return None
+
+
+def _template(data: bytes, node) -> str:
+    out, at = [], node.start_byte + 1
+    for c in node.children:
+        if c.type == "template_substitution":
+            out.append(data[at : c.start_byte].decode("utf-8", "replace") + "{}")
+            at = c.end_byte
+    out.append(data[at : node.end_byte - 1].decode("utf-8", "replace"))
+    return "".join(out)
+
+
+def _static_path(text: str) -> str:
+    """Drop the parts of a URL that can carry secrets: userinfo, query, fragment."""
+    text = _USERINFO.sub(r"\1", text)
+    return re.split(r"[?#]", text, maxsplit=1)[0]
+
+
+def _args(call) -> list:
+    arguments = call.child_by_field_name("arguments")
+    return [c for c in arguments.named_children if c.type != "comment"] if arguments is not None and arguments.type == "arguments" else []
+
+
+def _tail_name(node) -> str | None:
+    """`app` for `app`, `router` for `this.router`."""
+    if node is None:
+        return None
+    if node.type == "identifier":
+        return _text(node)
+    if node.type == "member_expression":
+        prop = node.child_by_field_name("property")
+        return _text(prop) if prop is not None else None
+    return None
+
+
+def _is_process_env(node) -> bool:
+    if node is None or node.type != "member_expression":
+        return False
+    o, p = node.child_by_field_name("object"), node.child_by_field_name("property")
+    return o is not None and p is not None and o.type == "identifier" and o.text == b"process" and p.text == b"env"
+
+
+def _walk(root):
+    stack = [root]
+    while stack:
+        node = stack.pop()
+        yield node
+        stack.extend(reversed(node.children))
+
+
+class TypeScriptSource:
+    id = "typescript.source"
+    version = "1.0.0"
+
+    def matches(self, path: str) -> bool:
+        return path.lower().endswith(EXTENSIONS)
+
+    def extract(self, path: str, data: bytes, blob: str) -> Extraction:
+        tree = _parser(_grammar(path)).parse(data)
+        root = tree.root_node
+        out = Extraction()
+        if root.has_error:
+            # tree-sitter recovers around errors; what it still found is kept.
+            out.diagnostics.append(diagnostic(self.id, "warning", "syntax errors: extraction may be incomplete"))
+            out.parsed = False
+        nodes = list(_walk(root))
+        at = lambda a, b: span(data, a.start_byte, b.end_byte)
+
+        self._imports(nodes, blob, at, out)
+        self._symbols(root, blob, at, out)
+        self._config(nodes, blob, at, out)
+        self._fetch(nodes, data, blob, at, out)
+        if self._uses_express(nodes):
+            self._express(nodes, blob, at, out)
+        route = next_route(path)
+        if route is not None:
+            self._next(root, route, blob, at, out)
+        return out
+
+    # -- imports -----------------------------------------------------------
+
+    def _imports(self, nodes, blob, at, out):
+        for n in nodes:
+            if n.type == "import_statement":
+                source = _string(n.child_by_field_name("source"))
+                if source is None:
+                    continue
+                names = []
+                for clause in (c for c in n.children if c.type == "import_clause"):
+                    for c in clause.children:
+                        if c.type == "identifier":
+                            names.append("default")
+                        elif c.type == "namespace_import":
+                            names.append("*")
+                        elif c.type == "named_imports":
+                            names += [_text(s.child_by_field_name("name")) for s in c.named_children if s.type == "import_specifier" and s.child_by_field_name("name") is not None]
+                out.observations.append(obs("import", blob, at(n, n), {"specifier": source, "names": names, "form": "import"}, ast_node_kind=n.type))
+            elif n.type == "export_statement" and n.child_by_field_name("source") is not None:
+                source = _string(n.child_by_field_name("source"))
+                if source is None:
+                    continue
+                names = []
+                for c in n.children:
+                    if c.type == "*" or c.type == "namespace_export":
+                        names.append("*")
+                    elif c.type == "export_clause":
+                        names += [_text(s.child_by_field_name("name")) for s in c.named_children if s.type == "export_specifier" and s.child_by_field_name("name") is not None]
+                out.observations.append(obs("import", blob, at(n, n), {"specifier": source, "names": names, "form": "reexport"}, ast_node_kind=n.type))
+            elif n.type == "call_expression":
+                fn = n.child_by_field_name("function")
+                if fn is None or not ((fn.type == "identifier" and fn.text == b"require") or fn.type == "import"):
+                    continue
+                args = _args(n)
+                source = _string(args[0]) if args else None
+                if source is not None:
+                    out.observations.append(obs("import", blob, at(n, n), {"specifier": source, "names": [], "form": "require" if fn.type == "identifier" else "dynamic"}, ast_node_kind=n.type))
+
+    def _uses_express(self, nodes) -> bool:
+        for n in nodes:
+            if n.type == "import_statement" and _string(n.child_by_field_name("source")) == "express":
+                return True
+            if n.type == "import_require_clause" and any(_string(c) == "express" for c in n.children):
+                return True
+            if n.type == "call_expression":
+                fn = n.child_by_field_name("function")
+                if fn is not None and fn.type == "identifier" and fn.text == b"require":
+                    args = _args(n)
+                    if args and _string(args[0]) == "express":
+                        return True
+        return False
+
+    # -- exported symbols --------------------------------------------------
+
+    def _exports(self, root):
+        """(name, symbol_kind, export statement, name node) for each top-level export."""
+        for st in root.children:
+            if st.type != "export_statement" or st.child_by_field_name("source") is not None:
+                continue
+            is_default = any(c.type == "default" for c in st.children)
+            decl = st.child_by_field_name("declaration")
+            if decl is not None and decl.type in _DECLARATIONS:
+                if decl.type in ("lexical_declaration", "variable_declaration"):
+                    for d in decl.named_children:
+                        name = d.child_by_field_name("name") if d.type == "variable_declarator" else None
+                        if name is not None and name.type == "identifier":
+                            yield _text(name), "const", st, name
+                else:
+                    name = decl.child_by_field_name("name")
+                    if name is not None:
+                        yield _text(name), _DECLARATIONS[decl.type], st, name
+                    elif is_default:
+                        yield "default", _DECLARATIONS[decl.type], st, decl
+                continue
+            if is_default:
+                value = st.child_by_field_name("value")
+                if value is not None:
+                    kind = {"arrow_function": "function", "function_expression": "function", "function": "function", "class": "class"}.get(value.type, "const")
+                    yield "default", kind, st, value
+                continue
+            for clause in (c for c in st.children if c.type == "export_clause"):
+                for s in clause.named_children:
+                    if s.type == "export_specifier":
+                        name = s.child_by_field_name("alias") or s.child_by_field_name("name")
+                        if name is not None:
+                            yield _text(name), "const", s, name
+
+    def _symbols(self, root, blob, at, out):
+        for name, kind, st, name_node in self._exports(root):
+            end = name_node if name_node.type in ("identifier", "type_identifier") else st
+            out.observations.append(obs("symbol", blob, at(st, end), {"name": name, "symbol_kind": kind}, ast_node_kind=st.type))
+
+    # -- configuration keys (names only) -----------------------------------
+
+    def _config(self, nodes, blob, at, out):
+        seen: set[str] = set()
+
+        def add(name: str, node):
+            if name in seen or not _ENV_NAME.match(name):
+                return
+            seen.add(name)
+            key = ref(EntityKind.CONFIG_KEY, {"name": name}, name)
+            out.observations.append(entity(blob, at(node, node), EntityKind.CONFIG_KEY, {"name": name}, name))
+            out.observations.append(relation(blob, at(node, node), PACKAGE, Predicate.REFERENCES_CONFIG, key))
+
+        for n in nodes:
+            if n.type == "member_expression" and _is_process_env(n.child_by_field_name("object")):
+                prop = n.child_by_field_name("property")
+                if prop is not None and prop.type == "property_identifier":
+                    add(_text(prop), n)
+            elif n.type == "subscript_expression" and _is_process_env(n.child_by_field_name("object")):
+                name = _string(n.child_by_field_name("index"))
+                if name is not None:
+                    add(name, n)
+            elif n.type == "variable_declarator" and _is_process_env(n.child_by_field_name("value")):
+                pattern = n.child_by_field_name("name")
+                if pattern is not None and pattern.type == "object_pattern":
+                    for p in pattern.named_children:
+                        if p.type == "shorthand_property_identifier_pattern":
+                            add(_text(p), p)
+                        elif p.type in ("pair_pattern", "object_assignment_pattern"):
+                            k = p.child_by_field_name("key") or p.child_by_field_name("left")
+                            if k is not None and k.type in ("property_identifier", "shorthand_property_identifier_pattern"):
+                                add(_text(k), k)
+
+    # -- outbound HTTP calls ------------------------------------------------
+
+    def _fetch(self, nodes, data, blob, at, out):
+        for n in nodes:
+            if n.type != "call_expression":
+                continue
+            fn = n.child_by_field_name("function")
+            if fn is None:
+                continue
+            direct = fn.type == "identifier" and fn.text == b"fetch"
+            scoped = fn.type == "member_expression" and _tail_name(fn) == "fetch" and _text(fn.child_by_field_name("object")) in ("window", "globalThis", "self")
+            args = _args(n)
+            if not (direct or scoped) or not args:
+                continue
+            first = args[0]
+            if first.type == "string":
+                text = _text(first)[1:-1]
+            elif first.type == "template_string":
+                text = _template(data, first)
+            else:
+                continue
+            out.observations.append(obs("http_call", blob, at(fn, first), {"path": _static_path(text)}, ast_node_kind=n.type))
+
+    # -- Express ------------------------------------------------------------
+
+    def _express(self, nodes, blob, at, out):
+        routers: set[str] = set()
+        for n in nodes:
+            if n.type == "variable_declarator":
+                value, name = n.child_by_field_name("value"), n.child_by_field_name("name")
+                fn = value.child_by_field_name("function") if value is not None and value.type == "call_expression" else None
+                if fn is not None and name is not None and name.type == "identifier" and _text(fn) in ("express", "express.Router", "Router"):
+                    routers.add(_text(name))
+        for n in nodes:
+            if n.type != "call_expression":
+                continue
+            fn = n.child_by_field_name("function")
+            prop = fn.child_by_field_name("property") if fn is not None and fn.type == "member_expression" else None
+            if prop is None or _text(prop) not in EXPRESS_METHODS:
+                continue
+            method, args, receiver = _text(prop).upper(), _args(n), fn.child_by_field_name("object")
+            handler = _text(args[-1]) if args and args[-1].type == "identifier" else None
+
+            # router.route("/x").get(h).post(h)
+            base = receiver
+            while base is not None and base.type == "call_expression":
+                inner = base.child_by_field_name("function")
+                inner_prop = inner.child_by_field_name("property") if inner is not None and inner.type == "member_expression" else None
+                if inner_prop is None:
+                    base = None
+                elif _text(inner_prop) == "route":
+                    break
+                elif _text(inner_prop) in EXPRESS_METHODS | {"all"}:
+                    base = inner.child_by_field_name("object")
+                else:
+                    base = None
+            if base is not None and base.type == "call_expression":
+                route_args = _args(base)
+                route = _string(route_args[0]) if route_args else None
+                if route is None:
+                    out.diagnostics.append(diagnostic(self.id, "info", f"line {n.start_point[0] + 1}: express {method} route path is not a string literal; no Endpoint emitted"))
+                elif args:
+                    self._endpoint(blob, at(base, base), method, route, "express", handler, out)
+                continue
+
+            name = _tail_name(receiver)
+            known = name in routers
+            if len(args) < 2:
+                continue  # app.get("setting") reads a setting; a route needs a handler
+            route = _string(args[0])
+            if route is None:
+                if known or (name and _ROUTERISH.search(name)):
+                    out.diagnostics.append(diagnostic(self.id, "info", f"line {n.start_point[0] + 1}: express {method} route path is not a string literal; no Endpoint emitted"))
+                continue
+            if not known and not route.startswith(("/", "*")):
+                continue  # e.g. cache.get("key", fallback) on something that is not a router
+            self._endpoint(blob, at(fn, args[0]), method, route, "express", handler, out)
+
+    # -- Next.js App Router ---------------------------------------------------
+
+    def _next(self, root, route, blob, at, out):
+        for name, kind, st, name_node in self._exports(root):
+            if name in NEXT_METHODS and kind in ("function", "const"):
+                self._endpoint(blob, at(st, name_node), name, route, "next", name, out)
+
+    def _endpoint(self, blob, where, method, route, framework, handler, out):
+        key = {"component_root": UNIT, "protocol": "http", "method": method, "route": route}
+        out.observations.append(entity(blob, where, EntityKind.ENDPOINT, key, f"{method} {route}", {"framework": framework}))
+        out.observations.append(obs("route_handler", blob, where, {"framework": framework, "method": method, "route": route, "handler": handler}))
+
+
+EXTRACTORS = [TypeScriptSource()]

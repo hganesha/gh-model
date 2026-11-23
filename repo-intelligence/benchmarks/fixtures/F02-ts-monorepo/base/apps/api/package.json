@@ -1,0 +1,12 @@
+{
+  "name": "@acme/api",
+  "private": true,
+  "scripts": {
+    "start": "node dist/server.js"
+  },
+  "dependencies": {
+    "express": "5.1.0",
+    "@prisma/client": "6.9.0",
+    "@acme/shared": "workspace:*"
+  }
+}

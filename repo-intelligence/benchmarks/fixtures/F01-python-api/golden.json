@@ -1,0 +1,243 @@
+{
+  "fixture": "F01-python-api",
+  "description": "Single-package Python API (FastAPI + SQLAlchemy). 'since' names the milestone whose compiler must produce the item.",
+  "entities": [
+    {
+      "kind": "Package",
+      "natural_key": {
+        "ecosystem": "pypi",
+        "name": "orders-api",
+        "manifest_dir": ""
+      },
+      "since": "M0"
+    },
+    {
+      "kind": "ExternalDependency",
+      "natural_key": {
+        "ecosystem": "pypi",
+        "name": "fastapi"
+      },
+      "since": "M0"
+    },
+    {
+      "kind": "ExternalDependency",
+      "natural_key": {
+        "ecosystem": "pypi",
+        "name": "sqlalchemy"
+      },
+      "since": "M0"
+    },
+    {
+      "kind": "ExternalDependency",
+      "natural_key": {
+        "ecosystem": "pypi",
+        "name": "httpx"
+      },
+      "since": "M0"
+    },
+    {
+      "kind": "Artifact",
+      "natural_key": {
+        "path": "app/main.py"
+      },
+      "since": "M0"
+    },
+    {
+      "kind": "Artifact",
+      "natural_key": {
+        "path": "app/models.py"
+      },
+      "since": "M0"
+    },
+    {
+      "kind": "Artifact",
+      "natural_key": {
+        "path": "Dockerfile"
+      },
+      "since": "M0"
+    },
+    {
+      "kind": "Component",
+      "natural_key": {
+        "root": ""
+      },
+      "attributes": {
+        "component_kind": "service"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "Endpoint",
+      "natural_key": {
+        "component_root": "",
+        "protocol": "http",
+        "method": "GET",
+        "route": "/customers"
+      },
+      "since": "M1"
+    },
+    {
+      "kind": "Endpoint",
+      "natural_key": {
+        "component_root": "",
+        "protocol": "http",
+        "method": "POST",
+        "route": "/customers"
+      },
+      "since": "M1"
+    },
+    {
+      "kind": "Table",
+      "natural_key": {
+        "datastore": "default",
+        "name": "customers"
+      },
+      "since": "M1"
+    }
+  ],
+  "edges": [
+    {
+      "subject": {
+        "kind": "Package",
+        "natural_key": {
+          "ecosystem": "pypi",
+          "name": "orders-api",
+          "manifest_dir": ""
+        }
+      },
+      "predicate": "DEPENDS_ON",
+      "object": {
+        "kind": "ExternalDependency",
+        "natural_key": {
+          "ecosystem": "pypi",
+          "name": "fastapi"
+        }
+      },
+      "since": "M0"
+    },
+    {
+      "subject": {
+        "kind": "Package",
+        "natural_key": {
+          "ecosystem": "pypi",
+          "name": "orders-api",
+          "manifest_dir": ""
+        }
+      },
+      "predicate": "DEPENDS_ON",
+      "object": {
+        "kind": "ExternalDependency",
+        "natural_key": {
+          "ecosystem": "pypi",
+          "name": "sqlalchemy"
+        }
+      },
+      "since": "M0"
+    },
+    {
+      "subject": {
+        "kind": "Package",
+        "natural_key": {
+          "ecosystem": "pypi",
+          "name": "orders-api",
+          "manifest_dir": ""
+        }
+      },
+      "predicate": "CONTAINS",
+      "object": {
+        "kind": "Artifact",
+        "natural_key": {
+          "path": "app/main.py"
+        }
+      },
+      "since": "M0"
+    }
+  ],
+  "absent_entities": [
+    {
+      "kind": "Artifact",
+      "natural_key": {
+        "path": "docs-outside"
+      },
+      "why": "symlink escaping the root is recorded as an exclusion, never read"
+    },
+    {
+      "kind": "ExternalDependency",
+      "natural_key": {
+        "ecosystem": "pypi",
+        "name": "pydantic-settings"
+      },
+      "why": "only present from commit 02 onward"
+    }
+  ],
+  "exclusions": [
+    {
+      "path": "docs-outside",
+      "reason": "symlink"
+    }
+  ],
+  "commits": [
+    {
+      "dir": "01-add-column",
+      "expect": "only the unit shard changes; ExternalDependency set unchanged",
+      "added_entities": [
+        {
+          "kind": "Field",
+          "natural_key": {
+            "table": "customers",
+            "name": "display_name"
+          },
+          "since": "M1"
+        }
+      ],
+      "removed_entities": []
+    },
+    {
+      "dir": "02-add-dependency",
+      "expect": "ExternalDependency pydantic-settings and its DEPENDS_ON edge are added",
+      "added_entities": [
+        {
+          "kind": "ExternalDependency",
+          "natural_key": {
+            "ecosystem": "pypi",
+            "name": "pydantic-settings"
+          },
+          "since": "M0"
+        }
+      ],
+      "removed_entities": []
+    },
+    {
+      "dir": "03-move-module",
+      "expect": "Artifact app/models.py removed, app/domain/models.py added (lineage 'moved' from M3)",
+      "added_entities": [
+        {
+          "kind": "Artifact",
+          "natural_key": {
+            "path": "app/domain/models.py"
+          },
+          "since": "M0"
+        }
+      ],
+      "removed_entities": [
+        {
+          "kind": "Artifact",
+          "natural_key": {
+            "path": "app/models.py"
+          },
+          "since": "M0"
+        }
+      ]
+    }
+  ],
+  "forbidden_kinds": [],
+  "expected_unknowns": [],
+  "expected_conflicts": [],
+  "secret_probes": [
+    {
+      "path": ".env.example",
+      "must_never_appear": "AKIAIOSFODNN7EXAMPLE",
+      "since": "M1"
+    }
+  ]
+}

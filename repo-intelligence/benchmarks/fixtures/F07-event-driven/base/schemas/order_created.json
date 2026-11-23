@@ -1,0 +1,16 @@
+{
+  "$id": "orders.created",
+  "type": "object",
+  "required": [
+    "id",
+    "sku"
+  ],
+  "properties": {
+    "id": {
+      "type": "integer"
+    },
+    "sku": {
+      "type": "string"
+    }
+  }
+}

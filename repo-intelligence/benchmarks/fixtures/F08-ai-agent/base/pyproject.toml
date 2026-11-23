@@ -1,0 +1,7 @@
+[project]
+name = "support-agent"
+version = "0.1.0"
+dependencies = [
+    "anthropic>=0.60",
+    "pyyaml>=6",
+]

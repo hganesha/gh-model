@@ -1,0 +1,260 @@
+{
+  "fixture": "F06-iac-heavy",
+  "description": "Infrastructure-heavy repository: Dockerfile, compose, Kubernetes, Terraform, GitHub Actions (acceptance test 4). 'since' names the milestone whose compiler must produce the item.",
+  "entities": [
+    {
+      "kind": "Package",
+      "natural_key": {
+        "ecosystem": "pypi",
+        "name": "status-api",
+        "manifest_dir": ""
+      },
+      "since": "M0"
+    },
+    {
+      "kind": "ExternalDependency",
+      "natural_key": {
+        "ecosystem": "pypi",
+        "name": "flask"
+      },
+      "since": "M0"
+    },
+    {
+      "kind": "Artifact",
+      "natural_key": {
+        "path": "k8s/deployment.yaml"
+      },
+      "since": "M0"
+    },
+    {
+      "kind": "Artifact",
+      "natural_key": {
+        "path": "terraform/main.tf"
+      },
+      "since": "M0"
+    },
+    {
+      "kind": "Artifact",
+      "natural_key": {
+        "path": "terraform/modules/network/main.tf"
+      },
+      "since": "M0"
+    },
+    {
+      "kind": "Artifact",
+      "natural_key": {
+        "path": ".github/workflows/deploy.yml"
+      },
+      "since": "M0"
+    },
+    {
+      "kind": "DeploymentUnit",
+      "natural_key": {
+        "kind": "k8s.Deployment",
+        "namespace": "prod",
+        "name": "status-api"
+      },
+      "since": "M1"
+    },
+    {
+      "kind": "BuildTarget",
+      "natural_key": {
+        "path": "Dockerfile"
+      },
+      "since": "M1"
+    },
+    {
+      "kind": "Pipeline",
+      "natural_key": {
+        "path": ".github/workflows/deploy.yml",
+        "name": "deploy"
+      },
+      "since": "M1"
+    },
+    {
+      "kind": "InfrastructureResource",
+      "natural_key": {
+        "provider": "terraform",
+        "type": "aws_db_instance",
+        "name": "status"
+      },
+      "since": "M1"
+    },
+    {
+      "kind": "InfrastructureResource",
+      "natural_key": {
+        "provider": "terraform",
+        "type": "aws_vpc",
+        "name": "main",
+        "module": "network"
+      },
+      "since": "M1"
+    },
+    {
+      "kind": "Environment",
+      "natural_key": {
+        "name": "prod"
+      },
+      "since": "M1"
+    },
+    {
+      "kind": "ConfigKey",
+      "natural_key": {
+        "name": "DATABASE_URL"
+      },
+      "since": "M1"
+    },
+    {
+      "kind": "Component",
+      "natural_key": {
+        "root": ""
+      },
+      "attributes": {
+        "component_kind": "service"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "Endpoint",
+      "natural_key": {
+        "component_root": "",
+        "protocol": "http",
+        "method": "GET",
+        "route": "/status"
+      },
+      "since": "M5"
+    }
+  ],
+  "edges": [
+    {
+      "subject": {
+        "kind": "Package",
+        "natural_key": {
+          "ecosystem": "pypi",
+          "name": "status-api",
+          "manifest_dir": ""
+        }
+      },
+      "predicate": "DEPENDS_ON",
+      "object": {
+        "kind": "ExternalDependency",
+        "natural_key": {
+          "ecosystem": "pypi",
+          "name": "flask"
+        }
+      },
+      "since": "M0"
+    },
+    {
+      "subject": {
+        "kind": "Component",
+        "natural_key": {
+          "root": ""
+        }
+      },
+      "predicate": "DEPLOYED_AS",
+      "object": {
+        "kind": "DeploymentUnit",
+        "natural_key": {
+          "kind": "k8s.Deployment",
+          "namespace": "prod",
+          "name": "status-api"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "DeploymentUnit",
+        "natural_key": {
+          "kind": "k8s.Deployment",
+          "namespace": "prod",
+          "name": "status-api"
+        }
+      },
+      "predicate": "DEPLOYED_TO",
+      "object": {
+        "kind": "Environment",
+        "natural_key": {
+          "name": "prod"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "DeploymentUnit",
+        "natural_key": {
+          "kind": "k8s.Deployment",
+          "namespace": "prod",
+          "name": "status-api"
+        }
+      },
+      "predicate": "REFERENCES_CONFIG",
+      "object": {
+        "kind": "ConfigKey",
+        "natural_key": {
+          "name": "DATABASE_URL"
+        }
+      },
+      "since": "M2"
+    }
+  ],
+  "absent_entities": [
+    {
+      "kind": "Environment",
+      "natural_key": {
+        "name": "production-observed"
+      },
+      "why": "declared deployment is never recorded as observed runtime state, whatever the README claims"
+    }
+  ],
+  "exclusions": [],
+  "forbidden_kinds": [],
+  "expected_unknowns": [],
+  "expected_conflicts": [],
+  "commits": [
+    {
+      "dir": "01-bump-image",
+      "expect": "DeploymentUnit image attribute changes; no entity added or removed",
+      "added_entities": [],
+      "removed_entities": []
+    },
+    {
+      "dir": "02-change-network-module",
+      "expect": "shared Terraform module change widens recompute to its consumers (M1)",
+      "added_entities": [],
+      "removed_entities": []
+    },
+    {
+      "dir": "03-add-staging",
+      "expect": "second DeploymentUnit and Environment staging",
+      "added_entities": [
+        {
+          "kind": "Artifact",
+          "natural_key": {
+            "path": "k8s/staging/deployment.yaml"
+          },
+          "since": "M0"
+        },
+        {
+          "kind": "DeploymentUnit",
+          "natural_key": {
+            "kind": "k8s.Deployment",
+            "namespace": "staging",
+            "name": "status-api"
+          },
+          "since": "M1"
+        },
+        {
+          "kind": "Environment",
+          "natural_key": {
+            "name": "staging"
+          },
+          "since": "M1"
+        }
+      ],
+      "removed_entities": []
+    }
+  ]
+}

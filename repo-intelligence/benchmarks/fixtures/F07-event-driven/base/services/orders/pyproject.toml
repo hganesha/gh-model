@@ -1,0 +1,7 @@
+[project]
+name = "orders-service"
+version = "0.1.0"
+dependencies = [
+    "confluent-kafka>=2.10",
+    "fastapi>=0.115",
+]

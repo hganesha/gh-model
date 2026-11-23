@@ -1,0 +1,119 @@
+{
+  "$defs": {
+    "ShardRef": {
+      "additionalProperties": false,
+      "properties": {
+        "digest": {
+          "title": "Digest",
+          "type": "string"
+        },
+        "unit": {
+          "title": "Unit",
+          "type": "string"
+        }
+      },
+      "required": [
+        "unit",
+        "digest"
+      ],
+      "title": "ShardRef",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "commit_sha": {
+      "title": "Commit Sha",
+      "type": "string"
+    },
+    "conflicts_ref": {
+      "title": "Conflicts Ref",
+      "type": "string"
+    },
+    "content_hash": {
+      "title": "Content Hash",
+      "type": "string"
+    },
+    "coverage_ref": {
+      "title": "Coverage Ref",
+      "type": "string"
+    },
+    "ledger_entries_ref": {
+      "title": "Ledger Entries Ref",
+      "type": "string"
+    },
+    "override_set_hash": {
+      "title": "Override Set Hash",
+      "type": "string"
+    },
+    "provenance_hash": {
+      "title": "Provenance Hash",
+      "type": "string"
+    },
+    "repository_id": {
+      "title": "Repository Id",
+      "type": "string"
+    },
+    "rkp_hash": {
+      "title": "Rkp Hash",
+      "type": "string"
+    },
+    "rkp_schema": {
+      "title": "Rkp Schema",
+      "type": "string"
+    },
+    "shards": {
+      "items": {
+        "$ref": "#/$defs/ShardRef"
+      },
+      "title": "Shards",
+      "type": "array"
+    },
+    "source_tree_hash": {
+      "title": "Source Tree Hash",
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "complete",
+        "partial",
+        "failed",
+        "retracted"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "tenant_id": {
+      "title": "Tenant Id",
+      "type": "string"
+    },
+    "toolchain_hash": {
+      "title": "Toolchain Hash",
+      "type": "string"
+    },
+    "unknowns_ref": {
+      "title": "Unknowns Ref",
+      "type": "string"
+    }
+  },
+  "required": [
+    "rkp_schema",
+    "tenant_id",
+    "repository_id",
+    "commit_sha",
+    "source_tree_hash",
+    "toolchain_hash",
+    "override_set_hash",
+    "shards",
+    "coverage_ref",
+    "conflicts_ref",
+    "unknowns_ref",
+    "ledger_entries_ref",
+    "status",
+    "content_hash",
+    "provenance_hash",
+    "rkp_hash"
+  ],
+  "title": "Manifest",
+  "type": "object"
+}

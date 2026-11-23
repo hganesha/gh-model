@@ -1,0 +1,421 @@
+{
+  "fixture": "F02-ts-monorepo",
+  "description": "TypeScript monorepo: three apps and two shared packages (acceptance test 1). 'since' names the milestone whose compiler must produce the item.",
+  "entities": [
+    {
+      "kind": "Artifact",
+      "natural_key": {
+        "path": "apps/api/src/server.ts"
+      },
+      "since": "M0"
+    },
+    {
+      "kind": "Artifact",
+      "natural_key": {
+        "path": "packages/shared/src/types.ts"
+      },
+      "since": "M0"
+    },
+    {
+      "kind": "Artifact",
+      "natural_key": {
+        "path": "scripts/release.sh"
+      },
+      "since": "M0"
+    },
+    {
+      "kind": "Artifact",
+      "natural_key": {
+        "path": ".github/workflows/ci.yml"
+      },
+      "since": "M0"
+    },
+    {
+      "kind": "Package",
+      "natural_key": {
+        "ecosystem": "npm",
+        "name": "@acme/web",
+        "manifest_dir": "apps/web"
+      },
+      "since": "M1"
+    },
+    {
+      "kind": "Package",
+      "natural_key": {
+        "ecosystem": "npm",
+        "name": "@acme/api",
+        "manifest_dir": "apps/api"
+      },
+      "since": "M1"
+    },
+    {
+      "kind": "Package",
+      "natural_key": {
+        "ecosystem": "npm",
+        "name": "@acme/worker",
+        "manifest_dir": "apps/worker"
+      },
+      "since": "M1"
+    },
+    {
+      "kind": "Package",
+      "natural_key": {
+        "ecosystem": "npm",
+        "name": "@acme/ui",
+        "manifest_dir": "packages/ui"
+      },
+      "since": "M1"
+    },
+    {
+      "kind": "Package",
+      "natural_key": {
+        "ecosystem": "npm",
+        "name": "@acme/shared",
+        "manifest_dir": "packages/shared"
+      },
+      "since": "M1"
+    },
+    {
+      "kind": "Package",
+      "natural_key": {
+        "ecosystem": "npm",
+        "name": "acme-monorepo",
+        "manifest_dir": ""
+      },
+      "since": "M1"
+    },
+    {
+      "kind": "ExternalDependency",
+      "natural_key": {
+        "ecosystem": "npm",
+        "name": "express"
+      },
+      "since": "M1"
+    },
+    {
+      "kind": "ExternalDependency",
+      "natural_key": {
+        "ecosystem": "npm",
+        "name": "next"
+      },
+      "since": "M1"
+    },
+    {
+      "kind": "Component",
+      "natural_key": {
+        "root": "apps/web"
+      },
+      "attributes": {
+        "component_kind": "frontend_app"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "Component",
+      "natural_key": {
+        "root": "apps/api"
+      },
+      "attributes": {
+        "component_kind": "service"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "Component",
+      "natural_key": {
+        "root": "apps/worker"
+      },
+      "attributes": {
+        "component_kind": "worker"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "Component",
+      "natural_key": {
+        "root": "packages/ui"
+      },
+      "attributes": {
+        "component_kind": "library"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "Component",
+      "natural_key": {
+        "root": "packages/shared"
+      },
+      "attributes": {
+        "component_kind": "library"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "Endpoint",
+      "natural_key": {
+        "component_root": "apps/api",
+        "protocol": "http",
+        "method": "GET",
+        "route": "/orders"
+      },
+      "since": "M1"
+    },
+    {
+      "kind": "Endpoint",
+      "natural_key": {
+        "component_root": "apps/api",
+        "protocol": "http",
+        "method": "POST",
+        "route": "/orders"
+      },
+      "since": "M1"
+    },
+    {
+      "kind": "Endpoint",
+      "natural_key": {
+        "component_root": "apps/web",
+        "protocol": "http",
+        "method": "GET",
+        "route": "/api/health"
+      },
+      "since": "M1"
+    },
+    {
+      "kind": "Table",
+      "natural_key": {
+        "datastore": "default",
+        "name": "orders"
+      },
+      "since": "M1"
+    },
+    {
+      "kind": "Pipeline",
+      "natural_key": {
+        "path": ".github/workflows/ci.yml",
+        "name": "ci"
+      },
+      "since": "M1"
+    },
+    {
+      "kind": "BuildTarget",
+      "natural_key": {
+        "path": "apps/api/Dockerfile"
+      },
+      "since": "M1"
+    }
+  ],
+  "edges": [
+    {
+      "subject": {
+        "kind": "Package",
+        "natural_key": {
+          "ecosystem": "npm",
+          "name": "@acme/api",
+          "manifest_dir": "apps/api"
+        }
+      },
+      "predicate": "DEPENDS_ON",
+      "object": {
+        "kind": "Package",
+        "natural_key": {
+          "ecosystem": "npm",
+          "name": "@acme/shared",
+          "manifest_dir": "packages/shared"
+        }
+      },
+      "since": "M1"
+    },
+    {
+      "subject": {
+        "kind": "Package",
+        "natural_key": {
+          "ecosystem": "npm",
+          "name": "@acme/web",
+          "manifest_dir": "apps/web"
+        }
+      },
+      "predicate": "DEPENDS_ON",
+      "object": {
+        "kind": "Package",
+        "natural_key": {
+          "ecosystem": "npm",
+          "name": "@acme/ui",
+          "manifest_dir": "packages/ui"
+        }
+      },
+      "since": "M1"
+    },
+    {
+      "subject": {
+        "kind": "Package",
+        "natural_key": {
+          "ecosystem": "npm",
+          "name": "@acme/web",
+          "manifest_dir": "apps/web"
+        }
+      },
+      "predicate": "DEPENDS_ON",
+      "object": {
+        "kind": "Package",
+        "natural_key": {
+          "ecosystem": "npm",
+          "name": "@acme/shared",
+          "manifest_dir": "packages/shared"
+        }
+      },
+      "since": "M1"
+    },
+    {
+      "subject": {
+        "kind": "Package",
+        "natural_key": {
+          "ecosystem": "npm",
+          "name": "@acme/worker",
+          "manifest_dir": "apps/worker"
+        }
+      },
+      "predicate": "DEPENDS_ON",
+      "object": {
+        "kind": "Package",
+        "natural_key": {
+          "ecosystem": "npm",
+          "name": "@acme/shared",
+          "manifest_dir": "packages/shared"
+        }
+      },
+      "since": "M1"
+    },
+    {
+      "subject": {
+        "kind": "Component",
+        "natural_key": {
+          "root": "apps/api"
+        }
+      },
+      "predicate": "WRITES_TO",
+      "object": {
+        "kind": "Table",
+        "natural_key": {
+          "datastore": "default",
+          "name": "orders"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Component",
+        "natural_key": {
+          "root": "apps/web"
+        }
+      },
+      "predicate": "CONSUMES",
+      "object": {
+        "kind": "Endpoint",
+        "natural_key": {
+          "component_root": "apps/api",
+          "protocol": "http",
+          "method": "GET",
+          "route": "/orders"
+        }
+      },
+      "since": "M2"
+    }
+  ],
+  "absent_entities": [
+    {
+      "kind": "Component",
+      "natural_key": {
+        "root": "scripts"
+      },
+      "why": "shared files are not forced into a component"
+    },
+    {
+      "kind": "Artifact",
+      "natural_key": {
+        "path": "node_modules/left-pad/index.js"
+      },
+      "why": "vendored tree is excluded"
+    }
+  ],
+  "exclusions": [
+    {
+      "path": "node_modules/left-pad/index.js",
+      "reason": "vendored_or_generated_dir"
+    }
+  ],
+  "forbidden_kinds": [],
+  "expected_unknowns": [],
+  "expected_conflicts": [],
+  "commits": [
+    {
+      "dir": "01-add-route",
+      "expect": "one new Endpoint; only the apps/api shard changes",
+      "added_entities": [
+        {
+          "kind": "Endpoint",
+          "natural_key": {
+            "component_root": "apps/api",
+            "protocol": "http",
+            "method": "DELETE",
+            "route": "/orders/:id"
+          },
+          "since": "M1"
+        }
+      ],
+      "removed_entities": []
+    },
+    {
+      "dir": "02-change-shared-type",
+      "expect": "shared interface digest changes; api, web and worker re-link (from M1)",
+      "added_entities": [],
+      "removed_entities": []
+    },
+    {
+      "dir": "03-rename-ui-package",
+      "expect": "Package @acme/ui gets a new id (manifest_dir changed); lineage 'moved' from M3",
+      "added_entities": [
+        {
+          "kind": "Artifact",
+          "natural_key": {
+            "path": "packages/design/src/Button.tsx"
+          },
+          "since": "M0"
+        },
+        {
+          "kind": "Package",
+          "natural_key": {
+            "ecosystem": "npm",
+            "name": "@acme/ui",
+            "manifest_dir": "packages/design"
+          },
+          "since": "M1"
+        }
+      ],
+      "removed_entities": [
+        {
+          "kind": "Artifact",
+          "natural_key": {
+            "path": "packages/ui/src/Button.tsx"
+          },
+          "since": "M0"
+        },
+        {
+          "kind": "Package",
+          "natural_key": {
+            "ecosystem": "npm",
+            "name": "@acme/ui",
+            "manifest_dir": "packages/ui"
+          },
+          "since": "M1"
+        }
+      ]
+    },
+    {
+      "dir": "04-base-tsconfig",
+      "expect": "cross-cutting config change widens recompute; graph content unchanged",
+      "added_entities": [],
+      "removed_entities": []
+    }
+  ]
+}

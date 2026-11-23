@@ -1,0 +1,37 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "denominator": {
+      "minimum": 0,
+      "title": "Denominator",
+      "type": "integer"
+    },
+    "detail": {
+      "additionalProperties": true,
+      "default": {},
+      "title": "Detail",
+      "type": "object"
+    },
+    "domain": {
+      "title": "Domain",
+      "type": "string"
+    },
+    "numerator": {
+      "minimum": 0,
+      "title": "Numerator",
+      "type": "integer"
+    },
+    "scope": {
+      "title": "Scope",
+      "type": "string"
+    }
+  },
+  "required": [
+    "domain",
+    "scope",
+    "numerator",
+    "denominator"
+  ],
+  "title": "CoverageEntry",
+  "type": "object"
+}

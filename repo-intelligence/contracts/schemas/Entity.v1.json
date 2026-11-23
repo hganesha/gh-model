@@ -1,0 +1,78 @@
+{
+  "$defs": {
+    "EntityKind": {
+      "enum": [
+        "Repository",
+        "Artifact",
+        "Package",
+        "Component",
+        "Symbol",
+        "Interface",
+        "Endpoint",
+        "EventTopic",
+        "DataSchema",
+        "Table",
+        "Field",
+        "Migration",
+        "StorageResource",
+        "ConfigKey",
+        "AIComponent",
+        "ModelEndpoint",
+        "PromptArtifact",
+        "InfrastructureResource",
+        "DeploymentUnit",
+        "Environment",
+        "BuildTarget",
+        "Pipeline",
+        "Test",
+        "Owner",
+        "ExternalDependency",
+        "Feature",
+        "Requirement"
+      ],
+      "title": "EntityKind",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "attributes": {
+      "additionalProperties": true,
+      "default": {},
+      "title": "Attributes",
+      "type": "object"
+    },
+    "evidence_ids": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Evidence Ids",
+      "type": "array"
+    },
+    "id": {
+      "title": "Id",
+      "type": "string"
+    },
+    "kind": {
+      "$ref": "#/$defs/EntityKind"
+    },
+    "name": {
+      "title": "Name",
+      "type": "string"
+    },
+    "natural_key": {
+      "additionalProperties": true,
+      "title": "Natural Key",
+      "type": "object"
+    }
+  },
+  "required": [
+    "id",
+    "kind",
+    "natural_key",
+    "name"
+  ],
+  "title": "Entity",
+  "type": "object"
+}

@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "api",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": ["-c", "cd repo-intelligence && exec .venv/bin/python -m repo_intel.serve"],
+      "port": 8787
+    },
+    {
+      "name": "explorer",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": ["-c", "cd repo-intelligence/explorer && exec npm run dev"],
+      "port": 3100
+    }
+  ]
+}

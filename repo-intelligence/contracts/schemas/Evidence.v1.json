@@ -1,0 +1,100 @@
+{
+  "$defs": {
+    "Span": {
+      "additionalProperties": false,
+      "properties": {
+        "end_byte": {
+          "minimum": 0,
+          "title": "End Byte",
+          "type": "integer"
+        },
+        "end_line": {
+          "minimum": 1,
+          "title": "End Line",
+          "type": "integer"
+        },
+        "start_byte": {
+          "minimum": 0,
+          "title": "Start Byte",
+          "type": "integer"
+        },
+        "start_line": {
+          "minimum": 1,
+          "title": "Start Line",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "start_byte",
+        "end_byte",
+        "start_line",
+        "end_line"
+      ],
+      "title": "Span",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Keyed by content, not by commit. No source text is stored here.",
+  "properties": {
+    "ast_node_kind": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Ast Node Kind"
+    },
+    "blob_sha256": {
+      "title": "Blob Sha256",
+      "type": "string"
+    },
+    "id": {
+      "title": "Id",
+      "type": "string"
+    },
+    "observation_kind": {
+      "title": "Observation Kind",
+      "type": "string"
+    },
+    "secret_masked": {
+      "default": false,
+      "title": "Secret Masked",
+      "type": "boolean"
+    },
+    "sensitivity": {
+      "default": "internal",
+      "enum": [
+        "public",
+        "internal",
+        "restricted"
+      ],
+      "title": "Sensitivity",
+      "type": "string"
+    },
+    "span": {
+      "$ref": "#/$defs/Span"
+    },
+    "trust_label": {
+      "default": "untrusted_data",
+      "enum": [
+        "untrusted_data",
+        "untrusted_generated"
+      ],
+      "title": "Trust Label",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "blob_sha256",
+    "span",
+    "observation_kind"
+  ],
+  "title": "Evidence",
+  "type": "object"
+}

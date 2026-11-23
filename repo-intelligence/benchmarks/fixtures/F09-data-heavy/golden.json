@@ -1,0 +1,338 @@
+{
+  "fixture": "F09-data-heavy",
+  "description": "ORM models, migrations and raw SQL (acceptance tests 2 and 5). Dynamic SQL must stay unresolved. 'since' names the milestone whose compiler must produce the item.",
+  "entities": [
+    {
+      "kind": "Package",
+      "natural_key": {
+        "ecosystem": "pypi",
+        "name": "warehouse",
+        "manifest_dir": ""
+      },
+      "since": "M0"
+    },
+    {
+      "kind": "ExternalDependency",
+      "natural_key": {
+        "ecosystem": "pypi",
+        "name": "sqlalchemy"
+      },
+      "since": "M0"
+    },
+    {
+      "kind": "ExternalDependency",
+      "natural_key": {
+        "ecosystem": "pypi",
+        "name": "alembic"
+      },
+      "since": "M0"
+    },
+    {
+      "kind": "Artifact",
+      "natural_key": {
+        "path": "app/models.py"
+      },
+      "since": "M0"
+    },
+    {
+      "kind": "Artifact",
+      "natural_key": {
+        "path": "migrations/versions/0002_orders.py"
+      },
+      "since": "M0"
+    },
+    {
+      "kind": "Artifact",
+      "natural_key": {
+        "path": "sql/reports.sql"
+      },
+      "since": "M0"
+    },
+    {
+      "kind": "Table",
+      "natural_key": {
+        "datastore": "default",
+        "name": "customers"
+      },
+      "since": "M1"
+    },
+    {
+      "kind": "Table",
+      "natural_key": {
+        "datastore": "default",
+        "name": "orders"
+      },
+      "since": "M1"
+    },
+    {
+      "kind": "Table",
+      "natural_key": {
+        "datastore": "default",
+        "name": "order_items"
+      },
+      "since": "M1"
+    },
+    {
+      "kind": "Field",
+      "natural_key": {
+        "table": "customers",
+        "name": "email"
+      },
+      "since": "M1"
+    },
+    {
+      "kind": "Field",
+      "natural_key": {
+        "table": "orders",
+        "name": "total_cents"
+      },
+      "since": "M1"
+    },
+    {
+      "kind": "Field",
+      "natural_key": {
+        "table": "orders",
+        "name": "customer_id"
+      },
+      "since": "M1"
+    },
+    {
+      "kind": "Migration",
+      "natural_key": {
+        "tool": "alembic",
+        "revision": "0001_init"
+      },
+      "since": "M1"
+    },
+    {
+      "kind": "Migration",
+      "natural_key": {
+        "tool": "alembic",
+        "revision": "0002_orders"
+      },
+      "since": "M1"
+    },
+    {
+      "kind": "DataSchema",
+      "natural_key": {
+        "kind": "view",
+        "name": "customer_totals"
+      },
+      "since": "M1"
+    }
+  ],
+  "edges": [
+    {
+      "subject": {
+        "kind": "Package",
+        "natural_key": {
+          "ecosystem": "pypi",
+          "name": "warehouse",
+          "manifest_dir": ""
+        }
+      },
+      "predicate": "DEPENDS_ON",
+      "object": {
+        "kind": "ExternalDependency",
+        "natural_key": {
+          "ecosystem": "pypi",
+          "name": "sqlalchemy"
+        }
+      },
+      "since": "M0"
+    },
+    {
+      "subject": {
+        "kind": "Package",
+        "natural_key": {
+          "ecosystem": "pypi",
+          "name": "warehouse",
+          "manifest_dir": ""
+        }
+      },
+      "predicate": "CONTAINS",
+      "object": {
+        "kind": "Artifact",
+        "natural_key": {
+          "path": "app/models.py"
+        }
+      },
+      "since": "M0"
+    },
+    {
+      "subject": {
+        "kind": "Migration",
+        "natural_key": {
+          "tool": "alembic",
+          "revision": "0002_orders"
+        }
+      },
+      "predicate": "MIGRATES",
+      "object": {
+        "kind": "Table",
+        "natural_key": {
+          "datastore": "default",
+          "name": "orders"
+        }
+      },
+      "since": "M1"
+    },
+    {
+      "subject": {
+        "kind": "Symbol",
+        "natural_key": {
+          "package": "warehouse",
+          "qualified_name": "app.repo.add_customer"
+        }
+      },
+      "predicate": "WRITES_TO",
+      "object": {
+        "kind": "Table",
+        "natural_key": {
+          "datastore": "default",
+          "name": "customers"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Symbol",
+        "natural_key": {
+          "package": "warehouse",
+          "qualified_name": "app.repo.orders_for"
+        }
+      },
+      "predicate": "READS_FROM",
+      "object": {
+        "kind": "Table",
+        "natural_key": {
+          "datastore": "default",
+          "name": "orders"
+        }
+      },
+      "since": "M2"
+    }
+  ],
+  "absent_entities": [
+    {
+      "kind": "Table",
+      "natural_key": {
+        "datastore": "default",
+        "name": "shipments"
+      },
+      "why": "only present from commit 02 onward"
+    }
+  ],
+  "exclusions": [],
+  "forbidden_kinds": [],
+  "expected_unknowns": [
+    {
+      "since": "M2",
+      "detail": "app.repo.count_rows READS_FROM is unknown: table name is built at runtime"
+    }
+  ],
+  "expected_conflicts": [
+    {
+      "type": "declared_vs_implemented",
+      "at_commit": 3,
+      "since": "M2",
+      "detail": "view customer_totals still references orders.total_cents after the rename"
+    }
+  ],
+  "commits": [
+    {
+      "dir": "01-add-column",
+      "expect": "Field customers.phone and a Migration; previous snapshot unchanged (acceptance test 5)",
+      "added_entities": [
+        {
+          "kind": "Artifact",
+          "natural_key": {
+            "path": "migrations/versions/0003_customer_phone.py"
+          },
+          "since": "M0"
+        },
+        {
+          "kind": "Field",
+          "natural_key": {
+            "table": "customers",
+            "name": "phone"
+          },
+          "since": "M1"
+        },
+        {
+          "kind": "Migration",
+          "natural_key": {
+            "tool": "alembic",
+            "revision": "0003_customer_phone"
+          },
+          "since": "M1"
+        }
+      ],
+      "removed_entities": []
+    },
+    {
+      "dir": "02-add-table",
+      "expect": "Table shipments with its fields and a Migration",
+      "added_entities": [
+        {
+          "kind": "Artifact",
+          "natural_key": {
+            "path": "migrations/versions/0004_shipments.py"
+          },
+          "since": "M0"
+        },
+        {
+          "kind": "Table",
+          "natural_key": {
+            "datastore": "default",
+            "name": "shipments"
+          },
+          "since": "M1"
+        }
+      ],
+      "removed_entities": []
+    },
+    {
+      "dir": "03-rename-column",
+      "expect": "Field identity changes; stale view opens a conflict (M2)",
+      "added_entities": [
+        {
+          "kind": "Artifact",
+          "natural_key": {
+            "path": "migrations/versions/0005_rename_total.py"
+          },
+          "since": "M0"
+        },
+        {
+          "kind": "Field",
+          "natural_key": {
+            "table": "orders",
+            "name": "amount_cents"
+          },
+          "since": "M1"
+        }
+      ],
+      "removed_entities": [
+        {
+          "kind": "Field",
+          "natural_key": {
+            "table": "orders",
+            "name": "total_cents"
+          },
+          "since": "M1"
+        }
+      ]
+    }
+  ],
+  "decision_cases": [
+    {
+      "spec": "dm.component-kind",
+      "scope_root": "",
+      "rule_outcome": "ambiguous",
+      "why": "models and migrations only: could be a library or the data layer of a service",
+      "human_label": "library",
+      "since": "M2"
+    }
+  ]
+}

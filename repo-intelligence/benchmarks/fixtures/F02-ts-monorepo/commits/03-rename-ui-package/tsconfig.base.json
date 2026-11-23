@@ -1,0 +1,14 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "baseUrl": ".",
+    "paths": {
+      "@acme/shared": [
+        "packages/shared/src/index.ts"
+      ],
+      "@acme/ui": [
+        "packages/design/src/index.ts"
+      ]
+    }
+  }
+}

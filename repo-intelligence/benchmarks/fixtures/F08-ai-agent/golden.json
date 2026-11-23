@@ -1,0 +1,238 @@
+{
+  "fixture": "F08-ai-agent",
+  "description": "Tool-using agent application (acceptance test 3): SDK client, configured model, prompt artifact, planted fake key. 'since' names the milestone whose compiler must produce the item.",
+  "entities": [
+    {
+      "kind": "Package",
+      "natural_key": {
+        "ecosystem": "pypi",
+        "name": "support-agent",
+        "manifest_dir": ""
+      },
+      "since": "M0"
+    },
+    {
+      "kind": "ExternalDependency",
+      "natural_key": {
+        "ecosystem": "pypi",
+        "name": "anthropic"
+      },
+      "since": "M0"
+    },
+    {
+      "kind": "ExternalDependency",
+      "natural_key": {
+        "ecosystem": "pypi",
+        "name": "pyyaml"
+      },
+      "since": "M0"
+    },
+    {
+      "kind": "Artifact",
+      "natural_key": {
+        "path": "agent/client.py"
+      },
+      "since": "M0"
+    },
+    {
+      "kind": "Artifact",
+      "natural_key": {
+        "path": "prompts/system.md"
+      },
+      "since": "M0"
+    },
+    {
+      "kind": "Artifact",
+      "natural_key": {
+        "path": "config/models.yaml"
+      },
+      "since": "M0"
+    },
+    {
+      "kind": "Artifact",
+      "natural_key": {
+        "path": ".env.example"
+      },
+      "since": "M0"
+    },
+    {
+      "kind": "AIComponent",
+      "natural_key": {
+        "component_root": "",
+        "sdk": "anthropic"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "ModelEndpoint",
+      "natural_key": {
+        "provider": "anthropic",
+        "model": "claude-sonnet-5-5"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "PromptArtifact",
+      "natural_key": {
+        "path": "prompts/system.md"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "ConfigKey",
+      "natural_key": {
+        "name": "ANTHROPIC_API_KEY"
+      },
+      "since": "M1"
+    },
+    {
+      "kind": "Component",
+      "natural_key": {
+        "root": ""
+      },
+      "since": "M2"
+    }
+  ],
+  "edges": [
+    {
+      "subject": {
+        "kind": "Package",
+        "natural_key": {
+          "ecosystem": "pypi",
+          "name": "support-agent",
+          "manifest_dir": ""
+        }
+      },
+      "predicate": "DEPENDS_ON",
+      "object": {
+        "kind": "ExternalDependency",
+        "natural_key": {
+          "ecosystem": "pypi",
+          "name": "anthropic"
+        }
+      },
+      "since": "M0"
+    },
+    {
+      "subject": {
+        "kind": "Package",
+        "natural_key": {
+          "ecosystem": "pypi",
+          "name": "support-agent",
+          "manifest_dir": ""
+        }
+      },
+      "predicate": "CONTAINS",
+      "object": {
+        "kind": "Artifact",
+        "natural_key": {
+          "path": "prompts/system.md"
+        }
+      },
+      "since": "M0"
+    },
+    {
+      "subject": {
+        "kind": "AIComponent",
+        "natural_key": {
+          "component_root": "",
+          "sdk": "anthropic"
+        }
+      },
+      "predicate": "CONSUMES",
+      "object": {
+        "kind": "ModelEndpoint",
+        "natural_key": {
+          "provider": "anthropic",
+          "model": "claude-sonnet-5-5"
+        }
+      },
+      "since": "M2"
+    }
+  ],
+  "absent_entities": [
+    {
+      "kind": "ExternalDependency",
+      "natural_key": {
+        "ecosystem": "pypi",
+        "name": "chromadb"
+      },
+      "why": "only present from commit 03 onward"
+    }
+  ],
+  "exclusions": [],
+  "forbidden_kinds": [],
+  "expected_unknowns": [],
+  "expected_conflicts": [],
+  "commits": [
+    {
+      "dir": "01-change-model",
+      "expect": "ModelEndpoint identity changes with the configured model",
+      "added_entities": [
+        {
+          "kind": "ModelEndpoint",
+          "natural_key": {
+            "provider": "anthropic",
+            "model": "claude-opus-5-5"
+          },
+          "since": "M2"
+        }
+      ],
+      "removed_entities": [
+        {
+          "kind": "ModelEndpoint",
+          "natural_key": {
+            "provider": "anthropic",
+            "model": "claude-sonnet-5-5"
+          },
+          "since": "M2"
+        }
+      ]
+    },
+    {
+      "dir": "02-add-tool",
+      "expect": "tool edge added (M2); packages unchanged",
+      "added_entities": [],
+      "removed_entities": []
+    },
+    {
+      "dir": "03-add-vector-store",
+      "expect": "new dependency and a StorageResource for the vector store (M2)",
+      "added_entities": [
+        {
+          "kind": "ExternalDependency",
+          "natural_key": {
+            "ecosystem": "pypi",
+            "name": "chromadb"
+          },
+          "since": "M0"
+        },
+        {
+          "kind": "Artifact",
+          "natural_key": {
+            "path": "agent/memory.py"
+          },
+          "since": "M0"
+        }
+      ],
+      "removed_entities": []
+    }
+  ],
+  "secret_probes": [
+    {
+      "path": ".env.example",
+      "must_never_appear": "sk-ant-fixture-EXAMPLE-0000000000000000000000000000",
+      "since": "M1"
+    }
+  ],
+  "decision_cases": [
+    {
+      "spec": "dm.component-kind",
+      "scope_root": "",
+      "rule_outcome": "ambiguous",
+      "why": "no endpoints, no server framework, no entry point declared: rules cannot tell a service from a library or CLI",
+      "human_label": "service",
+      "since": "M2"
+    }
+  ]
+}

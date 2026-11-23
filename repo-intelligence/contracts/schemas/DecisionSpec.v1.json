@@ -1,0 +1,203 @@
+{
+  "$defs": {
+    "StrategyStep": {
+      "additionalProperties": false,
+      "properties": {
+        "accept_threshold": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Accept Threshold"
+        },
+        "criteria_ref": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Criteria Ref"
+        },
+        "kind": {
+          "enum": [
+            "rules",
+            "decision_model",
+            "llm",
+            "classifier"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "max_evidence_spans": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Evidence Spans"
+        },
+        "min_margin": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Min Margin"
+        },
+        "model_ref": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model Ref"
+        },
+        "permutations": {
+          "default": 0,
+          "title": "Permutations",
+          "type": "integer"
+        },
+        "prompt_ref": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prompt Ref"
+        },
+        "ruleset": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ruleset"
+        },
+        "when": {
+          "default": "always",
+          "enum": [
+            "always",
+            "ambiguous"
+          ],
+          "title": "When",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "title": "StrategyStep",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "abstain_required_if_missing": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Abstain Required If Missing",
+      "type": "array"
+    },
+    "feature_sources": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Feature Sources",
+      "type": "array"
+    },
+    "id": {
+      "title": "Id",
+      "type": "string"
+    },
+    "input_schema": {
+      "title": "Input Schema",
+      "type": "string"
+    },
+    "labels": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 2,
+      "title": "Labels",
+      "type": "array"
+    },
+    "max_attempts": {
+      "default": 2,
+      "title": "Max Attempts",
+      "type": "integer"
+    },
+    "max_input_bytes": {
+      "default": 30000,
+      "title": "Max Input Bytes",
+      "type": "integer"
+    },
+    "output_schema": {
+      "title": "Output Schema",
+      "type": "string"
+    },
+    "scope": {
+      "title": "Scope",
+      "type": "string"
+    },
+    "strategy": {
+      "items": {
+        "$ref": "#/$defs/StrategyStep"
+      },
+      "minItems": 1,
+      "title": "Strategy",
+      "type": "array"
+    },
+    "verification": {
+      "title": "Verification",
+      "type": "string"
+    },
+    "version": {
+      "title": "Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "version",
+    "scope",
+    "input_schema",
+    "output_schema",
+    "labels",
+    "feature_sources",
+    "strategy",
+    "verification"
+  ],
+  "title": "DecisionSpec",
+  "type": "object"
+}

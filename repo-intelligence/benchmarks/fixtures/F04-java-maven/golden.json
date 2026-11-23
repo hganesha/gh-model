@@ -1,0 +1,99 @@
+{
+  "fixture": "F04-java-maven",
+  "description": "Java Maven multi-module project. Exercises the unsupported-language path (acceptance test 9): inventory and coverage warnings, no invented components. 'since' names the milestone whose compiler must produce the item.",
+  "entities": [
+    {
+      "kind": "Artifact",
+      "natural_key": {
+        "path": "pom.xml"
+      },
+      "since": "M0"
+    },
+    {
+      "kind": "Artifact",
+      "natural_key": {
+        "path": "service/src/main/java/com/example/ledger/service/LedgerController.java"
+      },
+      "since": "M0"
+    },
+    {
+      "kind": "Package",
+      "natural_key": {
+        "ecosystem": "maven",
+        "name": "com.example.ledger:ledger-service",
+        "manifest_dir": "service"
+      },
+      "since": "M1"
+    },
+    {
+      "kind": "Package",
+      "natural_key": {
+        "ecosystem": "maven",
+        "name": "com.example.ledger:ledger-core",
+        "manifest_dir": "core"
+      },
+      "since": "M1"
+    }
+  ],
+  "edges": [],
+  "absent_entities": [],
+  "exclusions": [],
+  "forbidden_kinds": [
+    "Component",
+    "Endpoint",
+    "Table",
+    "Symbol"
+  ],
+  "expected_unknowns": [
+    {
+      "since": "M2",
+      "detail": "component boundary and interfaces unknown for every Maven module: language java is inventory-only"
+    }
+  ],
+  "expected_conflicts": [],
+  "commits": [
+    {
+      "dir": "01-add-class",
+      "expect": "one Artifact added; nothing else",
+      "added_entities": [
+        {
+          "kind": "Artifact",
+          "natural_key": {
+            "path": "core/src/main/java/com/example/ledger/core/Account.java"
+          },
+          "since": "M0"
+        }
+      ],
+      "removed_entities": []
+    },
+    {
+      "dir": "02-add-module",
+      "expect": "new Maven Package from manifest only (M1); still no Component",
+      "added_entities": [
+        {
+          "kind": "Artifact",
+          "natural_key": {
+            "path": "batch/pom.xml"
+          },
+          "since": "M0"
+        },
+        {
+          "kind": "Package",
+          "natural_key": {
+            "ecosystem": "maven",
+            "name": "com.example.ledger:ledger-batch",
+            "manifest_dir": "batch"
+          },
+          "since": "M1"
+        }
+      ],
+      "removed_entities": []
+    },
+    {
+      "dir": "03-bump-dependency",
+      "expect": "DEPENDS_ON specifier changes (M1): one assertion removed, one added",
+      "added_entities": [],
+      "removed_entities": []
+    }
+  ]
+}

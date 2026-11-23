@@ -1,0 +1,10 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.example.ledger</groupId>
+  <artifactId>ledger-service</artifactId>
+  <version>1.0.0</version>
+  <dependencies>
+    <dependency><groupId>com.example.ledger</groupId><artifactId>ledger-core</artifactId><version>1.0.0</version></dependency>
+    <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-web</artifactId><version>3.5.0</version></dependency>
+  </dependencies>
+</project>

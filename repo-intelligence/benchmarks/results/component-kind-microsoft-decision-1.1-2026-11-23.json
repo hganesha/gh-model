@@ -1,0 +1,605 @@
+[
+  {
+    "fixture": "F01-python-api",
+    "root": ".",
+    "package": "orders-api",
+    "rules": "service",
+    "expected": "service",
+    "expected_source": "golden",
+    "model": "service",
+    "abstain_reason": null,
+    "top": [
+      [
+        "service",
+        0.998769
+      ],
+      [
+        "none_of_these",
+        0.000795
+      ]
+    ],
+    "answered_by": "microsoft-decision/microsoft-decision-1.1",
+    "features": {
+      "container_build_with_entrypoint": true,
+      "ecosystem": "pypi",
+      "frontend_frameworks": [],
+      "http_endpoints": 2,
+      "manifest": {
+        "has_cli_entry": false
+      },
+      "message_consumer_libraries": [],
+      "package": "orders-api",
+      "server_frameworks": [
+        "fastapi"
+      ],
+      "source_files_by_language": {
+        "python": 5
+      }
+    },
+    "agrees": true
+  },
+  {
+    "fixture": "F02-ts-monorepo",
+    "root": ".",
+    "package": "acme-monorepo",
+    "rules": "tooling",
+    "expected": "tooling",
+    "expected_source": "rules only (no golden)",
+    "model": null,
+    "abstain_reason": "none_of_these",
+    "top": [
+      [
+        "none_of_these",
+        0.636015
+      ],
+      [
+        "tooling",
+        0.356605
+      ]
+    ],
+    "answered_by": "microsoft-decision/microsoft-decision-1.1",
+    "features": {
+      "container_build_with_entrypoint": false,
+      "ecosystem": "npm",
+      "frontend_frameworks": [],
+      "http_endpoints": 0,
+      "manifest": {
+        "has_cli_entry": false,
+        "has_library_entry": false,
+        "has_start_script": false,
+        "is_workspace_root": true,
+        "private": true
+      },
+      "message_consumer_libraries": [],
+      "package": "acme-monorepo",
+      "server_frameworks": [],
+      "source_files_by_language": {}
+    },
+    "agrees": false
+  },
+  {
+    "fixture": "F02-ts-monorepo",
+    "root": "apps/api",
+    "package": "@acme/api",
+    "rules": "service",
+    "expected": "service",
+    "expected_source": "golden",
+    "model": "service",
+    "abstain_reason": null,
+    "top": [
+      [
+        "service",
+        0.999213
+      ],
+      [
+        "none_of_these",
+        0.000518
+      ]
+    ],
+    "answered_by": "microsoft-decision/microsoft-decision-1.1",
+    "features": {
+      "container_build_with_entrypoint": true,
+      "ecosystem": "npm",
+      "frontend_frameworks": [],
+      "http_endpoints": 2,
+      "manifest": {
+        "has_cli_entry": false,
+        "has_library_entry": false,
+        "has_start_script": true,
+        "is_workspace_root": false,
+        "private": true
+      },
+      "message_consumer_libraries": [],
+      "package": "@acme/api",
+      "server_frameworks": [
+        "express"
+      ],
+      "source_files_by_language": {
+        "typescript": 1
+      }
+    },
+    "agrees": true
+  },
+  {
+    "fixture": "F02-ts-monorepo",
+    "root": "apps/web",
+    "package": "@acme/web",
+    "rules": "frontend_app",
+    "expected": "frontend_app",
+    "expected_source": "golden",
+    "model": null,
+    "abstain_reason": "below_threshold",
+    "top": [
+      [
+        "frontend_app",
+        0.521642
+      ],
+      [
+        "none_of_these",
+        0.3477
+      ]
+    ],
+    "answered_by": "microsoft-decision/microsoft-decision-1.1",
+    "features": {
+      "container_build_with_entrypoint": false,
+      "ecosystem": "npm",
+      "frontend_frameworks": [
+        "next"
+      ],
+      "http_endpoints": 1,
+      "manifest": {
+        "has_cli_entry": false,
+        "has_library_entry": false,
+        "has_start_script": false,
+        "is_workspace_root": false,
+        "private": true
+      },
+      "message_consumer_libraries": [],
+      "package": "@acme/web",
+      "server_frameworks": [],
+      "source_files_by_language": {
+        "typescript": 2
+      }
+    },
+    "agrees": false
+  },
+  {
+    "fixture": "F02-ts-monorepo",
+    "root": "apps/worker",
+    "package": "@acme/worker",
+    "rules": "worker",
+    "expected": "worker",
+    "expected_source": "golden",
+    "model": "worker",
+    "abstain_reason": null,
+    "top": [
+      [
+        "worker",
+        0.988059
+      ],
+      [
+        "none_of_these",
+        0.007638
+      ]
+    ],
+    "answered_by": "microsoft-decision/microsoft-decision-1.1",
+    "features": {
+      "container_build_with_entrypoint": false,
+      "ecosystem": "npm",
+      "frontend_frameworks": [],
+      "http_endpoints": 0,
+      "manifest": {
+        "has_cli_entry": false,
+        "has_library_entry": false,
+        "has_start_script": true,
+        "is_workspace_root": false,
+        "private": true
+      },
+      "message_consumer_libraries": [
+        "bullmq"
+      ],
+      "package": "@acme/worker",
+      "server_frameworks": [],
+      "source_files_by_language": {
+        "typescript": 1
+      }
+    },
+    "agrees": true
+  },
+  {
+    "fixture": "F02-ts-monorepo",
+    "root": "packages/shared",
+    "package": "@acme/shared",
+    "rules": "library",
+    "expected": "library",
+    "expected_source": "golden",
+    "model": "library",
+    "abstain_reason": null,
+    "top": [
+      [
+        "library",
+        0.997509
+      ],
+      [
+        "none_of_these",
+        0.001896
+      ]
+    ],
+    "answered_by": "microsoft-decision/microsoft-decision-1.1",
+    "features": {
+      "container_build_with_entrypoint": false,
+      "ecosystem": "npm",
+      "frontend_frameworks": [],
+      "http_endpoints": 0,
+      "manifest": {
+        "has_cli_entry": false,
+        "has_library_entry": true,
+        "has_start_script": false,
+        "is_workspace_root": false,
+        "private": false
+      },
+      "message_consumer_libraries": [],
+      "package": "@acme/shared",
+      "server_frameworks": [],
+      "source_files_by_language": {
+        "typescript": 2
+      }
+    },
+    "agrees": true
+  },
+  {
+    "fixture": "F02-ts-monorepo",
+    "root": "packages/ui",
+    "package": "@acme/ui",
+    "rules": "library",
+    "expected": "library",
+    "expected_source": "golden",
+    "model": "library",
+    "abstain_reason": null,
+    "top": [
+      [
+        "library",
+        0.996343
+      ],
+      [
+        "none_of_these",
+        0.002972
+      ]
+    ],
+    "answered_by": "microsoft-decision/microsoft-decision-1.1",
+    "features": {
+      "container_build_with_entrypoint": false,
+      "ecosystem": "npm",
+      "frontend_frameworks": [],
+      "http_endpoints": 0,
+      "manifest": {
+        "has_cli_entry": false,
+        "has_library_entry": true,
+        "has_start_script": false,
+        "is_workspace_root": false,
+        "private": false
+      },
+      "message_consumer_libraries": [],
+      "package": "@acme/ui",
+      "server_frameworks": [],
+      "source_files_by_language": {
+        "typescript": 2
+      }
+    },
+    "agrees": true
+  },
+  {
+    "fixture": "F03-python-ts-hybrid",
+    "root": "backend",
+    "package": "catalog-backend",
+    "rules": "service",
+    "expected": "service",
+    "expected_source": "golden",
+    "model": "service",
+    "abstain_reason": null,
+    "top": [
+      [
+        "service",
+        0.997764
+      ],
+      [
+        "none_of_these",
+        0.001369
+      ]
+    ],
+    "answered_by": "microsoft-decision/microsoft-decision-1.1",
+    "features": {
+      "container_build_with_entrypoint": true,
+      "ecosystem": "pypi",
+      "frontend_frameworks": [],
+      "http_endpoints": 1,
+      "manifest": {
+        "has_cli_entry": false
+      },
+      "message_consumer_libraries": [],
+      "package": "catalog-backend",
+      "server_frameworks": [
+        "fastapi"
+      ],
+      "source_files_by_language": {
+        "python": 2
+      }
+    },
+    "agrees": true
+  },
+  {
+    "fixture": "F03-python-ts-hybrid",
+    "root": "frontend",
+    "package": "catalog-frontend",
+    "rules": "frontend_app",
+    "expected": "frontend_app",
+    "expected_source": "golden",
+    "model": null,
+    "abstain_reason": "none_of_these",
+    "top": [
+      [
+        "none_of_these",
+        0.645683
+      ],
+      [
+        "frontend_app",
+        0.228005
+      ]
+    ],
+    "answered_by": "microsoft-decision/microsoft-decision-1.1",
+    "features": {
+      "container_build_with_entrypoint": false,
+      "ecosystem": "npm",
+      "frontend_frameworks": [
+        "react-dom"
+      ],
+      "http_endpoints": 0,
+      "manifest": {
+        "has_cli_entry": false,
+        "has_library_entry": false,
+        "has_start_script": false,
+        "is_workspace_root": false,
+        "private": true
+      },
+      "message_consumer_libraries": [],
+      "package": "catalog-frontend",
+      "server_frameworks": [],
+      "source_files_by_language": {
+        "typescript": 2
+      }
+    },
+    "agrees": false
+  },
+  {
+    "fixture": "F06-iac-heavy",
+    "root": ".",
+    "package": "status-api",
+    "rules": "service",
+    "expected": "service",
+    "expected_source": "golden",
+    "model": null,
+    "abstain_reason": "none_of_these",
+    "top": [
+      [
+        "none_of_these",
+        0.334299
+      ],
+      [
+        "library",
+        0.3207
+      ]
+    ],
+    "answered_by": "microsoft-decision/microsoft-decision-1.1",
+    "features": {
+      "container_build_with_entrypoint": true,
+      "ecosystem": "pypi",
+      "frontend_frameworks": [],
+      "http_endpoints": 0,
+      "manifest": {
+        "has_cli_entry": false
+      },
+      "message_consumer_libraries": [],
+      "package": "status-api",
+      "server_frameworks": [
+        "flask"
+      ],
+      "source_files_by_language": {
+        "python": 1
+      }
+    },
+    "agrees": false
+  },
+  {
+    "fixture": "F07-event-driven",
+    "root": "services/audit",
+    "package": "audit-service",
+    "rules": "worker",
+    "expected": "worker",
+    "expected_source": "golden",
+    "model": null,
+    "abstain_reason": "below_threshold",
+    "top": [
+      [
+        "worker",
+        0.561167
+      ],
+      [
+        "library",
+        0.311082
+      ]
+    ],
+    "answered_by": "microsoft-decision/microsoft-decision-1.1",
+    "features": {
+      "container_build_with_entrypoint": false,
+      "ecosystem": "pypi",
+      "frontend_frameworks": [],
+      "http_endpoints": 0,
+      "manifest": {
+        "has_cli_entry": false
+      },
+      "message_consumer_libraries": [
+        "confluent-kafka"
+      ],
+      "package": "audit-service",
+      "server_frameworks": [],
+      "source_files_by_language": {
+        "python": 2
+      }
+    },
+    "agrees": false
+  },
+  {
+    "fixture": "F07-event-driven",
+    "root": "services/notifier",
+    "package": "notifier-service",
+    "rules": "worker",
+    "expected": "worker",
+    "expected_source": "golden",
+    "model": null,
+    "abstain_reason": "below_threshold",
+    "top": [
+      [
+        "worker",
+        0.576007
+      ],
+      [
+        "library",
+        0.30952
+      ]
+    ],
+    "answered_by": "microsoft-decision/microsoft-decision-1.1",
+    "features": {
+      "container_build_with_entrypoint": false,
+      "ecosystem": "pypi",
+      "frontend_frameworks": [],
+      "http_endpoints": 0,
+      "manifest": {
+        "has_cli_entry": false
+      },
+      "message_consumer_libraries": [
+        "confluent-kafka"
+      ],
+      "package": "notifier-service",
+      "server_frameworks": [],
+      "source_files_by_language": {
+        "python": 2
+      }
+    },
+    "agrees": false
+  },
+  {
+    "fixture": "F07-event-driven",
+    "root": "services/orders",
+    "package": "orders-service",
+    "rules": "service",
+    "expected": "service",
+    "expected_source": "golden",
+    "model": "service",
+    "abstain_reason": null,
+    "top": [
+      [
+        "service",
+        0.990937
+      ],
+      [
+        "none_of_these",
+        0.00615
+      ]
+    ],
+    "answered_by": "microsoft-decision/microsoft-decision-1.1",
+    "features": {
+      "container_build_with_entrypoint": false,
+      "ecosystem": "pypi",
+      "frontend_frameworks": [],
+      "http_endpoints": 1,
+      "manifest": {
+        "has_cli_entry": false
+      },
+      "message_consumer_libraries": [
+        "confluent-kafka"
+      ],
+      "package": "orders-service",
+      "server_frameworks": [
+        "fastapi"
+      ],
+      "source_files_by_language": {
+        "python": 4
+      }
+    },
+    "agrees": true
+  },
+  {
+    "fixture": "F08-ai-agent",
+    "root": ".",
+    "package": "support-agent",
+    "rules": "ambiguous",
+    "expected": "service",
+    "expected_source": "golden (ambiguous case, human label)",
+    "model": "library",
+    "abstain_reason": null,
+    "top": [
+      [
+        "library",
+        0.812677
+      ],
+      [
+        "none_of_these",
+        0.175458
+      ]
+    ],
+    "answered_by": "microsoft-decision/microsoft-decision-1.1",
+    "features": {
+      "container_build_with_entrypoint": false,
+      "ecosystem": "pypi",
+      "frontend_frameworks": [],
+      "http_endpoints": 0,
+      "manifest": {
+        "has_cli_entry": false
+      },
+      "message_consumer_libraries": [],
+      "package": "support-agent",
+      "server_frameworks": [],
+      "source_files_by_language": {
+        "python": 3
+      }
+    },
+    "agrees": false
+  },
+  {
+    "fixture": "F09-data-heavy",
+    "root": ".",
+    "package": "warehouse",
+    "rules": "ambiguous",
+    "expected": "library",
+    "expected_source": "golden (ambiguous case, human label)",
+    "model": null,
+    "abstain_reason": "below_threshold",
+    "top": [
+      [
+        "library",
+        0.697002
+      ],
+      [
+        "none_of_these",
+        0.270526
+      ]
+    ],
+    "answered_by": "microsoft-decision/microsoft-decision-1.1",
+    "features": {
+      "container_build_with_entrypoint": false,
+      "ecosystem": "pypi",
+      "frontend_frameworks": [],
+      "http_endpoints": 0,
+      "manifest": {
+        "has_cli_entry": false
+      },
+      "message_consumer_libraries": [],
+      "package": "warehouse",
+      "server_frameworks": [],
+      "source_files_by_language": {
+        "python": 5
+      }
+    },
+    "agrees": false
+  }
+]

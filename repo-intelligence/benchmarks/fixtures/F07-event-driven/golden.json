@@ -1,0 +1,259 @@
+{
+  "fixture": "F07-event-driven",
+  "description": "Three Python services connected by Kafka topics. Topic extraction is Tier B, so topic goldens are marked M5; package goldens apply from M0. 'since' names the milestone whose compiler must produce the item.",
+  "entities": [
+    {
+      "kind": "Package",
+      "natural_key": {
+        "ecosystem": "pypi",
+        "name": "orders-service",
+        "manifest_dir": "services/orders"
+      },
+      "since": "M0"
+    },
+    {
+      "kind": "Package",
+      "natural_key": {
+        "ecosystem": "pypi",
+        "name": "notifier-service",
+        "manifest_dir": "services/notifier"
+      },
+      "since": "M0"
+    },
+    {
+      "kind": "Package",
+      "natural_key": {
+        "ecosystem": "pypi",
+        "name": "audit-service",
+        "manifest_dir": "services/audit"
+      },
+      "since": "M0"
+    },
+    {
+      "kind": "ExternalDependency",
+      "natural_key": {
+        "ecosystem": "pypi",
+        "name": "confluent-kafka"
+      },
+      "since": "M0"
+    },
+    {
+      "kind": "Artifact",
+      "natural_key": {
+        "path": "services/orders/orders/publisher.py"
+      },
+      "since": "M0"
+    },
+    {
+      "kind": "Artifact",
+      "natural_key": {
+        "path": "schemas/order_created.json"
+      },
+      "since": "M0"
+    },
+    {
+      "kind": "Component",
+      "natural_key": {
+        "root": "services/orders"
+      },
+      "attributes": {
+        "component_kind": "service"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "Component",
+      "natural_key": {
+        "root": "services/notifier"
+      },
+      "attributes": {
+        "component_kind": "worker"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "Component",
+      "natural_key": {
+        "root": "services/audit"
+      },
+      "attributes": {
+        "component_kind": "worker"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "EventTopic",
+      "natural_key": {
+        "name": "orders.created"
+      },
+      "since": "M5"
+    },
+    {
+      "kind": "Endpoint",
+      "natural_key": {
+        "component_root": "services/orders",
+        "protocol": "http",
+        "method": "POST",
+        "route": "/orders"
+      },
+      "since": "M1"
+    }
+  ],
+  "edges": [
+    {
+      "subject": {
+        "kind": "Package",
+        "natural_key": {
+          "ecosystem": "pypi",
+          "name": "orders-service",
+          "manifest_dir": "services/orders"
+        }
+      },
+      "predicate": "DEPENDS_ON",
+      "object": {
+        "kind": "ExternalDependency",
+        "natural_key": {
+          "ecosystem": "pypi",
+          "name": "confluent-kafka"
+        }
+      },
+      "since": "M0"
+    },
+    {
+      "subject": {
+        "kind": "Package",
+        "natural_key": {
+          "ecosystem": "pypi",
+          "name": "notifier-service",
+          "manifest_dir": "services/notifier"
+        }
+      },
+      "predicate": "DEPENDS_ON",
+      "object": {
+        "kind": "ExternalDependency",
+        "natural_key": {
+          "ecosystem": "pypi",
+          "name": "confluent-kafka"
+        }
+      },
+      "since": "M0"
+    },
+    {
+      "subject": {
+        "kind": "Package",
+        "natural_key": {
+          "ecosystem": "pypi",
+          "name": "audit-service",
+          "manifest_dir": "services/audit"
+        }
+      },
+      "predicate": "DEPENDS_ON",
+      "object": {
+        "kind": "ExternalDependency",
+        "natural_key": {
+          "ecosystem": "pypi",
+          "name": "confluent-kafka"
+        }
+      },
+      "since": "M0"
+    },
+    {
+      "subject": {
+        "kind": "Package",
+        "natural_key": {
+          "ecosystem": "pypi",
+          "name": "orders-service",
+          "manifest_dir": "services/orders"
+        }
+      },
+      "predicate": "CONTAINS",
+      "object": {
+        "kind": "Artifact",
+        "natural_key": {
+          "path": "services/orders/orders/publisher.py"
+        }
+      },
+      "since": "M0"
+    },
+    {
+      "subject": {
+        "kind": "Component",
+        "natural_key": {
+          "root": "services/orders"
+        }
+      },
+      "predicate": "PUBLISHES_TO",
+      "object": {
+        "kind": "EventTopic",
+        "natural_key": {
+          "name": "orders.created"
+        }
+      },
+      "since": "M5"
+    },
+    {
+      "subject": {
+        "kind": "Component",
+        "natural_key": {
+          "root": "services/notifier"
+        }
+      },
+      "predicate": "SUBSCRIBES_TO",
+      "object": {
+        "kind": "EventTopic",
+        "natural_key": {
+          "name": "orders.created"
+        }
+      },
+      "since": "M5"
+    }
+  ],
+  "absent_entities": [
+    {
+      "kind": "Package",
+      "natural_key": {
+        "ecosystem": "pypi",
+        "name": "orders-service",
+        "manifest_dir": ""
+      },
+      "why": "three separate packages, none at the root"
+    }
+  ],
+  "exclusions": [],
+  "forbidden_kinds": [],
+  "expected_unknowns": [
+    {
+      "since": "M5",
+      "detail": "audit SUBSCRIBES_TO is unknown: topic list is read from the environment"
+    }
+  ],
+  "expected_conflicts": [],
+  "commits": [
+    {
+      "dir": "01-publish-cancelled",
+      "expect": "EventTopic orders.cancelled and a PUBLISHES_TO edge; only the orders shard changes",
+      "added_entities": [
+        {
+          "kind": "EventTopic",
+          "natural_key": {
+            "name": "orders.cancelled"
+          },
+          "since": "M5"
+        }
+      ],
+      "removed_entities": []
+    },
+    {
+      "dir": "02-subscribe-cancelled",
+      "expect": "SUBSCRIBES_TO edge from notifier; only the notifier shard changes",
+      "added_entities": [],
+      "removed_entities": []
+    },
+    {
+      "dir": "03-rename-topic-constant",
+      "expect": "symbol renamed, topic identity unchanged: no EventTopic added or removed",
+      "added_entities": [],
+      "removed_entities": []
+    }
+  ]
+}
