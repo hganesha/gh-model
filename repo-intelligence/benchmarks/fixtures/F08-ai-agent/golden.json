@@ -91,6 +91,22 @@
         "root": ""
       },
       "since": "M2"
+    },
+    {
+      "kind": "TechnicalCapability",
+      "natural_key": {
+        "taxonomy": "stackgraph.technical-capabilities",
+        "key": "model-api-client"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "TechnicalCapability",
+      "natural_key": {
+        "taxonomy": "stackgraph.technical-capabilities",
+        "key": "yaml-processing"
+      },
+      "since": "M2"
     }
   ],
   "edges": [
@@ -145,6 +161,42 @@
         "natural_key": {
           "provider": "anthropic",
           "model": "claude-sonnet-5-5"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "ExternalDependency",
+        "natural_key": {
+          "ecosystem": "pypi",
+          "name": "anthropic"
+        }
+      },
+      "predicate": "PROVIDES",
+      "object": {
+        "kind": "TechnicalCapability",
+        "natural_key": {
+          "taxonomy": "stackgraph.technical-capabilities",
+          "key": "model-api-client"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "ExternalDependency",
+        "natural_key": {
+          "ecosystem": "pypi",
+          "name": "pyyaml"
+        }
+      },
+      "predicate": "PROVIDES",
+      "object": {
+        "kind": "TechnicalCapability",
+        "natural_key": {
+          "taxonomy": "stackgraph.technical-capabilities",
+          "key": "yaml-processing"
         }
       },
       "since": "M2"

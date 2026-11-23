@@ -49,7 +49,7 @@ def parse_slug(url_or_slug: str) -> tuple[str, str]:
 
 def _gh(*args: str) -> str:
     try:
-        out = subprocess.run(["gh", *args], check=True, capture_output=True, text=True, timeout=60)
+        out = subprocess.run(["gh", "api", "--hostname", "github.com", *args[1:]], check=True, capture_output=True, text=True, timeout=60)
     except FileNotFoundError as exc:
         raise GitHubError("the GitHub CLI (gh) is not installed") from exc
     except subprocess.TimeoutExpired as exc:

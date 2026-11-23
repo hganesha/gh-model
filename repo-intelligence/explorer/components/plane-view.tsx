@@ -93,6 +93,26 @@ function KindGroup({
   );
 }
 
+function DependencyGroups({ hash, q, onOpen }: { hash: string; q: string; onOpen: (id: string) => void }) {
+  const { data, error, loading, reload } = useApi<{ groups: { capability: Entity; dependencies: Entity[] }[]; unclassified: Entity[] }>(snapshotPath(hash, "dependencies"));
+  if (loading) return <Loading label="Loading dependency capabilities" />;
+  if (error) return <ErrorNote error={error} onRetry={reload} what="dependency capabilities" />;
+  if (!data) return null;
+  const query = q.toLowerCase();
+  const groups = data.groups.map((row) => ({ ...row, dependencies: row.dependencies.filter((dep) => (dep.name + row.capability.name).toLowerCase().includes(query)) })).filter((row) => row.dependencies.length);
+  const other = data.unclassified.filter((row) => row.name.toLowerCase().includes(query));
+  return <section className="kind-group" aria-label="Dependencies by capability">
+    <header><h3>Dependencies by capability</h3></header>
+    {groups.some((g) => g.dependencies.length > 1) && <p className="group-note">Several dependencies can provide the same capability.</p>}
+    {groups.map((row) => <section key={row.capability.id} className="work-tool-row">
+      <button type="button" className="link-btn" onClick={() => onOpen(row.capability.id)}>{row.capability.name}</button>
+      <div className="entity-list">{row.dependencies.map((dep) => <EntityRow key={dep.id} entity={dep} onOpen={onOpen} />)}</div>
+    </section>)}
+    {other.length > 0 && <section className="work-tool-row"><strong>Unclassified</strong><div className="entity-list">{other.map((dep) => <EntityRow key={dep.id} entity={dep} onOpen={onOpen} />)}</div></section>}
+    {groups.length === 0 && other.length === 0 && <p className="group-note">No matching dependencies.</p>}
+  </section>;
+}
+
 export function PlaneView({
   hash,
   planeId,
@@ -171,7 +191,7 @@ export function PlaneView({
             {q ? `Filtering ${plural(total, "entity", "entities")} by ${q}` : ""}
           </p>
           <div className="kind-groups">
-            {shown.map((k) => (
+            {shown.map((k) => k.kind === "ExternalDependency" ? <DependencyGroups key={k.kind} hash={hash} q={q} onOpen={onOpenEntity} /> : (
               <KindGroup
                 key={k.kind}
                 hash={hash}

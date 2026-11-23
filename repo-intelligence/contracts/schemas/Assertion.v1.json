@@ -40,6 +40,7 @@
         "CONSUMES",
         "CALLS",
         "DEPENDS_ON",
+        "PROVIDES",
         "READS_FROM",
         "WRITES_TO",
         "PUBLISHES_TO",

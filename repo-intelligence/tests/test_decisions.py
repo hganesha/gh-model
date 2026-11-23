@@ -274,6 +274,24 @@ def test_misleading_directory_name_is_not_evidence(tmp_path):
     assert any(u[:2] == ("Repository", "component_boundary") for u in g["unknowns"]), "loose source files are reported, not silently skipped"
 
 
+@pytest.mark.parametrize("reason", ["model_unavailable", "budget_exhausted", "egress_denied"])
+def test_transient_component_abstention_publishes_without_being_reused(store, tmp_path, reason):
+    repo = tmp_path / "repo"
+    commits = materialize("F08-ai-agent", repo)
+    gateway, _ = gateway_with(lambda state, options: "service", allowed=() if reason == "egress_denied" else ("scripted",))
+    if reason == "model_unavailable":
+        gateway = Gateway()
+    budget = Budget(max_calls=0 if reason == "budget_exhausted" else 10)
+    result = compile_commit(store, repo, REPO_ID, commits[0], gateway=gateway, budget=budget)
+
+    component = next(e for shard in load_shards(store, result.manifest).values() for e in shard["entities"] if e["kind"] == "Component")
+    ref = component["attributes"]["decision_ref"]
+    entries = store.get_json(result.manifest.ledger_entries_ref)
+    recorded = next(e for e in entries if e["decision_id"] == ref)
+    assert store.get_json(recorded["digest"])["abstain_reason"] == reason
+    assert store.index_get("ledger", ref) is None
+
+
 def test_ai_integration_and_deployment_links_are_graded(tmp_path):
     ai = _compile(tmp_path, "F08-ai-agent")
     link = ai["edges"][("AIComponent", "anthropic client", "CONSUMES", "claude-sonnet-5-5")]

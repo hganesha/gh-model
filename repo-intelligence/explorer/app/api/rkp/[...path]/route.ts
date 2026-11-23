@@ -8,9 +8,9 @@ import type { NextRequest } from "next/server";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const API_ROOTS = new Set(["repositories", "compilations", "snapshots", "knowledge", "evidence"]);
+const API_ROOTS = new Set(["repositories", "compilations", "snapshots", "knowledge", "evidence", "business-maps", "settings"]);
 const SAFE_SEGMENT = /^[A-Za-z0-9._:@~-]+$/;
-const MAX_BODY_BYTES = 64 * 1024;
+const MAX_BODY_BYTES = 384 * 1024;
 
 type Context = { params: Promise<{ path: string[] }> };
 

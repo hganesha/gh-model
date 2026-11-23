@@ -17,6 +17,7 @@ import atexit
 import os
 import subprocess
 import sys
+import threading
 from pathlib import Path
 
 import psycopg
@@ -69,9 +70,10 @@ def main() -> int:
     conninfo = start_postgres(data_dir, int(os.environ.get("RKP_PG_PORT", "54329")))
     store = ObjectStore(data_dir / "objects", TENANT)
     allowed = frozenset(p for p in os.environ.get("RKP_ALLOW_PROVIDERS", "").split(",") if p)
-    gateway = Gateway.from_env(allowed) if allowed else None
+    gateway = Gateway.from_env(allowed)
     service = Service(store, data_dir / "objects", conninfo, gateway=gateway, allow_local_paths=os.environ.get("RKP_ALLOW_LOCAL") == "1")
     app = create_app(conninfo, TENANT, token, store, service)
+    threading.Thread(target=service.poll_repositories, daemon=True, name="repository-polling").start()
     port = int(os.environ.get("RKP_API_PORT", "8787"))
     print(f"data: {data_dir}\ndecision models: {gateway.describe() if gateway else 'none (ambiguous decisions abstain)'}\nAPI: http://127.0.0.1:{port}")
     uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")

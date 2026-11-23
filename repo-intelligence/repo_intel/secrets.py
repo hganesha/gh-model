@@ -10,6 +10,7 @@ import re
 from typing import Any
 
 SCAN_VERSION = "2"
+URL_CREDENTIALS = re.compile(rb"://[^/\s:@]+:([^@\s/]{3,})@")
 
 # (detector id, pattern, group whose span is the secret)
 _DETECTORS: list[tuple[str, re.Pattern[bytes], int]] = [
@@ -17,7 +18,7 @@ _DETECTORS: list[tuple[str, re.Pattern[bytes], int]] = [
     ("aws_access_key_id", re.compile(rb"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b"), 0),
     ("anthropic_api_key", re.compile(rb"sk-ant-[A-Za-z0-9_\-]{20,}"), 0),
     ("github_token", re.compile(rb"\bgh[pousr]_[A-Za-z0-9]{36,}\b"), 0),
-    ("url_credentials", re.compile(rb"://[^/\s:@]+:([^@\s/]{3,})@"), 1),
+    ("url_credentials", URL_CREDENTIALS, 1),
     # A secret-named key assigned a QUOTED literal, or a .env-style line. An unquoted
     # right-hand side in code is an expression (`token = make_token(...)`), not a value.
     ("generic_assignment", re.compile(rb"(?i)(?:secret|token|passw(?:or)?d|api[_-]?key)[\"']?\s*[:=]\s*[\"']([A-Za-z0-9/+_\-]{20,})[\"']"), 1),
@@ -47,6 +48,19 @@ def mask(data: bytes, start: int, end: int, findings: list[dict[str, Any]]) -> t
         cursor, masked = min(end, f["end_byte"]), True
     out += data[cursor:end]
     return bytes(out), masked
+
+
+def mask_for_extraction(data: bytes, findings: list[dict[str, Any]]) -> bytes:
+    """Remove detected values before parsing, preserving source byte and line offsets."""
+    if not findings:
+        return data
+    masked = bytearray(data)
+    for finding in findings:
+        start, end = finding["start_byte"], finding["end_byte"]
+        original = data[start:end]
+        marker = b"~" if b"*" in original else b"*"
+        masked[start:end] = re.sub(rb"[^\r\n]", marker, original)
+    return bytes(masked)
 
 
 def values(data: bytes, findings: list[dict[str, Any]]) -> list[bytes]:

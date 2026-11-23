@@ -65,7 +65,7 @@ def _files(store: ObjectStore, a: Manifest, b: Manifest) -> dict[str, Any]:
     return {"available": True, "added": sorted(set(new) - set(old)), "removed": sorted(set(old) - set(new)), "modified": sorted(p for p in set(old) & set(new) if old[p] != new[p])}
 
 
-def _moves(removed: dict[str, dict], added: dict[str, dict]) -> dict[str, tuple[str, str]]:
+def match_moves(removed: dict[str, dict], added: dict[str, dict]) -> dict[str, tuple[str, str]]:
     """old id -> (new id, basis), for unambiguous same-kind, same-name, shared-evidence pairs."""
     by_evidence: dict[tuple[str, str, str], list[str]] = {}
     for eid, e in added.items():
@@ -94,7 +94,7 @@ def knowledge_delta(store: ObjectStore, a: Manifest, b: Manifest) -> dict[str, A
 
     removed = {i: e for i, e in ents_a.items() if i not in ents_b}
     added = {i: e for i, e in ents_b.items() if i not in ents_a}
-    moves = _moves(removed, added)
+    moves = match_moves(removed, added)
     moved_to = {new for new, _ in moves.values()}
 
     rows: list[dict[str, Any]] = []

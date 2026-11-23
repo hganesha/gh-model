@@ -17,7 +17,8 @@ import posixpath
 from collections.abc import Mapping
 from typing import Any
 
-from ..buildgraph import Step, StepInputs
+from .. import secrets
+from ..buildgraph import Ref, Step, StepInputs, StepRunner
 from ..contracts import FileSummary
 from ..hashing import digest, sha256_hex
 from ..ontology import EvidenceClass
@@ -62,7 +63,9 @@ def _file_extract(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, An
     if not config.get("parse", True):
         diagnostics.append(diagnostic("inventory", "warning", "oversize: inventoried, not parsed"))
     else:
-        for extractor in (e for e in EXTRACTORS if e.matches(path)):
+        data = secrets.mask_for_extraction(data, config.get("secret_findings", []))
+        disabled = set(config.get("disabled_extractors", ()))
+        for extractor in (e for e in EXTRACTORS if e.id not in disabled and e.matches(path)):
             try:
                 result = extractor.extract(path, data, blob)
             except Exception as exc:  # an extractor bug must not fail the compile
@@ -76,4 +79,16 @@ def _file_extract(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, An
 
 FILE_EXTRACT = Step("file.extract", digest([[e.id, e.version] for e in EXTRACTORS]).split(":")[1][:16], _file_extract)
 
-__all__ = ["EXTRACTORS", "FILE_EXTRACT", "MANIFEST_BASENAMES", "detect_language"]
+
+def extract_file(runner: StepRunner, entry: dict[str, Any], disabled: set[str] | None = None) -> Ref:
+    path = entry["path"]
+    config: dict[str, Any] = {"parse": entry["parse"]}
+    if entry["parse"] and entry.get("secret_findings"):
+        config["secret_findings"] = entry["secret_findings"]
+    excluded = sorted(e.id for e in EXTRACTORS if disabled and e.id in disabled and e.matches(path))
+    if excluded:
+        config["disabled_extractors"] = excluded
+    return runner.run(FILE_EXTRACT, {"path": path, "blob": Ref("sha256:" + entry["blob_sha256"], "bytes")}, config)
+
+
+__all__ = ["EXTRACTORS", "FILE_EXTRACT", "MANIFEST_BASENAMES", "detect_language", "extract_file"]

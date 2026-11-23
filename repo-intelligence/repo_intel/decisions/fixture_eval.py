@@ -16,8 +16,9 @@ import sys
 import tempfile
 from pathlib import Path
 
-from ..buildgraph import Ref, StepRunner
-from ..extractors import FILE_EXTRACT, MANIFEST_BASENAMES
+from ..buildgraph import StepRunner
+from ..capabilities import load_catalogue
+from ..extractors import MANIFEST_BASENAMES, extract_file
 from ..compiler import UNIT_PLAN
 from ..fixtures import list_fixtures, load_golden, materialize
 from ..pipeline import stage_snapshot
@@ -35,12 +36,15 @@ def component_features(name: str, root: Path) -> list[dict]:
     store = ObjectStore(root / "store", "eval")
     runner = StepRunner(store)
     pm = store.get_json(stage_snapshot(store, root / "repo", shas[0]))
-    summaries = {e["path"]: runner.run(FILE_EXTRACT, {"path": e["path"], "blob": Ref("sha256:" + e["blob_sha256"], "bytes")}, {"parse": e["parse"]}) for e in pm["entries"]}
+    summaries = {e["path"]: extract_file(runner, e) for e in pm["entries"]}
     manifests = [summaries[p] for p in sorted(summaries) if posixpath.basename(p) in MANIFEST_BASENAMES]
     plan = runner.load(runner.run(UNIT_PLAN, {"paths": sorted(summaries), "manifest_summaries": manifests}))
+    component_roles = load_catalogue().component_roles()
     out = []
     for unit in plan["units"]:
-        feat = runner.load(runner.run(dm.FEATURES_BUILD, {"unit": unit, "summaries": [summaries[p] for p in unit["paths"]]}))["component"]
+        feat = runner.load(runner.run(dm.FEATURES_BUILD, {
+            "unit": unit, "summaries": [summaries[p] for p in unit["paths"]], "component_roles": component_roles,
+        }))["component"]
         if feat and feat["features"]["ecosystem"] in dm.SUPPORTED_ECOSYSTEMS:
             out.append({"root": "" if unit["name"] == "." else unit["name"], "features": feat["features"]})
     return out

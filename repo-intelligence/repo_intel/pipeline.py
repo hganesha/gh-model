@@ -14,18 +14,22 @@ from typing import Any
 
 from . import RKP_SCHEMA, secrets
 from .buildgraph import Ref, RunStats, StepRunner
+from .capabilities import load_catalogue
 from .compiler import GLOBAL_UNIT, REPO_COMPILE, STEPS, UNIT_COMPILE, UNIT_LINK, UNIT_PLAN
 from .contracts import DecisionResult, Manifest, ShardRef, entity_id
 from .decisions import component as dm_component
+from .decisions import dependency as dm_dependency
 from .decisions.gateway import Gateway
 from .decisions.runner import Budget, Ledger, evaluate
-from .extractors import FILE_EXTRACT, MANIFEST_BASENAMES
-from .hashing import canonical, digest, make_id, merkle_root
+from .extractors import FILE_EXTRACT, MANIFEST_BASENAMES, extract_file
+from .hashing import digest, make_id, merkle_root
+from .publish_secrets import leaked_secrets
+from .settings import CompileSettings, ModelSelection
 from .snapshot import snapshot_commit
 from .store import ObjectStore
 from .verify import content_leaves, verify_snapshot
 
-POLICY_VERSION = "repo-intelligence-policy-v1"
+POLICY_VERSION = "repo-intelligence-policy-v2"
 EMPTY_OVERRIDES = digest([])
 
 
@@ -35,10 +39,21 @@ class PublishGateError(RuntimeError):
         self.problems = problems
 
 
-def toolchain_hash(gateway: Gateway | None = None) -> str:
+def _toolchain_manifest(gateway: Gateway | None, catalogue_hash: str, policy: CompileSettings | None = None) -> dict[str, Any]:
     steps = {s.name: s.version for s in [FILE_EXTRACT, dm_component.FEATURES_BUILD, *STEPS]}
     specs = {s.id: s.version for s in (dm_component.SPEC, dm_component.TOPOLOGY_SPEC)}
-    return digest({"rkp_schema": RKP_SCHEMA, "policy_version": POLICY_VERSION, "secret_scan": secrets.SCAN_VERSION, "steps": steps, "decision_specs": specs, "models": gateway.describe() if gateway else {}})
+    specs[dm_dependency.SPEC_ID] = dm_dependency.SPEC_VERSION
+    return {
+        "rkp_schema": RKP_SCHEMA, "policy_version": POLICY_VERSION, "secret_scan": secrets.SCAN_VERSION,
+        "steps": steps, "decision_specs": specs, "models": gateway.identifiers() if gateway else {},
+        "capability_catalogue_hash": catalogue_hash,
+        "compile_settings": policy.row() if policy else None,
+        "allowed_providers": sorted(gateway.allowed_providers) if gateway else [],
+    }
+
+
+def toolchain_hash(gateway: Gateway | None = None, policy: CompileSettings | None = None) -> str:
+    return digest(_toolchain_manifest(gateway, digest(load_catalogue().row()), policy))
 
 
 def snapshot_key(repository_id: str, commit_sha: str, toolchain: str | None = None) -> str:
@@ -60,23 +75,19 @@ def stage_snapshot(store: ObjectStore, repo_path: str | os.PathLike[str], commit
     return d
 
 
-def leaked_secrets(store: ObjectStore, path_manifest: dict[str, Any], documents: list[Any]) -> list[str]:
-    """Paths whose flagged secret value appears in any of the given output documents."""
-    haystack = b"\n".join(canonical(doc) for doc in documents)
-    leaks = []
-    for e in path_manifest["entries"]:
-        if e.get("secret_findings"):
-            data = store.get_bytes("sha256:" + e["blob_sha256"])
-            if any(v and v in haystack for v in secrets.values(data, e["secret_findings"])):
-                leaks.append(e["path"])
-    return leaks
-
-
-def stage_compile(store: ObjectStore, repository_id: str, path_manifest_digest: str, use_cache: bool = True, gateway: Gateway | None = None, budget: Budget | None = None, progress: Any = None) -> CompileResult:
+def stage_compile(store: ObjectStore, repository_id: str, path_manifest_digest: str, use_cache: bool = True, gateway: Gateway | None = None, budget: Budget | None = None, progress: Any = None, policy: CompileSettings | None = None) -> CompileResult:
     """`gateway` supplies decision models; without one, ambiguous decisions abstain."""
     runner = StepRunner(store, use_cache=use_cache)
     ledger = Ledger(store)
-    budget = budget or Budget()
+    budget = budget or Budget(max_calls=policy.decision_budget if policy else 200)
+    disabled = set(policy.disabled_extractors) if policy else set()
+    component_spec = (
+        policy.model_functions.get(dm_component.SPEC.id, ModelSelection()).configure(dm_component.SPEC)
+        if policy else dm_component.SPEC
+    )
+    catalogue = load_catalogue()
+    catalogue_ref = Ref(store.put_json(catalogue.row()))
+    component_roles = catalogue.component_roles()
     pm: dict[str, Any] = store.get_json(path_manifest_digest)
     entries = pm["entries"]
 
@@ -90,7 +101,7 @@ def stage_compile(store: ObjectStore, repository_id: str, path_manifest_digest: 
         if n % 50 == 0:
             tell("extract", done=n, total=len(entries))
         # Oversize files are still inventoried; `parse: False` only skips content extractors.
-        summaries[e["path"]] = runner.run(FILE_EXTRACT, {"path": e["path"], "blob": Ref("sha256:" + e["blob_sha256"], "bytes")}, {"parse": e["parse"]})
+        summaries[e["path"]] = extract_file(runner, e, disabled)
 
     tell("extract", done=len(entries), total=len(entries))
     manifest_refs = [summaries[p] for p in sorted(summaries) if posixpath.basename(p) in MANIFEST_BASENAMES]
@@ -104,18 +115,23 @@ def stage_compile(store: ObjectStore, repository_id: str, path_manifest_digest: 
         link_refs[unit["name"]] = runner.run(UNIT_LINK, {"unit": unit, "summaries": members, "workspace_packages": plan["packages"]})
         # features.build is a pure step; decision.evaluate goes through the ledger, so a
         # model-backed answer is reused on later compiles and replay is exact.
-        feat = runner.load(runner.run(dm_component.FEATURES_BUILD, {"unit": unit, "summaries": members}))["component"]
+        feat = runner.load(runner.run(dm_component.FEATURES_BUILD, {
+            "unit": unit, "summaries": members, "component_roles": component_roles,
+        }))["component"]
         decisions: dict[str, Any] = {}
         if feat:
             scope = entity_id(repository_id, "Package", feat["package"])
             evidence = tuple(feat["evidence_ids"])
-            verdict = evaluate(dm_component.SPEC, scope, feat["features"], dm_component.rules, ledger=ledger, evidence_ids=evidence, gateway=gateway, budget=budget, criteria=dm_component.CRITERIA, override_set_hash=EMPTY_OVERRIDES)
+            verdict = evaluate(component_spec, scope, feat["features"], dm_component.rules, ledger=ledger, evidence_ids=evidence, gateway=gateway, budget=budget, criteria=dm_component.CRITERIA, override_set_hash=EMPTY_OVERRIDES)
             decisions["component"] = verdict.row()
         shard_refs[unit["name"]] = runner.run(UNIT_COMPILE, {"repository_id": repository_id, "unit": unit, "summaries": members, "workspace_packages": plan["packages"], "link": link_refs[unit["name"]], "decisions": decisions, "component_features": feat["features"] if feat else None})
 
     tell("repo_compile", units=len(plan["units"]))
     oversize = sorted(e["path"] for e in entries if not e["parse"])
-    final = runner.load(runner.run(REPO_COMPILE, {"repository_id": repository_id, "shards": shard_refs, "links": link_refs, "exclusions": pm["exclusions"], "oversize_paths": oversize}))
+    final = runner.load(runner.run(REPO_COMPILE, {
+        "repository_id": repository_id, "shards": shard_refs, "links": link_refs,
+        "exclusions": pm["exclusions"], "oversize_paths": oversize, "capability_catalogue": catalogue_ref,
+    }))
 
     shard_digests = {name: ref.digest for name, ref in shard_refs.items()}
     shard_digests[GLOBAL_UNIT] = store.put_json(final["global_shard"])
@@ -133,11 +149,13 @@ def stage_compile(store: ObjectStore, repository_id: str, path_manifest_digest: 
     cited = {a["decision_ref"] for s in shards.values() for a in s["assertions"] if a["decision_ref"]}
     cited |= {e["attributes"][k] for s in shards.values() for e in s["entities"] for k in ("decision_ref", "topology_decision_ref") if e["attributes"].get(k)}
     problems += [f"decision {d} is cited but not in this compile's ledger entries" for d in sorted(cited - recorded)]
-    problems += [f"secret value from {p} appears in compiler output" for p in leaked_secrets(store, pm, [*shards.values(), final["coverage"], final["conflicts"]])]
+    published = [*shards.values(), final["coverage"], final["conflicts"], final["workspace_exports"]]
+    definitions = {item.key: (item.name, item.description) for item in catalogue.capabilities}
+    problems += [f"secret value from {p} appears in compiler output" for p in leaked_secrets(store, pm, published, definitions)]
     if problems:
         raise PublishGateError(problems)
 
-    tc = toolchain_hash(gateway)
+    tc = store.put_json(_toolchain_manifest(gateway, catalogue_ref.digest, policy))
     provenance_hash = digest({"toolchain_hash": tc, "ledger_entries_ref": ledger_ref})
     manifest = Manifest(
         rkp_schema=RKP_SCHEMA, tenant_id=store.tenant_id, repository_id=repository_id, commit_sha=pm["commit_sha"],
@@ -148,8 +166,10 @@ def stage_compile(store: ObjectStore, repository_id: str, path_manifest_digest: 
         rkp_hash=digest([RKP_SCHEMA, content_hash, provenance_hash]),
     )
     manifest_digest = store.put_json(manifest.row())
-    store.index_put("snapshots", snapshot_key(repository_id, pm["commit_sha"]), manifest_digest)
+    store.index_put("workspace_exports", manifest.rkp_hash, store.put_json(final["workspace_exports"]))
     store.index_put("rkp", manifest.rkp_hash, manifest_digest)
+    store.index_put("snapshots", snapshot_key(repository_id, pm["commit_sha"], tc), manifest_digest)
+    store.index_put("latest_snapshot", make_id("repo_commit", repository_id, pm["commit_sha"]), manifest_digest)
     tell("published", rkp_hash=manifest.rkp_hash, steps_executed=runner.stats.total_executed, steps_reused=sum(runner.stats.hits.values()))
     return CompileResult(manifest, manifest_digest, runner.stats)
 
@@ -158,8 +178,15 @@ def compile_commit(store: ObjectStore, repo_path: str | os.PathLike[str], reposi
     return stage_compile(store, repository_id, stage_snapshot(store, repo_path, commit_sha), use_cache=use_cache, gateway=gateway, budget=budget)
 
 
-def load_manifest(store: ObjectStore, *, rkp_hash: str | None = None, repository_id: str | None = None, commit_sha: str | None = None) -> Manifest | None:
-    d = store.index_get("rkp", rkp_hash) if rkp_hash else store.index_get("snapshots", snapshot_key(repository_id or "", commit_sha or ""))
+def load_manifest(store: ObjectStore, *, rkp_hash: str | None = None, repository_id: str | None = None, commit_sha: str | None = None, toolchain: str | None = None) -> Manifest | None:
+    if rkp_hash:
+        d = store.index_get("rkp", rkp_hash)
+    elif toolchain:
+        d = store.index_get("snapshots", snapshot_key(repository_id or "", commit_sha or "", toolchain))
+    else:
+        d = store.index_get("latest_snapshot", make_id("repo_commit", repository_id or "", commit_sha or ""))
+        if not d:
+            d = store.index_get("snapshots", snapshot_key(repository_id or "", commit_sha or ""))
     return Manifest.model_validate(store.get_json(d)) if d else None
 
 

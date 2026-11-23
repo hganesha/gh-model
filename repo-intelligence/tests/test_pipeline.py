@@ -1,6 +1,11 @@
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
+
 import pytest
 
 from conftest import REPO_ID
+from repo_intel import pipeline
+from repo_intel.capabilities import CapabilityCatalogue, load_catalogue, match_package
 from repo_intel.contracts import assertion_id, entity_id
 from repo_intel.fixtures import load_golden
 from repo_intel.pipeline import PublishGateError, compile_commit, load_manifest, load_shards, stage_compile, stage_snapshot
@@ -72,6 +77,53 @@ def test_second_run_of_unchanged_commit_executes_zero_steps(store, f01):
     repo, shas = f01
     assert compile_commit(store, repo, REPO_ID, shas[0]).stats.total_executed > 0
     assert compile_commit(store, repo, REPO_ID, shas[0]).stats.total_executed == 0
+
+
+def test_concurrent_compiles_can_publish_shared_catalogue_and_cache_entries(store, f01):
+    repo, shas = f01
+    start = Barrier(2)
+
+    def compile_same_commit():
+        start.wait(timeout=5)
+        return compile_commit(store, repo, REPO_ID, shas[0]).manifest
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        jobs = [pool.submit(compile_same_commit) for _ in range(2)]
+        first, second = (job.result(timeout=30) for job in jobs)
+    assert first == second == load_manifest(store, rkp_hash=first.rkp_hash)
+
+
+def test_catalogue_matches_packages_and_requires_symbols_for_symbol_rules():
+    rules = load_catalogue().package_mappings()
+    assert [m.capability for m in match_package(rules, "pypi", "PyJWT")] == ["jwt-token-processing"]
+    assert match_package(rules, "npm", "lodash") == ()
+    assert [m.capability for m in match_package(rules, "npm", "lodash", ["debounce"])] == [
+        "collection-object-utilities", "rate-control",
+    ]
+
+
+def test_catalogue_change_invalidates_classification_cache(store, f01, monkeypatch):
+    repo, shas = f01
+    sha = shas[0]
+    first = compile_commit(store, repo, REPO_ID, sha)
+    catalogue = load_catalogue().row()
+    catalogue["mappings"] = [m for m in catalogue["mappings"] if m["package"] != "httpx"]
+    changed = CapabilityCatalogue.model_validate(catalogue)
+    monkeypatch.setattr(pipeline, "load_catalogue", lambda: changed)
+    second = compile_commit(store, repo, REPO_ID, sha)
+
+    assert first.manifest.toolchain_hash != second.manifest.toolchain_hash
+    pinned = store.get_json(second.manifest.toolchain_hash)["capability_catalogue_hash"]
+    assert store.get_json(pinned) == changed.row()
+    assert second.stats.executed == {"repo.compile": 1}
+    assert load_manifest(store, rkp_hash=first.manifest.rkp_hash) == first.manifest
+
+    dependency = entity_id(REPO_ID, "ExternalDependency", {"ecosystem": "pypi", "name": "httpx"})
+    decisions = [store.get_json(e["digest"]) for e in store.get_json(second.manifest.ledger_entries_ref)]
+    verdict = next(d for d in decisions if d["scope_entity"] == dependency)
+    assert verdict["abstain_reason"] == "no_catalogue_mapping" and verdict["evidence_ids"]
+    _, assertions, _ = _graph(store, second.manifest)
+    assert not any(a["predicate"] == "PROVIDES" and a["subject"] == dependency for a in assertions.values())
 
 
 def test_incremental_equals_cold_on_every_seeded_commit(tmp_path, f01):

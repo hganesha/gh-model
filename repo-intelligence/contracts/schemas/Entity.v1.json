@@ -27,6 +27,7 @@
         "Test",
         "Owner",
         "ExternalDependency",
+        "TechnicalCapability",
         "Feature",
         "Requirement"
       ],

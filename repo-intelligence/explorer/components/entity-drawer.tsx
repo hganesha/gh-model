@@ -3,6 +3,7 @@
 import { ArrowLeft, ArrowRight, CircleHelp, EyeOff, FileCode2, Share2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError, snapshotPath, useApi } from "@/lib/api";
+import { placementLabel, type SnapshotPlacements } from "@/lib/workspace";
 import { displayValue, kindLabel, plural, shortId } from "@/lib/format";
 import { planeOfKind } from "@/lib/planes";
 import type { Assertion, EntityDetail, EntityRef, EvidenceExcerpt, Unknown } from "@/lib/types";
@@ -184,7 +185,47 @@ function evidenceIndex(detail: EntityDetail): { id: string; usedBy: string }[] {
 
 const EVIDENCE_PAGE = 12;
 
-function DrawerBody({ hash, id, onNavigate, onViewInGraph }: { hash: string; id: string; onNavigate: (id: string) => void; onViewInGraph: (ref: EntityRef) => void }) {
+function BusinessPlacement({ hash, id, onChanged }: { hash: string; id: string; onChanged: () => void }) {
+  const source = useApi<SnapshotPlacements>(snapshotPath(hash, "placements"));
+  const row = source.data?.components[id];
+  const lineageId = row?.lineage_id;
+  const [target, setTarget] = useState("");
+  const [problem, setProblem] = useState("");
+  const [busy, setBusy] = useState(false);
+  if (!row || !source.data) return null;
+  async function change(action: "move" | "confirm") {
+    setBusy(true);
+    setProblem("");
+    try {
+      await api("business-maps/placements", { body: {
+        expected_version: source.data?.version, lineage_id: lineageId, action,
+        capability_id: action === "move" ? target : undefined,
+      } });
+      source.reload();
+      onChanged();
+    } catch (failure) {
+      setProblem(failure instanceof Error ? failure.message : "Placement could not be saved.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  return <section>
+    <h3>Business capability</h3>
+    {row.capability && <p>Supports {row.capability}</p>}
+    <Badge tone={row.status === "confirmed" ? "verified" : "neutral"}>{placementLabel(row)}</Badge>
+    <div className="work-tool-actions">
+      {row.capability_id && row.status !== "confirmed" && <button type="button" className="btn btn-quiet btn-small" disabled={busy} onClick={() => void change("confirm")}>Confirm placement</button>}
+      <label><span className="sr-only">Move to capability</span><select value={target} onChange={(event) => setTarget(event.target.value)}>
+        <option value="">Choose a capability</option>
+        {source.data.capabilities?.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+      </select></label>
+      <button type="button" className="btn btn-quiet btn-small" disabled={busy || !target} onClick={() => void change("move")}>Move</button>
+    </div>
+    {problem && <p className="form-error" role="alert">{problem}</p>}
+  </section>;
+}
+
+function DrawerBody({ hash, id, onNavigate, onViewInGraph, onPlacementChanged }: { hash: string; id: string; onNavigate: (id: string) => void; onViewInGraph: (ref: EntityRef) => void; onPlacementChanged: () => void }) {
   const { data, error, loading, reload } = useApi<EntityDetail>(snapshotPath(hash, `entities/${encodeURIComponent(id)}`));
   const [evidenceShown, setEvidenceShown] = useState(EVIDENCE_PAGE);
 
@@ -195,6 +236,7 @@ function DrawerBody({ hash, id, onNavigate, onViewInGraph }: { hash: string; id:
   const { entity } = data;
   const evidence = evidenceIndex(data);
   const plane = planeOfKind(entity.kind);
+  const provided = data.assertions.filter((row) => row.predicate === "PROVIDES" && row.subject === id);
 
   return (
     <>
@@ -209,6 +251,11 @@ function DrawerBody({ hash, id, onNavigate, onViewInGraph }: { hash: string; id:
         </button>
       </div>
 
+      {entity.kind === "Component" && <BusinessPlacement hash={hash} id={id} onChanged={onPlacementChanged} />}
+      {provided.length > 0 && <section><h3>Technical capabilities</h3>
+        <ul>{provided.map((row) => <li key={row.id}><button type="button" className="link-btn" onClick={() => onNavigate(row.object)}>{data.neighbours[row.object]?.name ?? row.object}</button></li>)}</ul>
+        <p className="group-note">Curated from the declared package.</p>
+      </section>}
       <section>
         <h3>Natural key</h3>
         <Definitions data={entity.natural_key} empty="This entity has no natural key fields." />
@@ -303,6 +350,7 @@ export function EntityDrawer({
   onBack,
   onClose,
   onViewInGraph,
+  onPlacementChanged,
 }: {
   hash: string;
   /** Short commit and ref of the snapshot this entity is read from. */
@@ -314,6 +362,7 @@ export function EntityDrawer({
   onBack: () => void;
   onClose: () => void;
   onViewInGraph: (ref: EntityRef) => void;
+  onPlacementChanged: () => void;
 }) {
   const id = trail[trail.length - 1];
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -353,7 +402,7 @@ export function EntityDrawer({
         </p>
       )}
       <div className="drawer-scroll" key={`${hash}:${id}`}>
-        <DrawerBody hash={hash} id={id} onNavigate={onNavigate} onViewInGraph={onViewInGraph} />
+        <DrawerBody hash={hash} id={id} onNavigate={onNavigate} onViewInGraph={onViewInGraph} onPlacementChanged={onPlacementChanged} />
       </div>
     </aside>
   );

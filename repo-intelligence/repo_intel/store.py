@@ -10,12 +10,25 @@ import json
 import os
 import re
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 from typing import Any
 
 from .hashing import canonical, digest_bytes
 
 _DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
 _SAFE = re.compile(r"^[A-Za-z0-9._-]+$")
+
+
+def _atomic_write(path: Path, data: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp = NamedTemporaryFile(dir=path.parent, delete=False)
+    temporary_path = Path(temp.name)
+    try:
+        with temp:
+            temp.write(data)
+        temporary_path.replace(path)
+    finally:
+        temporary_path.unlink(missing_ok=True)
 
 
 class ObjectStore:
@@ -39,10 +52,7 @@ class ObjectStore:
         d = digest_bytes(data)
         path = self._object_path(d)
         if not path.exists():
-            path.parent.mkdir(parents=True, exist_ok=True)
-            tmp = path.with_suffix(f".tmp{os.getpid()}")
-            tmp.write_bytes(data)
-            tmp.replace(path)
+            _atomic_write(path, data)
         return d
 
     def get_bytes(self, d: str) -> bytes:
@@ -69,8 +79,4 @@ class ObjectStore:
         return path.read_text() if path.exists() else None
 
     def index_put(self, namespace: str, key: str, value: str) -> None:
-        path = self._index_path(namespace, key)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(f".tmp{os.getpid()}")
-        tmp.write_text(value)
-        tmp.replace(path)
+        _atomic_write(self._index_path(namespace, key), value.encode())

@@ -8,6 +8,8 @@ export interface SnapshotRef {
   commit_sha: string;
   ref: string;
   compiled_at: number;
+  stale?: boolean;
+  toolchain_hash?: string;
   /** ISO 8601 commit date; missing on snapshots compiled before the API reported it. */
   committed_at?: string | null;
 }
@@ -251,5 +253,6 @@ export interface DiffResponse {
   entities: DiffEntity[];
   assertions: DiffAssertion[];
   impact: ImpactRow[];
+  capabilities_touched?: string[];
   truncated: boolean;
 }

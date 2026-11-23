@@ -10,7 +10,7 @@ Repository knowledge compiler for the GitHub Intelligence Engine. Design: `../Gi
 | GI-002 fixtures | Done: F01–F10 with goldens tagged by milestone. Items due by M1 are checked on every test run |
 | GI-003 walking skeleton | Done: compile, PostgreSQL projection, query API, Temporal workflow |
 | GI-004 build-graph runtime | Step cache and declared-input enforcement at the API level. OS-level sandboxing of steps not started |
-| GI-005 GitHub ingestion | Connect by URL works for local use through the signed-in GitHub CLI (`github.py`, `service.py`). Not done: GitHub App, webhooks, tracked refs; jobs run in-process, not through Temporal |
+| GI-005 GitHub ingestion | GitHub CLI, App, token, and device-flow connectors are available. GitLab and plain Git use the same ingestion interface. The Explorer uses in-process compile jobs |
 | GI-006 secret scan | Done: scan at admission, masked evidence endpoint, publish gate rejects leaked values. No blob-cache TTL yet |
 | GI-007 manifests and unit planning | Done: pyproject, package.json, pom.xml, go.mod; workspace dependencies link to sibling packages |
 | GI-008 Python | Extraction and linking done: FastAPI routes, SQLAlchemy tables and fields, Alembic migrations, config keys; imports, symbols, route-to-handler, ORM call sites to tables, tests to symbols (candidate). Not done: router prefixes across files, call graph, method-level symbols beyond ORM use |
@@ -25,7 +25,7 @@ Repository knowledge compiler for the GitHub Intelligence Engine. Design: `../Gi
 |---|---|
 | GI-019 parity | Incremental and cold compiles are compared on every seeded fixture commit in the test suite. No production shadow-compile sampler |
 | GI-020 delta and impact | `delta.py` and `GET /v1/knowledge/diff`: added, removed, changed, moved and "its file was edited" entities; relationship changes; one-hop impact; cause when attributable. Moves are recognised only from identical content, so a file that was moved and edited shows as removed plus added. Not done: Git rename detection, a persisted lineage table, per-entry cause when both code and toolchain changed |
-| GI-018 refs and triggers | Not started: no tracked refs, coalescing or webhook reconciliation |
+| GI-018 refs and triggers | Tracked refs, manual and polling triggers, and signed push intake work in the single-process service. Durable trigger reconciliation remains open |
 | GI-021 retention | Not started: no garbage collection, retraction or deletion |
 
 ### M2 (decisions and compiler), partly complete
@@ -69,7 +69,7 @@ Two processes, both on localhost only. The API starts its own private PostgreSQL
 npm --prefix explorer install && npm --prefix explorer run dev
 ```
 
-Then open http://localhost:3100, choose **Connect repository** and enter a GitHub URL or `owner/name`. The repository is fetched through the GitHub CLI session on this machine (`gh auth login` first if needed). This setup is single-user and local: one development token, no sign-in, no webhooks.
+Then open http://localhost:3100, choose **Connect repository** and enter a GitHub URL or `owner/name`. The repository is fetched through the GitHub CLI session on this machine (`gh auth login` first if needed). The default setup uses one local administrator token. Connection and webhook configuration is described below.
 
 First real repository tried (public, `fastapi/full-stack-fastapi-template`, 239 files, 2026-11-23): 4 components, 23 endpoints all linked to handlers, 2 tables, 58 tests; imports resolved 671 of 685; data access linked 34 of 37.
 
@@ -129,3 +129,37 @@ After changing a contract, regenerate the schemas:
 - `CONSUMES` also allows an AI component to consume a model endpoint.
 - A relation may refer to an entity without declaring it, so a migration that drops a table does not bring the table into the graph.
 - API authentication is one development bearer token bound to one tenant. It refuses everything when no token is configured.
+
+## Business map and settings
+
+The **Business map** and **Settings** entries are workspace tools. The API stores one active map per tenant and keeps revision history. Create stages and capabilities, add an optional starter, and assign a component by dragging it to a capability or using its capability selector and **Place** or **Move** button. The map reads the latest snapshot on each repository’s default ref when available. It flags orphaned placements, preserves confirmed edits across compiles, and uses candidate grades for links across repositories.
+
+**Run placement** uses a local lexical shortlist and the configured decision model. Model egress starts disabled. To use a hosted model, configure its server-side credentials, choose a model in Settings, and explicitly allow that provider. Turning off automatic placement keeps accepted model results in the review tray. The initial threshold of 0.88 is provisional. Install the `azure` extra for Azure CLI authentication to a hosted decision model. The [placement benchmark](benchmarks/results/business-placement-v1.md) records shortlist quality and the remaining live measurements.
+
+A repository can suggest a placement with `.rkp/business.yaml`. Keys are unique component names within the repository. Use the capability ID shown on the map card.
+
+~~~yaml
+placements:
+  orders-api: your-capability-id
+~~~
+
+### Connections
+
+GitHub CLI remains available by default. Settings also supports GitHub App, token and device-flow connections, GitLab tokens, and plain Git over HTTPS or SSH. Add credentials to the OS keychain before entering the reference in Settings.
+
+~~~bash
+.venv/bin/python -m keyring set repo-intelligence github-read
+~~~
+
+Use `keychain:github-read` in the credential reference field. On a hosted single-administrator instance, mount the secret-manager values as files under `RKP_MANAGED_SECRET_DIR` and use `managed:<name>`. For SSH, set up the host key for the API’s operating-system user. For GitHub device sign-in, enable device flow on the OAuth application and enter its client ID in Settings. For an App, provide the App ID, installation ID, private key reference, and webhook secret reference.
+
+Webhooks use `/v1/webhooks/<connection-id>`. Set the repository’s trigger to **On push** and specify its tracked refs. The local API binds to loopback. A provider needs a reachable HTTPS endpoint for live delivery. The local development token represents one workspace administrator. Sharing service credentials with additional users requires per-principal repository authorization under GI-022.
+
+### Browser verification
+
+Run the browser suite from the Explorer directory after installing the Python dev dependencies. The suite starts isolated local API and PostgreSQL processes and compiles a bundled fixture.
+
+~~~bash
+npx playwright install chromium
+npm run test:e2e
+~~~

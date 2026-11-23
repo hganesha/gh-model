@@ -262,6 +262,16 @@ class Gateway:
         """Alias -> provider/model, pinned into the toolchain so a change is attributable."""
         return {alias: f"{m.provider}/{getattr(m, 'model', '')}" for alias, m in sorted(self.aliases.items())}
 
+    def identifiers(self) -> dict[str, dict[str, str | None]]:
+        from ..hashing import digest
+        return {
+            alias: {
+                "model": f"{model.provider}/{getattr(model, 'model', '')}",
+                "endpoint_hash": digest(model.url) if getattr(model, "url", None) else None,
+            }
+            for alias, model in sorted(self.aliases.items())
+        }
+
     @classmethod
     def from_env(cls, allowed_providers: frozenset[str] = frozenset(), env: Mapping[str, str] = os.environ) -> "Gateway":
         """Build aliases from credentials present in the environment. Keys are never logged."""

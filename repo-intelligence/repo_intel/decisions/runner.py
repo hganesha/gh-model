@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ..contracts import DecisionResult, DecisionSpec, StrategyStep, decision_id
-from ..hashing import digest
+from ..hashing import canonical, digest
 from ..store import ObjectStore
 from .gateway import ChoiceAnswer, EgressDenied, Gateway, ModelUnavailable
 
@@ -43,7 +43,7 @@ class Budget:
 
 @dataclass
 class Ledger:
-    """Accepted decisions, keyed by decision id. A hit is reused, never re-asked."""
+    """Record every consumed decision and index reusable results by decision ID."""
 
     store: ObjectStore
     used: dict[str, str] = field(default_factory=dict)  # decision_id -> digest, for this compile
@@ -55,9 +55,10 @@ class Ledger:
         self.used[did] = d
         return DecisionResult.model_validate(self.store.get_json(d))
 
-    def put(self, result: DecisionResult) -> DecisionResult:
+    def put(self, result: DecisionResult, *, reusable: bool = True) -> DecisionResult:
         d = self.store.put_json(result.row())
-        self.store.index_put("ledger", result.decision_id, d)
+        if reusable:
+            self.store.index_put("ledger", result.decision_id, d)
         self.used[result.decision_id] = d
         return result
 
@@ -84,6 +85,8 @@ def _ask(step: StrategyStep, spec: DecisionSpec, features: Mapping[str, Any], ca
     # Repository-derived content travels only as data, labelled as such; instructions come from the spec.
     state = {"trust": "untrusted_data", "scope": spec.scope, "features": dict(features)}
     instructions = criteria.get("@instructions", f"Choose the option that best describes this {spec.scope}.")
+    if len(canonical({"input": state, "instructions": instructions, "options": options})) > spec.max_input_bytes:
+        return None, None, "input_too_large", 0, None
     rng = random.Random(digest([spec.id, spec.version, dict(features)]))  # same decision, same shuffles
     answers: list[ChoiceAnswer] = []
     names = list(options)
@@ -116,14 +119,24 @@ def evaluate(spec: DecisionSpec, scope_entity: str, features: Mapping[str, Any],
     moved would publish stale references; with the evidence in the key, such a
     change is simply a new decision.
     """
-    fsh = digest({"features": dict(features), "evidence_ids": sorted(evidence_ids), "scope": scope_entity})
+    r = rules(features)
+    inputs = {"features": dict(features), "evidence_ids": sorted(evidence_ids), "scope": scope_entity}
+    step = next((s for s in spec.strategy if s.kind == "decision_model" and s.when == "ambiguous"), None)
+    if r.outcome == "ambiguous" and step is not None:
+        alias = step.model_ref or "decision-default"
+        inputs["decision_policy"] = {
+            "strategy": step.row(), "criteria": dict(criteria or {}),
+            "candidates": sorted(set(r.candidates) & set(spec.labels)),
+            "resolved_model": gateway.identifiers().get(alias) if gateway else None,
+            "allowed_providers": sorted(gateway.allowed_providers) if gateway else [],
+        }
+    fsh = digest(inputs)
     name = f"{spec.id}@{spec.version}"
     did = decision_id(name, fsh, override_set_hash)
     cached = ledger.get(did)
     if cached is not None:
         return cached
 
-    r = rules(features)
     if evidence_ids:
         r = RuleResult(r.outcome, r.label, r.candidates, tuple(evidence_ids), r.contradicting_evidence_ids, r.reason)
     base = dict(decision_id=did, spec=name, scope_entity=scope_entity, feature_set_hash=fsh, rule_outcome=r.outcome, evidence_ids=sorted(r.evidence_ids), contradicting_evidence_ids=sorted(r.contradicting_evidence_ids))
@@ -139,10 +152,9 @@ def evaluate(spec: DecisionSpec, scope_entity: str, features: Mapping[str, Any],
         raise ValueError(f"{name}: unknown rule outcome {r.outcome!r}")
 
     candidates = sorted(set(r.candidates) & set(spec.labels))
-    step = next((s for s in spec.strategy if s.kind == "decision_model" and s.when == "ambiguous"), None)
     if step is None or gateway is None:
         return ledger.put(DecisionResult(**base, selected_label=None, alternatives=candidates, abstained=True, abstain_reason="ambiguous_no_model", decision_method="rules"))
     label, scores, reason, attempts, answered_by = _ask(step, spec, features, candidates, criteria or {}, gateway, budget or Budget())
     result = DecisionResult(**base, selected_label=label, alternatives=candidates, option_scores=scores, abstained=label is None, abstain_reason=reason, decision_method="decision_model", model_ref=answered_by or step.model_ref, attempts=max(attempts, 1))
-    # An outage or an exhausted budget is not a fact about the repository: do not freeze it in the ledger.
-    return result if reason in ("model_unavailable", "budget_exhausted", "egress_denied") else ledger.put(result)
+    # Published snapshots cite the abstention. Subsequent compiles may retry transient outcomes.
+    return ledger.put(result, reusable=reason not in ("model_unavailable", "budget_exhausted", "egress_denied"))

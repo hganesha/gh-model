@@ -93,6 +93,30 @@
         "name": "customers"
       },
       "since": "M1"
+    },
+    {
+      "kind": "TechnicalCapability",
+      "natural_key": {
+        "taxonomy": "stackgraph.technical-capabilities",
+        "key": "http-client"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "TechnicalCapability",
+      "natural_key": {
+        "taxonomy": "stackgraph.technical-capabilities",
+        "key": "relational-database-access"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "TechnicalCapability",
+      "natural_key": {
+        "taxonomy": "stackgraph.technical-capabilities",
+        "key": "web-application-framework"
+      },
+      "since": "M2"
     }
   ],
   "edges": [
@@ -151,6 +175,60 @@
         }
       },
       "since": "M0"
+    },
+    {
+      "subject": {
+        "kind": "ExternalDependency",
+        "natural_key": {
+          "ecosystem": "pypi",
+          "name": "fastapi"
+        }
+      },
+      "predicate": "PROVIDES",
+      "object": {
+        "kind": "TechnicalCapability",
+        "natural_key": {
+          "taxonomy": "stackgraph.technical-capabilities",
+          "key": "web-application-framework"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "ExternalDependency",
+        "natural_key": {
+          "ecosystem": "pypi",
+          "name": "httpx"
+        }
+      },
+      "predicate": "PROVIDES",
+      "object": {
+        "kind": "TechnicalCapability",
+        "natural_key": {
+          "taxonomy": "stackgraph.technical-capabilities",
+          "key": "http-client"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "ExternalDependency",
+        "natural_key": {
+          "ecosystem": "pypi",
+          "name": "sqlalchemy"
+        }
+      },
+      "predicate": "PROVIDES",
+      "object": {
+        "kind": "TechnicalCapability",
+        "natural_key": {
+          "taxonomy": "stackgraph.technical-capabilities",
+          "key": "relational-database-access"
+        }
+      },
+      "since": "M2"
     }
   ],
   "absent_entities": [
