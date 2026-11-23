@@ -451,3 +451,15 @@ def test_hosted_embedding_retries_a_dropped_connection(tmp_path, monkeypatch):
     monkeypatch.setenv("RKP_EMBEDDING_API_KEY", "k")
     embed = placement.embedding(PlacementPolicy(embedding_provider="openai-embeddings"), ("openai-embeddings",), ObjectStore(tmp_path, "t"))
     assert embed("orders")[0] == 1.0 and attempts == ["Bearer k", "Bearer k"]
+
+
+def test_hosted_deployment_signs_in_with_its_managed_identity():
+    from azure.identity import AzureCliCredential, ManagedIdentityCredential
+    from repo_intel.decisions.gateway import azure_credential
+
+    assert isinstance(azure_credential("managed-identity", {"AZURE_CLIENT_ID": "00000000-0000-0000-0000-000000000001"}), ManagedIdentityCredential)
+    assert isinstance(azure_credential("azure-cli", {}), AzureCliCredential)
+    assert azure_credential(None, {}) is None and azure_credential("password", {}) is None
+    env = {"RKP_MSDECISION_ENDPOINT": "https://r.services.ai.azure.com", "RKP_MSDECISION_DEPLOYMENT": "d", "RKP_MSDECISION_AUTH": "managed-identity",
+           "RKP_AZURE_OPENAI_ENDPOINT": "https://r.openai.azure.com", "RKP_AZURE_OPENAI_DEPLOYMENT": "m", "RKP_AZURE_OPENAI_AUTH": "managed-identity"}
+    assert set(Gateway.from_env(frozenset(), env).aliases) == {"microsoft-decision", "azure-openai"}

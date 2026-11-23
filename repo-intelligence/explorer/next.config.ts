@@ -3,6 +3,8 @@ import path from "node:path";
 
 const config: NextConfig = {
   reactStrictMode: true,
+  // A self-contained server for the container image (see Dockerfile); `next dev` is unaffected.
+  output: "standalone",
   poweredByHeader: false,
   // The explorer lives inside a larger repository; keep file tracing rooted here.
   outputFileTracingRoot: path.resolve(__dirname),

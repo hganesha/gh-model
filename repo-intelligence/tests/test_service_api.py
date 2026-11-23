@@ -115,3 +115,21 @@ def test_repository_urls_are_parsed_strictly():
     for bad in ["https://gitlab.com/a/b", "a/b/c", "a/..", "-x/y", "a/b; rm -rf /", "a/$(id)", "", "https://github.com/a"]:
         with pytest.raises(GitHubError):
             parse_slug(bad)
+
+
+def test_hosted_database_applies_schema_and_connects_as_the_app_role(pg_conninfo):
+    import psycopg
+    import pytest
+    from psycopg.conninfo import conninfo_to_dict
+    from repo_intel import projection
+    from repo_intel.serve import external_postgres
+
+    app = external_postgres(pg_conninfo + " sslmode=disable", "a-long-app-password-123")
+    params = conninfo_to_dict(app)
+    assert params["user"] == projection.APP_ROLE and params["password"] == "a-long-app-password-123"
+    assert params["sslmode"] == "disable" and params["host"] == "127.0.0.1", "the owner's host and options carry over"
+    with psycopg.connect(app) as conn:
+        assert conn.execute("SELECT current_user").fetchone()[0] == projection.APP_ROLE
+        assert conn.execute("SELECT count(*) FROM business_maps").fetchone()[0] == 0, "no tenant setting: row-level security shows nothing"
+    with pytest.raises(SystemExit):
+        external_postgres(pg_conninfo, "short")

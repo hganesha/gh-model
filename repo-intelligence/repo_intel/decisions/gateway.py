@@ -66,6 +66,23 @@ def _session(client: Any) -> httpx.Client:
     return client._http
 
 
+def azure_credential(mode: str | None, env: Mapping[str, str] = os.environ) -> Any:
+    """An azure-identity credential for an `*_AUTH` setting, or None when the mode is not one of these.
+
+    `azure-cli` uses the `az login` session of whoever runs the server.
+    `managed-identity` is for a hosted deployment: the container's managed
+    identity (a user-assigned one when AZURE_CLIENT_ID is set). No key is held.
+    """
+    if mode == "azure-cli":
+        from azure.identity import AzureCliCredential
+        return AzureCliCredential(process_timeout=60)
+    if mode == "managed-identity":
+        from azure.identity import ManagedIdentityCredential
+        client_id = env.get("AZURE_CLIENT_ID")
+        return ManagedIdentityCredential(client_id=client_id) if client_id else ManagedIdentityCredential()
+    return None
+
+
 def bearer(credential: Any, scope: str, clock: Callable[[], float] = time.time) -> Callable[[], dict[str, str]]:
     """Authorization header from an Azure credential, reusing the token until five
     minutes before it expires. `AzureCliCredential` runs `az` on every call, which
@@ -396,21 +413,18 @@ class Gateway:
         if env.get("RKP_MSDECISION_ENDPOINT") and env.get("RKP_MSDECISION_DEPLOYMENT"):
             if env.get("RKP_MSDECISION_API_KEY"):
                 aliases["microsoft-decision"] = microsoft_decision(env["RKP_MSDECISION_ENDPOINT"], env["RKP_MSDECISION_DEPLOYMENT"], api_key=env["RKP_MSDECISION_API_KEY"])
-            elif env.get("RKP_MSDECISION_AUTH") == "azure-cli":  # use the existing `az login` session; no key is handled
-                from azure.identity import AzureCliCredential
-                aliases["microsoft-decision"] = microsoft_decision(env["RKP_MSDECISION_ENDPOINT"], env["RKP_MSDECISION_DEPLOYMENT"], credential=AzureCliCredential(process_timeout=60))
+            elif (credential := azure_credential(env.get("RKP_MSDECISION_AUTH"), env)) is not None:  # `az login` or the managed identity; no key is handled
+                aliases["microsoft-decision"] = microsoft_decision(env["RKP_MSDECISION_ENDPOINT"], env["RKP_MSDECISION_DEPLOYMENT"], credential=credential)
         if env.get("RKP_COHERE_RERANK_ENDPOINT") and env.get("RKP_COHERE_RERANK_DEPLOYMENT"):
             if env.get("RKP_COHERE_RERANK_API_KEY"):
                 aliases["cohere-rerank"] = cohere_rerank_azure(env["RKP_COHERE_RERANK_ENDPOINT"], env["RKP_COHERE_RERANK_DEPLOYMENT"], api_key=env["RKP_COHERE_RERANK_API_KEY"])
-            elif env.get("RKP_COHERE_RERANK_AUTH") == "azure-cli":
-                from azure.identity import AzureCliCredential
-                aliases["cohere-rerank"] = cohere_rerank_azure(env["RKP_COHERE_RERANK_ENDPOINT"], env["RKP_COHERE_RERANK_DEPLOYMENT"], credential=AzureCliCredential(process_timeout=60))
+            elif (credential := azure_credential(env.get("RKP_COHERE_RERANK_AUTH"), env)) is not None:  # `az login` or the managed identity; no key is handled
+                aliases["cohere-rerank"] = cohere_rerank_azure(env["RKP_COHERE_RERANK_ENDPOINT"], env["RKP_COHERE_RERANK_DEPLOYMENT"], credential=credential)
         if env.get("RKP_AZURE_OPENAI_ENDPOINT") and env.get("RKP_AZURE_OPENAI_DEPLOYMENT"):
             if env.get("RKP_AZURE_OPENAI_API_KEY"):
                 aliases["azure-openai"] = azure_openai_chat(env["RKP_AZURE_OPENAI_ENDPOINT"], env["RKP_AZURE_OPENAI_DEPLOYMENT"], api_key=env["RKP_AZURE_OPENAI_API_KEY"])
-            elif env.get("RKP_AZURE_OPENAI_AUTH") == "azure-cli":
-                from azure.identity import AzureCliCredential
-                aliases["azure-openai"] = azure_openai_chat(env["RKP_AZURE_OPENAI_ENDPOINT"], env["RKP_AZURE_OPENAI_DEPLOYMENT"], credential=AzureCliCredential(process_timeout=60))
+            elif (credential := azure_credential(env.get("RKP_AZURE_OPENAI_AUTH"), env)) is not None:  # `az login` or the managed identity; no key is handled
+                aliases["azure-openai"] = azure_openai_chat(env["RKP_AZURE_OPENAI_ENDPOINT"], env["RKP_AZURE_OPENAI_DEPLOYMENT"], credential=credential)
         default = env.get("RKP_DECISION_DEFAULT")
         if default in aliases:
             aliases["decision-default"] = aliases[default]
