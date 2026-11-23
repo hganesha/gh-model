@@ -1,0 +1,727 @@
+[
+  {
+    "fixture": "F01-python-api",
+    "root": ".",
+    "package": "orders-api",
+    "rules": "service",
+    "expected": "service",
+    "expected_source": "golden",
+    "model": "service",
+    "abstain_reason": null,
+    "top": [
+      [
+        "service",
+        1.0
+      ],
+      [
+        "cli",
+        0.0
+      ]
+    ],
+    "answered_by": "azure-openai/gpt-4.1-mini-2025-04-14",
+    "features": {
+      "ecosystem": "pypi",
+      "evidence": {
+        "declares_command_line_entry_point": false,
+        "declares_importable_library_entry_point": false,
+        "declares_start_script": false,
+        "depends_on_http_server_framework": true,
+        "depends_on_message_queue_or_job_consumer_library": false,
+        "depends_on_web_frontend_framework": false,
+        "has_container_build_with_start_command": true,
+        "http_endpoints_declared_in_code": 2,
+        "is_workspace_root_that_only_lists_other_packages": false
+      },
+      "named_dependencies": {
+        "http_server_frameworks": [
+          "fastapi"
+        ],
+        "message_consumer_libraries": [],
+        "web_frontend_frameworks": []
+      },
+      "package": "orders-api",
+      "source_files_by_language": {
+        "python": 5
+      }
+    },
+    "agrees": true,
+    "top_pick": "service",
+    "top_pick_agrees": true
+  },
+  {
+    "fixture": "F02-ts-monorepo",
+    "root": ".",
+    "package": "acme-monorepo",
+    "rules": "tooling",
+    "expected": "tooling",
+    "expected_source": "rules only (no golden)",
+    "model": "tooling",
+    "abstain_reason": null,
+    "top": [
+      [
+        "tooling",
+        0.997141
+      ],
+      [
+        "none_of_these",
+        0.002859
+      ]
+    ],
+    "answered_by": "azure-openai/gpt-4.1-mini-2025-04-14",
+    "features": {
+      "ecosystem": "npm",
+      "evidence": {
+        "declares_command_line_entry_point": false,
+        "declares_importable_library_entry_point": false,
+        "declares_start_script": false,
+        "depends_on_http_server_framework": false,
+        "depends_on_message_queue_or_job_consumer_library": false,
+        "depends_on_web_frontend_framework": false,
+        "has_container_build_with_start_command": false,
+        "http_endpoints_declared_in_code": 0,
+        "is_workspace_root_that_only_lists_other_packages": true
+      },
+      "named_dependencies": {
+        "http_server_frameworks": [],
+        "message_consumer_libraries": [],
+        "web_frontend_frameworks": []
+      },
+      "package": "acme-monorepo",
+      "source_files_by_language": {}
+    },
+    "agrees": true,
+    "top_pick": "tooling",
+    "top_pick_agrees": true
+  },
+  {
+    "fixture": "F02-ts-monorepo",
+    "root": "apps/api",
+    "package": "@acme/api",
+    "rules": "service",
+    "expected": "service",
+    "expected_source": "golden",
+    "model": "service",
+    "abstain_reason": null,
+    "top": [
+      [
+        "service",
+        1.0
+      ],
+      [
+        "cli",
+        0.0
+      ]
+    ],
+    "answered_by": "azure-openai/gpt-4.1-mini-2025-04-14",
+    "features": {
+      "ecosystem": "npm",
+      "evidence": {
+        "declares_command_line_entry_point": false,
+        "declares_importable_library_entry_point": false,
+        "declares_start_script": true,
+        "depends_on_http_server_framework": true,
+        "depends_on_message_queue_or_job_consumer_library": false,
+        "depends_on_web_frontend_framework": false,
+        "has_container_build_with_start_command": true,
+        "http_endpoints_declared_in_code": 2,
+        "is_workspace_root_that_only_lists_other_packages": false
+      },
+      "named_dependencies": {
+        "http_server_frameworks": [
+          "express"
+        ],
+        "message_consumer_libraries": [],
+        "web_frontend_frameworks": []
+      },
+      "package": "@acme/api",
+      "source_files_by_language": {
+        "typescript": 1
+      }
+    },
+    "agrees": true,
+    "top_pick": "service",
+    "top_pick_agrees": true
+  },
+  {
+    "fixture": "F02-ts-monorepo",
+    "root": "apps/web",
+    "package": "@acme/web",
+    "rules": "frontend_app",
+    "expected": "frontend_app",
+    "expected_source": "golden",
+    "model": "frontend_app",
+    "abstain_reason": null,
+    "top": [
+      [
+        "frontend_app",
+        1.0
+      ],
+      [
+        "cli",
+        0.0
+      ]
+    ],
+    "answered_by": "azure-openai/gpt-4.1-mini-2025-04-14",
+    "features": {
+      "ecosystem": "npm",
+      "evidence": {
+        "declares_command_line_entry_point": false,
+        "declares_importable_library_entry_point": false,
+        "declares_start_script": false,
+        "depends_on_http_server_framework": false,
+        "depends_on_message_queue_or_job_consumer_library": false,
+        "depends_on_web_frontend_framework": true,
+        "has_container_build_with_start_command": false,
+        "http_endpoints_declared_in_code": 1,
+        "is_workspace_root_that_only_lists_other_packages": false
+      },
+      "named_dependencies": {
+        "http_server_frameworks": [],
+        "message_consumer_libraries": [],
+        "web_frontend_frameworks": [
+          "next"
+        ]
+      },
+      "package": "@acme/web",
+      "source_files_by_language": {
+        "typescript": 2
+      }
+    },
+    "agrees": true,
+    "top_pick": "frontend_app",
+    "top_pick_agrees": true
+  },
+  {
+    "fixture": "F02-ts-monorepo",
+    "root": "apps/worker",
+    "package": "@acme/worker",
+    "rules": "worker",
+    "expected": "worker",
+    "expected_source": "golden",
+    "model": "worker",
+    "abstain_reason": null,
+    "top": [
+      [
+        "worker",
+        1.0
+      ],
+      [
+        "cli",
+        0.0
+      ]
+    ],
+    "answered_by": "azure-openai/gpt-4.1-mini-2025-04-14",
+    "features": {
+      "ecosystem": "npm",
+      "evidence": {
+        "declares_command_line_entry_point": false,
+        "declares_importable_library_entry_point": false,
+        "declares_start_script": true,
+        "depends_on_http_server_framework": false,
+        "depends_on_message_queue_or_job_consumer_library": true,
+        "depends_on_web_frontend_framework": false,
+        "has_container_build_with_start_command": false,
+        "http_endpoints_declared_in_code": 0,
+        "is_workspace_root_that_only_lists_other_packages": false
+      },
+      "named_dependencies": {
+        "http_server_frameworks": [],
+        "message_consumer_libraries": [
+          "bullmq"
+        ],
+        "web_frontend_frameworks": []
+      },
+      "package": "@acme/worker",
+      "source_files_by_language": {
+        "typescript": 1
+      }
+    },
+    "agrees": true,
+    "top_pick": "worker",
+    "top_pick_agrees": true
+  },
+  {
+    "fixture": "F02-ts-monorepo",
+    "root": "packages/shared",
+    "package": "@acme/shared",
+    "rules": "library",
+    "expected": "library",
+    "expected_source": "golden",
+    "model": "library",
+    "abstain_reason": null,
+    "top": [
+      [
+        "library",
+        1.0
+      ],
+      [
+        "cli",
+        0.0
+      ]
+    ],
+    "answered_by": "azure-openai/gpt-4.1-mini-2025-04-14",
+    "features": {
+      "ecosystem": "npm",
+      "evidence": {
+        "declares_command_line_entry_point": false,
+        "declares_importable_library_entry_point": true,
+        "declares_start_script": false,
+        "depends_on_http_server_framework": false,
+        "depends_on_message_queue_or_job_consumer_library": false,
+        "depends_on_web_frontend_framework": false,
+        "has_container_build_with_start_command": false,
+        "http_endpoints_declared_in_code": 0,
+        "is_workspace_root_that_only_lists_other_packages": false
+      },
+      "named_dependencies": {
+        "http_server_frameworks": [],
+        "message_consumer_libraries": [],
+        "web_frontend_frameworks": []
+      },
+      "package": "@acme/shared",
+      "source_files_by_language": {
+        "typescript": 2
+      }
+    },
+    "agrees": true,
+    "top_pick": "library",
+    "top_pick_agrees": true
+  },
+  {
+    "fixture": "F02-ts-monorepo",
+    "root": "packages/ui",
+    "package": "@acme/ui",
+    "rules": "library",
+    "expected": "library",
+    "expected_source": "golden",
+    "model": "library",
+    "abstain_reason": null,
+    "top": [
+      [
+        "library",
+        1.0
+      ],
+      [
+        "cli",
+        0.0
+      ]
+    ],
+    "answered_by": "azure-openai/gpt-4.1-mini-2025-04-14",
+    "features": {
+      "ecosystem": "npm",
+      "evidence": {
+        "declares_command_line_entry_point": false,
+        "declares_importable_library_entry_point": true,
+        "declares_start_script": false,
+        "depends_on_http_server_framework": false,
+        "depends_on_message_queue_or_job_consumer_library": false,
+        "depends_on_web_frontend_framework": false,
+        "has_container_build_with_start_command": false,
+        "http_endpoints_declared_in_code": 0,
+        "is_workspace_root_that_only_lists_other_packages": false
+      },
+      "named_dependencies": {
+        "http_server_frameworks": [],
+        "message_consumer_libraries": [],
+        "web_frontend_frameworks": []
+      },
+      "package": "@acme/ui",
+      "source_files_by_language": {
+        "typescript": 2
+      }
+    },
+    "agrees": true,
+    "top_pick": "library",
+    "top_pick_agrees": true
+  },
+  {
+    "fixture": "F03-python-ts-hybrid",
+    "root": "backend",
+    "package": "catalog-backend",
+    "rules": "service",
+    "expected": "service",
+    "expected_source": "golden",
+    "model": "service",
+    "abstain_reason": null,
+    "top": [
+      [
+        "service",
+        1.0
+      ],
+      [
+        "cli",
+        0.0
+      ]
+    ],
+    "answered_by": "azure-openai/gpt-4.1-mini-2025-04-14",
+    "features": {
+      "ecosystem": "pypi",
+      "evidence": {
+        "declares_command_line_entry_point": false,
+        "declares_importable_library_entry_point": false,
+        "declares_start_script": false,
+        "depends_on_http_server_framework": true,
+        "depends_on_message_queue_or_job_consumer_library": false,
+        "depends_on_web_frontend_framework": false,
+        "has_container_build_with_start_command": true,
+        "http_endpoints_declared_in_code": 1,
+        "is_workspace_root_that_only_lists_other_packages": false
+      },
+      "named_dependencies": {
+        "http_server_frameworks": [
+          "fastapi"
+        ],
+        "message_consumer_libraries": [],
+        "web_frontend_frameworks": []
+      },
+      "package": "catalog-backend",
+      "source_files_by_language": {
+        "python": 2
+      }
+    },
+    "agrees": true,
+    "top_pick": "service",
+    "top_pick_agrees": true
+  },
+  {
+    "fixture": "F03-python-ts-hybrid",
+    "root": "frontend",
+    "package": "catalog-frontend",
+    "rules": "frontend_app",
+    "expected": "frontend_app",
+    "expected_source": "golden",
+    "model": "frontend_app",
+    "abstain_reason": null,
+    "top": [
+      [
+        "frontend_app",
+        1.0
+      ],
+      [
+        "cli",
+        0.0
+      ]
+    ],
+    "answered_by": "azure-openai/gpt-4.1-mini-2025-04-14",
+    "features": {
+      "ecosystem": "npm",
+      "evidence": {
+        "declares_command_line_entry_point": false,
+        "declares_importable_library_entry_point": false,
+        "declares_start_script": false,
+        "depends_on_http_server_framework": false,
+        "depends_on_message_queue_or_job_consumer_library": false,
+        "depends_on_web_frontend_framework": true,
+        "has_container_build_with_start_command": false,
+        "http_endpoints_declared_in_code": 0,
+        "is_workspace_root_that_only_lists_other_packages": false
+      },
+      "named_dependencies": {
+        "http_server_frameworks": [],
+        "message_consumer_libraries": [],
+        "web_frontend_frameworks": [
+          "react-dom"
+        ]
+      },
+      "package": "catalog-frontend",
+      "source_files_by_language": {
+        "typescript": 2
+      }
+    },
+    "agrees": true,
+    "top_pick": "frontend_app",
+    "top_pick_agrees": true
+  },
+  {
+    "fixture": "F06-iac-heavy",
+    "root": ".",
+    "package": "status-api",
+    "rules": "service",
+    "expected": "service",
+    "expected_source": "golden",
+    "model": null,
+    "abstain_reason": "order_sensitive",
+    "top": [
+      [
+        "service",
+        0.776847
+      ],
+      [
+        "none_of_these",
+        0.218999
+      ]
+    ],
+    "answered_by": "azure-openai/gpt-4.1-mini-2025-04-14",
+    "features": {
+      "ecosystem": "pypi",
+      "evidence": {
+        "declares_command_line_entry_point": false,
+        "declares_importable_library_entry_point": false,
+        "declares_start_script": false,
+        "depends_on_http_server_framework": true,
+        "depends_on_message_queue_or_job_consumer_library": false,
+        "depends_on_web_frontend_framework": false,
+        "has_container_build_with_start_command": true,
+        "http_endpoints_declared_in_code": 0,
+        "is_workspace_root_that_only_lists_other_packages": false
+      },
+      "named_dependencies": {
+        "http_server_frameworks": [
+          "flask"
+        ],
+        "message_consumer_libraries": [],
+        "web_frontend_frameworks": []
+      },
+      "package": "status-api",
+      "source_files_by_language": {
+        "python": 1
+      }
+    },
+    "agrees": false,
+    "top_pick": "service",
+    "top_pick_agrees": true
+  },
+  {
+    "fixture": "F07-event-driven",
+    "root": "services/audit",
+    "package": "audit-service",
+    "rules": "worker",
+    "expected": "worker",
+    "expected_source": "golden",
+    "model": "worker",
+    "abstain_reason": null,
+    "top": [
+      [
+        "worker",
+        1.0
+      ],
+      [
+        "cli",
+        0.0
+      ]
+    ],
+    "answered_by": "azure-openai/gpt-4.1-mini-2025-04-14",
+    "features": {
+      "ecosystem": "pypi",
+      "evidence": {
+        "declares_command_line_entry_point": false,
+        "declares_importable_library_entry_point": false,
+        "declares_start_script": false,
+        "depends_on_http_server_framework": false,
+        "depends_on_message_queue_or_job_consumer_library": true,
+        "depends_on_web_frontend_framework": false,
+        "has_container_build_with_start_command": false,
+        "http_endpoints_declared_in_code": 0,
+        "is_workspace_root_that_only_lists_other_packages": false
+      },
+      "named_dependencies": {
+        "http_server_frameworks": [],
+        "message_consumer_libraries": [
+          "confluent-kafka"
+        ],
+        "web_frontend_frameworks": []
+      },
+      "package": "audit-service",
+      "source_files_by_language": {
+        "python": 2
+      }
+    },
+    "agrees": true,
+    "top_pick": "worker",
+    "top_pick_agrees": true
+  },
+  {
+    "fixture": "F07-event-driven",
+    "root": "services/notifier",
+    "package": "notifier-service",
+    "rules": "worker",
+    "expected": "worker",
+    "expected_source": "golden",
+    "model": "worker",
+    "abstain_reason": null,
+    "top": [
+      [
+        "worker",
+        1.0
+      ],
+      [
+        "cli",
+        0.0
+      ]
+    ],
+    "answered_by": "azure-openai/gpt-4.1-mini-2025-04-14",
+    "features": {
+      "ecosystem": "pypi",
+      "evidence": {
+        "declares_command_line_entry_point": false,
+        "declares_importable_library_entry_point": false,
+        "declares_start_script": false,
+        "depends_on_http_server_framework": false,
+        "depends_on_message_queue_or_job_consumer_library": true,
+        "depends_on_web_frontend_framework": false,
+        "has_container_build_with_start_command": false,
+        "http_endpoints_declared_in_code": 0,
+        "is_workspace_root_that_only_lists_other_packages": false
+      },
+      "named_dependencies": {
+        "http_server_frameworks": [],
+        "message_consumer_libraries": [
+          "confluent-kafka"
+        ],
+        "web_frontend_frameworks": []
+      },
+      "package": "notifier-service",
+      "source_files_by_language": {
+        "python": 2
+      }
+    },
+    "agrees": true,
+    "top_pick": "worker",
+    "top_pick_agrees": true
+  },
+  {
+    "fixture": "F07-event-driven",
+    "root": "services/orders",
+    "package": "orders-service",
+    "rules": "service",
+    "expected": "service",
+    "expected_source": "golden",
+    "model": "service",
+    "abstain_reason": null,
+    "top": [
+      [
+        "service",
+        0.999999
+      ],
+      [
+        "worker",
+        1e-06
+      ]
+    ],
+    "answered_by": "azure-openai/gpt-4.1-mini-2025-04-14",
+    "features": {
+      "ecosystem": "pypi",
+      "evidence": {
+        "declares_command_line_entry_point": false,
+        "declares_importable_library_entry_point": false,
+        "declares_start_script": false,
+        "depends_on_http_server_framework": true,
+        "depends_on_message_queue_or_job_consumer_library": true,
+        "depends_on_web_frontend_framework": false,
+        "has_container_build_with_start_command": false,
+        "http_endpoints_declared_in_code": 1,
+        "is_workspace_root_that_only_lists_other_packages": false
+      },
+      "named_dependencies": {
+        "http_server_frameworks": [
+          "fastapi"
+        ],
+        "message_consumer_libraries": [
+          "confluent-kafka"
+        ],
+        "web_frontend_frameworks": []
+      },
+      "package": "orders-service",
+      "source_files_by_language": {
+        "python": 4
+      }
+    },
+    "agrees": true,
+    "top_pick": "service",
+    "top_pick_agrees": true
+  },
+  {
+    "fixture": "F08-ai-agent",
+    "root": ".",
+    "package": "support-agent",
+    "rules": "ambiguous",
+    "expected": "service",
+    "expected_source": "golden (ambiguous case, human label)",
+    "model": null,
+    "abstain_reason": "none_of_these",
+    "top": [
+      [
+        "none_of_these",
+        0.999149
+      ],
+      [
+        "library",
+        0.000851
+      ]
+    ],
+    "answered_by": "azure-openai/gpt-4.1-mini-2025-04-14",
+    "features": {
+      "ecosystem": "pypi",
+      "evidence": {
+        "declares_command_line_entry_point": false,
+        "declares_importable_library_entry_point": false,
+        "declares_start_script": false,
+        "depends_on_http_server_framework": false,
+        "depends_on_message_queue_or_job_consumer_library": false,
+        "depends_on_web_frontend_framework": false,
+        "has_container_build_with_start_command": false,
+        "http_endpoints_declared_in_code": 0,
+        "is_workspace_root_that_only_lists_other_packages": false
+      },
+      "named_dependencies": {
+        "http_server_frameworks": [],
+        "message_consumer_libraries": [],
+        "web_frontend_frameworks": []
+      },
+      "package": "support-agent",
+      "source_files_by_language": {
+        "python": 3
+      }
+    },
+    "agrees": false,
+    "top_pick": "none_of_these",
+    "top_pick_agrees": false
+  },
+  {
+    "fixture": "F09-data-heavy",
+    "root": ".",
+    "package": "warehouse",
+    "rules": "ambiguous",
+    "expected": "library",
+    "expected_source": "golden (ambiguous case, human label)",
+    "model": null,
+    "abstain_reason": "none_of_these",
+    "top": [
+      [
+        "none_of_these",
+        0.999912
+      ],
+      [
+        "library",
+        8.7e-05
+      ]
+    ],
+    "answered_by": "azure-openai/gpt-4.1-mini-2025-04-14",
+    "features": {
+      "ecosystem": "pypi",
+      "evidence": {
+        "declares_command_line_entry_point": false,
+        "declares_importable_library_entry_point": false,
+        "declares_start_script": false,
+        "depends_on_http_server_framework": false,
+        "depends_on_message_queue_or_job_consumer_library": false,
+        "depends_on_web_frontend_framework": false,
+        "has_container_build_with_start_command": false,
+        "http_endpoints_declared_in_code": 0,
+        "is_workspace_root_that_only_lists_other_packages": false
+      },
+      "named_dependencies": {
+        "http_server_frameworks": [],
+        "message_consumer_libraries": [],
+        "web_frontend_frameworks": []
+      },
+      "package": "warehouse",
+      "source_files_by_language": {
+        "python": 5
+      }
+    },
+    "agrees": false,
+    "top_pick": "none_of_these",
+    "top_pick_agrees": false
+  }
+]

@@ -37,3 +37,43 @@ The public samples were [Full Stack FastAPI Template](https://github.com/fastapi
 ~~~
 
 The second command requires a configured model alias and an explicit `RKP_ALLOW_PROVIDERS` entry. It sends bounded features from the public samples and the synthetic fixtures to that provider. For Azure, set `RKP_MSDECISION_ENDPOINT`, `RKP_MSDECISION_DEPLOYMENT` and `RKP_MSDECISION_AUTH=azure-cli`, and install the `azure` extra.
+
+## Every Azure model, 2026-11-23
+
+All four model kinds the code can use were deployed on one Azure AI Services resource (East US 2) and run live, signed in through the Azure CLI. Only synthetic fixtures were used (no public samples): 15 components, 10 of a kind the placement policy covers, 9 of those with a label. Threshold 0.88 throughout.
+
+| Deployment | Used for | Notes |
+|---|---|---|
+| Microsoft-Decision-1.1 (`ms-decision-1-1`) | decision model | System One API |
+| gpt-4.1-mini (`gpt-4-1-mini`) | decision model | new `azure-openai` adapter: one letter per option, scores from first-token log-probabilities |
+| Cohere-rerank-v5-pro (`cohere-rerank-v5-pro`) | decision model | relevance scores, not probabilities; capacity 1 returned HTTP 429, 20 works |
+| text-embedding-3-small (`text-embedding-3-small`) | placement shortlist | Azure OpenAI v1 API, 384 dimensions |
+
+Placement (correct / wrong / abstained of 10):
+
+| Decision model | Local shortlist | Azure embedding shortlist |
+|---|---|---|
+| Microsoft-Decision-1.1 | 6 / 0 / 4 | 5 / 0 / 5 |
+| gpt-4.1-mini | 7 / 1 / 2 | 8 / 1 / 1 |
+| Cohere-rerank-v5-pro | 0 / 0 / 10 | 0 / 0 / 10 |
+
+Shortlist: the labelled capability was in the top five for 9 of 9 with either vector source, and ranked first for 8 with the local vectors and 6 with Azure embeddings. On this sample hosted embeddings do not improve the shortlist, so `local` stays the default.
+
+gpt-4.1-mini places more, but its one wrong placement (`@acme/web` under Service monitoring) comes with a score of 1.0, so no threshold separates it from its correct answers. In the live end-to-end run the same wrong placement added a false dependency arrow on the map. Microsoft-Decision-1.1 stays the recommended default: it made no wrong placement in any run. The reranker never reaches 0.88 because its scores are spread across options; it would need its own calibrated threshold before it can place anything.
+
+Component kind ([fixture evaluation](component-kind-gpt-4.1-mini-2026-11-23.json), every fixture component sent to the model, 15 components):
+
+| Decision model | Answered and right | Answered and wrong | Abstained |
+|---|---|---|---|
+| Microsoft-Decision-1.1 | 9 | 0 | 6 |
+| gpt-4.1-mini | 12 | 0 | 3 |
+| Cohere-rerank-v5-pro | 0 | 0 | 15 |
+
+In a real compile only the components rules leave ambiguous go to the model. Across six fixture repositories compiled through the API, that was 4 components (in F08, F09 and F10). Both decision models answered `none_of_these` for all 4, so they stay unclassified rather than guessed.
+
+~~~bash
+.venv/bin/python -m repo_intel.decisions.placement_benchmark --embedding openai-embeddings --model microsoft-decision --model azure-openai --model cohere-rerank
+.venv/bin/python -m repo_intel.decisions.fixture_eval azure-openai out.json
+~~~
+
+The first command also needs `RKP_EMBEDDING_URL=https://<resource>.openai.azure.com/openai/v1`, `RKP_EMBEDDING_MODEL=<deployment>` and `RKP_EMBEDDING_AUTH=azure-cli`. For the chat model, set `RKP_AZURE_OPENAI_ENDPOINT=https://<resource>.openai.azure.com`, `RKP_AZURE_OPENAI_DEPLOYMENT` and `RKP_AZURE_OPENAI_AUTH=azure-cli`.

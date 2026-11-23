@@ -11,7 +11,7 @@ const modes: Record<ConnectionMode, string> = {
   github_pat: "GitHub token", github_device: "GitHub device sign-in", github_app: "GitHub App",
   gitlab_token: "GitLab token", git_https: "Git HTTPS token", git_ssh: "Git SSH deploy key",
 };
-const providers = ["jev", "microsoft-decision", "cohere-rerank", "openai-embeddings"];
+const providers = ["jev", "microsoft-decision", "azure-openai", "cohere-rerank", "openai-embeddings"];
 const kinds = ["service", "worker", "frontend_app", "library", "cli", "tooling", "unknown"];
 const policyDefault: Tracking = { refs: [], trigger: "manual", interval_minutes: 15 };
 

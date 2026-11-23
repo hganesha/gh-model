@@ -48,6 +48,7 @@ class Service:
         self.device_lock = threading.Lock()
         self.poll_due: dict[str, float] = {}
         self.placement_lock = threading.Lock()
+        self.placement_run = threading.Lock()  # one placement run at a time: background and explicit runs read and write the same map
         self.pending_placements: set[str | None] = set()
         self.placement_worker: threading.Thread | None = None
         with projection.connect(self.conninfo, self.store.tenant_id) as conn:
@@ -416,7 +417,19 @@ class Service:
                 else:
                     break
 
-    def run_placement(self, *, repository_id: str | None = None) -> business_map.BusinessMap:
+    def run_placement(self, *, repository_id: str | None = None, attempts: int = 1) -> business_map.BusinessMap:
+        """Place components on the active map. With `attempts` > 1, a map edited
+        during the run is read again and placed again instead of failing."""
+        for attempt in range(attempts):
+            try:
+                with self.placement_run:
+                    return self._place_once(repository_id)
+            except business_map.StaleVersion:
+                if attempt == attempts - 1:
+                    raise
+        raise AssertionError("unreachable")
+
+    def _place_once(self, repository_id: str | None) -> business_map.BusinessMap:
         current = self.map_document()
         if not current.capabilities():
             return current
