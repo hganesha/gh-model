@@ -306,7 +306,7 @@ def create_app(conninfo: str, tenant_id: str, dev_token: str | None, store: Obje
     @app.post("/v1/business-maps/run-placement")
     def place_components(admin: Admin):
         try:
-            svc().run_placement()
+            svc().run_placement(attempts=3)  # a save may have started a background run moments ago
         except business_map.StaleVersion as exc:
             raise HTTPException(409, str(exc)) from exc
         return svc().map_view()

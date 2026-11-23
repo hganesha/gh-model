@@ -1,0 +1,520 @@
+{
+  "commits": {
+    "F01-python-api": "9b37f8ace25313bb69f55b57f940b22482957631",
+    "F02-ts-monorepo": "6ade231762ede528b7d4d06ab33c3e0291740919",
+    "F03-python-ts-hybrid": "fce2d6daeefe2c62853d61426d970d98a2f19316",
+    "F04-java-maven": "bcb4b3ba2c5ec645eb9c9c8cfd23d151600b01d7",
+    "F05-go-services": "caa57b21789f78020aed0bed3bfb860414edc555",
+    "F06-iac-heavy": "4aa0ff659baabc2bf89456db7553010a687c6266",
+    "F07-event-driven": "df381dec0279b064f55ab44ad88f2065156b303b",
+    "F08-ai-agent": "0841349e255ca023f3917e3be2170925a5a1cc0a",
+    "F09-data-heavy": "7027b75c134c553969cfd4ec4d7b6c42640a71eb",
+    "F10-ambiguous-incomplete": "04289d97a17645b1940c4b8886d071286d04c3ee"
+  },
+  "coverage": {
+    "components": 15,
+    "eligible": 10,
+    "eligible_with_label": 9,
+    "shortlist_hits": 9
+  },
+  "decisions": {
+    "azure-openai": {
+      "abstained": 1,
+      "accepted_correct": 8,
+      "accepted_wrong": 1,
+      "cases": [
+        {
+          "choice": "customers",
+          "name": "orders-api",
+          "reason": null,
+          "score": 0.999994
+        },
+        {
+          "choice": "orders",
+          "name": "@acme/api",
+          "reason": null,
+          "score": 1.0
+        },
+        {
+          "choice": "availability",
+          "name": "@acme/web",
+          "reason": null,
+          "score": 0.99999
+        },
+        {
+          "choice": null,
+          "name": "@acme/worker",
+          "reason": "none_of_these",
+          "score": null
+        },
+        {
+          "choice": "catalogue",
+          "name": "catalog-backend",
+          "reason": null,
+          "score": 1.0
+        },
+        {
+          "choice": "catalogue",
+          "name": "catalog-frontend",
+          "reason": null,
+          "score": 1.0
+        },
+        {
+          "choice": "availability",
+          "name": "status-api",
+          "reason": null,
+          "score": 0.925537
+        },
+        {
+          "choice": "audit",
+          "name": "audit-service",
+          "reason": null,
+          "score": 0.993985
+        },
+        {
+          "choice": "notifications",
+          "name": "notifier-service",
+          "reason": null,
+          "score": 0.999353
+        },
+        {
+          "choice": "orders",
+          "name": "orders-service",
+          "reason": null,
+          "score": 1.0
+        }
+      ]
+    },
+    "cohere-rerank": {
+      "abstained": 10,
+      "accepted_correct": 0,
+      "accepted_wrong": 0,
+      "cases": [
+        {
+          "choice": null,
+          "name": "orders-api",
+          "reason": "below_threshold",
+          "score": null
+        },
+        {
+          "choice": null,
+          "name": "@acme/api",
+          "reason": "below_threshold",
+          "score": null
+        },
+        {
+          "choice": null,
+          "name": "@acme/web",
+          "reason": "below_threshold",
+          "score": null
+        },
+        {
+          "choice": null,
+          "name": "@acme/worker",
+          "reason": "below_threshold",
+          "score": null
+        },
+        {
+          "choice": null,
+          "name": "catalog-backend",
+          "reason": "below_threshold",
+          "score": null
+        },
+        {
+          "choice": null,
+          "name": "catalog-frontend",
+          "reason": "below_threshold",
+          "score": null
+        },
+        {
+          "choice": null,
+          "name": "status-api",
+          "reason": "below_threshold",
+          "score": null
+        },
+        {
+          "choice": null,
+          "name": "audit-service",
+          "reason": "below_threshold",
+          "score": null
+        },
+        {
+          "choice": null,
+          "name": "notifier-service",
+          "reason": "below_threshold",
+          "score": null
+        },
+        {
+          "choice": null,
+          "name": "orders-service",
+          "reason": "below_threshold",
+          "score": null
+        }
+      ]
+    },
+    "microsoft-decision": {
+      "abstained": 5,
+      "accepted_correct": 5,
+      "accepted_wrong": 0,
+      "cases": [
+        {
+          "choice": "customers",
+          "name": "orders-api",
+          "reason": null,
+          "score": 0.996005
+        },
+        {
+          "choice": "orders",
+          "name": "@acme/api",
+          "reason": null,
+          "score": 0.992385
+        },
+        {
+          "choice": null,
+          "name": "@acme/web",
+          "reason": "below_threshold",
+          "score": null
+        },
+        {
+          "choice": null,
+          "name": "@acme/worker",
+          "reason": "none_of_these",
+          "score": null
+        },
+        {
+          "choice": "catalogue",
+          "name": "catalog-backend",
+          "reason": null,
+          "score": 0.970208
+        },
+        {
+          "choice": "catalogue",
+          "name": "catalog-frontend",
+          "reason": null,
+          "score": 0.989965
+        },
+        {
+          "choice": null,
+          "name": "status-api",
+          "reason": "below_threshold",
+          "score": null
+        },
+        {
+          "choice": null,
+          "name": "audit-service",
+          "reason": "below_threshold",
+          "score": null
+        },
+        {
+          "choice": null,
+          "name": "notifier-service",
+          "reason": "below_threshold",
+          "score": null
+        },
+        {
+          "choice": "orders",
+          "name": "orders-service",
+          "reason": null,
+          "score": 0.911582
+        }
+      ]
+    },
+    "rules-only": {
+      "abstained": 10,
+      "accepted_correct": 0,
+      "accepted_wrong": 0,
+      "cases": [
+        {
+          "choice": null,
+          "name": "orders-api",
+          "reason": "ambiguous_no_model",
+          "score": null
+        },
+        {
+          "choice": null,
+          "name": "@acme/api",
+          "reason": "ambiguous_no_model",
+          "score": null
+        },
+        {
+          "choice": null,
+          "name": "@acme/web",
+          "reason": "ambiguous_no_model",
+          "score": null
+        },
+        {
+          "choice": null,
+          "name": "@acme/worker",
+          "reason": "ambiguous_no_model",
+          "score": null
+        },
+        {
+          "choice": null,
+          "name": "catalog-backend",
+          "reason": "ambiguous_no_model",
+          "score": null
+        },
+        {
+          "choice": null,
+          "name": "catalog-frontend",
+          "reason": "ambiguous_no_model",
+          "score": null
+        },
+        {
+          "choice": null,
+          "name": "status-api",
+          "reason": "ambiguous_no_model",
+          "score": null
+        },
+        {
+          "choice": null,
+          "name": "audit-service",
+          "reason": "ambiguous_no_model",
+          "score": null
+        },
+        {
+          "choice": null,
+          "name": "notifier-service",
+          "reason": "ambiguous_no_model",
+          "score": null
+        },
+        {
+          "choice": null,
+          "name": "orders-service",
+          "reason": "ambiguous_no_model",
+          "score": null
+        }
+      ]
+    }
+  },
+  "embedding": "openai-embeddings",
+  "labels": [
+    {
+      "eligible": true,
+      "expected": "customers",
+      "kind": "service",
+      "name": "orders-api",
+      "repository": "F01-python-api",
+      "root": "",
+      "shortlist": [
+        "customers",
+        "notifications",
+        "analysis",
+        "orders",
+        "returns"
+      ]
+    },
+    {
+      "eligible": true,
+      "expected": "orders",
+      "kind": "service",
+      "name": "@acme/api",
+      "repository": "F02-ts-monorepo",
+      "root": "apps/api",
+      "shortlist": [
+        "notifications",
+        "orders",
+        "audit",
+        "analysis",
+        "returns"
+      ]
+    },
+    {
+      "eligible": false,
+      "expected": null,
+      "kind": "library",
+      "name": "@acme/shared",
+      "repository": "F02-ts-monorepo",
+      "root": "packages/shared",
+      "shortlist": [
+        "availability",
+        "support",
+        "notifications",
+        "customers",
+        "audit"
+      ]
+    },
+    {
+      "eligible": false,
+      "expected": null,
+      "kind": "library",
+      "name": "@acme/ui",
+      "repository": "F02-ts-monorepo",
+      "root": "packages/ui",
+      "shortlist": [
+        "notifications",
+        "support",
+        "identity",
+        "calculation",
+        "customers"
+      ]
+    },
+    {
+      "eligible": true,
+      "expected": "orders",
+      "kind": "frontend_app",
+      "name": "@acme/web",
+      "repository": "F02-ts-monorepo",
+      "root": "apps/web",
+      "shortlist": [
+        "availability",
+        "notifications",
+        "analysis",
+        "audit",
+        "orders"
+      ]
+    },
+    {
+      "eligible": true,
+      "expected": null,
+      "kind": "worker",
+      "name": "@acme/worker",
+      "repository": "F02-ts-monorepo",
+      "root": "apps/worker",
+      "shortlist": [
+        "availability",
+        "support",
+        "returns",
+        "analysis",
+        "notifications"
+      ]
+    },
+    {
+      "eligible": false,
+      "expected": null,
+      "kind": "tooling",
+      "name": "acme-monorepo",
+      "repository": "F02-ts-monorepo",
+      "root": "",
+      "shortlist": [
+        "availability",
+        "audit",
+        "returns",
+        "support",
+        "notifications"
+      ]
+    },
+    {
+      "eligible": true,
+      "expected": "catalogue",
+      "kind": "service",
+      "name": "catalog-backend",
+      "repository": "F03-python-ts-hybrid",
+      "root": "backend",
+      "shortlist": [
+        "catalogue",
+        "returns",
+        "audit",
+        "orders",
+        "customers"
+      ]
+    },
+    {
+      "eligible": true,
+      "expected": "catalogue",
+      "kind": "frontend_app",
+      "name": "catalog-frontend",
+      "repository": "F03-python-ts-hybrid",
+      "root": "frontend",
+      "shortlist": [
+        "catalogue",
+        "returns",
+        "orders",
+        "notifications",
+        "audit"
+      ]
+    },
+    {
+      "eligible": true,
+      "expected": "availability",
+      "kind": "service",
+      "name": "status-api",
+      "repository": "F06-iac-heavy",
+      "root": "",
+      "shortlist": [
+        "availability",
+        "notifications",
+        "support",
+        "audit",
+        "identity"
+      ]
+    },
+    {
+      "eligible": true,
+      "expected": "audit",
+      "kind": "worker",
+      "name": "audit-service",
+      "repository": "F07-event-driven",
+      "root": "services/audit",
+      "shortlist": [
+        "availability",
+        "audit",
+        "support",
+        "analysis",
+        "returns"
+      ]
+    },
+    {
+      "eligible": true,
+      "expected": "notifications",
+      "kind": "worker",
+      "name": "notifier-service",
+      "repository": "F07-event-driven",
+      "root": "services/notifier",
+      "shortlist": [
+        "notifications",
+        "audit",
+        "orders",
+        "availability",
+        "customers"
+      ]
+    },
+    {
+      "eligible": true,
+      "expected": "orders",
+      "kind": "service",
+      "name": "orders-service",
+      "repository": "F07-event-driven",
+      "root": "services/orders",
+      "shortlist": [
+        "orders",
+        "notifications",
+        "audit",
+        "analysis",
+        "returns"
+      ]
+    },
+    {
+      "eligible": false,
+      "expected": "support",
+      "kind": "unknown",
+      "name": "support-agent",
+      "repository": "F08-ai-agent",
+      "root": "",
+      "shortlist": [
+        "support",
+        "availability",
+        "notifications",
+        "audit",
+        "returns"
+      ]
+    },
+    {
+      "eligible": false,
+      "expected": "analysis",
+      "kind": "unknown",
+      "name": "warehouse",
+      "repository": "F09-data-heavy",
+      "root": "",
+      "shortlist": [
+        "analysis",
+        "orders",
+        "notifications",
+        "audit",
+        "returns"
+      ]
+    }
+  ],
+  "shortlist_first": 6,
+  "threshold_tested": 0.88
+}
