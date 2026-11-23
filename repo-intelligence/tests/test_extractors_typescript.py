@@ -290,3 +290,35 @@ def test_prisma_broken_schema_does_not_raise():
     assert [t["natural_key"]["name"] for t in entities(result, "Table")] == ["Order", "Other"]
     for junk in (b"", b"\xff\xfe\x00", b"}}}}", b"model {"):
         PRISMA.extract("schema.prisma", junk, sha256_hex(junk))
+
+
+def test_kafka_topics_from_kafkajs_and_rdkafka():
+    result, _ = run(TS, "svc/src/publisher.ts", """
+import { Kafka } from "kafkajs";
+import { Topics } from "./topics";
+export const LOCAL = "orders.local";
+const API_TOKEN = "abc123";
+const producer = new Kafka({}).producer();
+await producer.send({ topic: "orders.created", messages: [] });
+await producer.send({ topic: Topics.SHIPPED, messages: [] });
+await producer.send({ topic: LOCAL, messages: [] });
+await producer.send({ topic: `orders.${region}`, messages: [] });
+await consumer.subscribe({ topics: ["payments.settled", /audit.*/] });
+mailer.send({ to: "a@b.c" });
+""")
+    uses = [(u.payload["role"], u.payload.get("topic"), u.payload.get("name"), u.payload.get("dynamic")) for u in of_kind(result, "topic_use")]
+    assert uses == [
+        ("publish", "orders.created", None, None), ("publish", None, "Topics.SHIPPED", None), ("publish", None, "LOCAL", None),
+        ("publish", None, None, True), ("subscribe", "payments.settled", None, None), ("subscribe", None, None, True),
+    ]
+    assert {o.payload["name"]: o.payload["value"] for o in of_kind(result, "string_constant")} == {"LOCAL": "orders.local"}
+
+    topics, _ = run(TS, "svc/src/topics.ts", 'export const Topics = { SHIPPED: "orders.shipped", DB_PASSWORD: "hunter2" } as const;\n')
+    assert {o.payload["name"]: o.payload["value"] for o in of_kind(topics, "string_constant")} == {"Topics.SHIPPED": "orders.shipped"}
+
+    rd, _ = run(TS, "svc/src/legacy.js", 'const Kafka = require("node-rdkafka");\nproducer.produce("orders.created", null, buf);\nconsumer.subscribe(["orders.created"]);\n')
+    assert [(u.payload["role"], u.payload.get("topic")) for u in of_kind(rd, "topic_use")] == [("publish", "orders.created"), ("subscribe", "orders.created")]
+
+    # No broker client imported: a `send` or `subscribe` call is not a topic use.
+    plain, _ = run(TS, "svc/src/mail.ts", 'mailer.send({ topic: "hello" });\nstore.subscribe(listener);\n')
+    assert not of_kind(plain, "topic_use")

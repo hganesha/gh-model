@@ -1,5 +1,7 @@
 "use client";
 
+import "./workspace-tools.css";
+
 import { ArrowLeft, Search } from "lucide-react";
 import { useEffect, useState } from "react";
 import { snapshotPath, useApi } from "@/lib/api";
@@ -94,7 +96,7 @@ function KindGroup({
 }
 
 function DependencyGroups({ hash, q, onOpen }: { hash: string; q: string; onOpen: (id: string) => void }) {
-  const { data, error, loading, reload } = useApi<{ groups: { capability: Entity; dependencies: Entity[] }[]; unclassified: Entity[] }>(snapshotPath(hash, "dependencies"));
+  const { data, error, loading, reload } = useApi<{ groups: { capability: Entity; dependencies: Entity[] }[]; unclassified: Entity[]; overlaps?: { component: Entity; capability: Entity; dependencies: Entity[] }[] }>(snapshotPath(hash, "dependencies"));
   if (loading) return <Loading label="Loading dependency capabilities" />;
   if (error) return <ErrorNote error={error} onRetry={reload} what="dependency capabilities" />;
   if (!data) return null;
@@ -103,7 +105,12 @@ function DependencyGroups({ hash, q, onOpen }: { hash: string; q: string; onOpen
   const other = data.unclassified.filter((row) => row.name.toLowerCase().includes(query));
   return <section className="kind-group" aria-label="Dependencies by capability">
     <header><h3>Dependencies by capability</h3></header>
-    {groups.some((g) => g.dependencies.length > 1) && <p className="group-note">Several dependencies can provide the same capability.</p>}
+    {(data.overlaps?.length ?? 0) > 0 && <>
+      <p className="group-note">More than one package for the same capability inside one component. They may be complementary; check before treating them as duplicates.</p>
+      <ul className="overlap-list">{data.overlaps?.map((row) => <li key={`${row.component.id}:${row.capability.id}`}>
+        <button type="button" className="link-btn" onClick={() => onOpen(row.component.id)}>{row.component.name}</button> uses {row.dependencies.map((dep) => dep.name).join(", ")} for {row.capability.name}
+      </li>)}</ul>
+    </>}
     {groups.map((row) => <section key={row.capability.id} className="work-tool-row">
       <button type="button" className="link-btn" onClick={() => onOpen(row.capability.id)}>{row.capability.name}</button>
       <div className="entity-list">{row.dependencies.map((dep) => <EntityRow key={dep.id} entity={dep} onOpen={onOpen} />)}</div>

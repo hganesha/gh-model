@@ -24,6 +24,12 @@ NEXT_ROUTE_FILES = {"route.ts", "route.js", "route.tsx"}
 _ROUTERISH = re.compile(r"(app|router|routes?|api|server)$", re.I)
 _ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _USERINFO = re.compile(r"^([A-Za-z][A-Za-z0-9+.-]*://)[^/@]*@")
+# Message-broker clients. kafkajs (and the Confluent client's kafkajs API) take
+# `{ topic }` / `{ topics }` objects; node-rdkafka takes the topic positionally.
+MESSAGING_PACKAGES = {"kafkajs": "kafka", "node-rdkafka": "kafka", "@confluentinc/kafka-javascript": "kafka"}
+_TOPIC_NAME = re.compile(r"^[A-Za-z0-9._-]{1,249}$")  # the characters a Kafka topic may contain
+_SECRET_LIKE = re.compile(r"KEY|SECRET|TOKEN|PASSWORD|PASSWD|CREDENTIAL", re.I)
+_WRAPPERS = ("as_expression", "satisfies_expression", "parenthesized_expression", "non_null_expression")
 _DECLARATIONS = {
     "function_declaration": "function", "generator_function_declaration": "function", "function_signature": "function",
     "class_declaration": "class", "abstract_class_declaration": "class",
@@ -115,6 +121,47 @@ def _is_process_env(node) -> bool:
     return o is not None and p is not None and o.type == "identifier" and o.text == b"process" and p.text == b"env"
 
 
+def _unwrap(node):
+    """`x` for `x as const`, `(x)`, `x satisfies T` and `x!`."""
+    while node is not None and node.type in _WRAPPERS:
+        inner = [c for c in node.named_children if c.type not in ("type_identifier", "generic_type", "predefined_type", "object_type", "union_type", "array_type")]
+        node = inner[0] if inner else None
+    return node
+
+
+def _pairs(obj, key: str) -> list:
+    """Values of `key` in an object literal; `{ key }` shorthand yields the identifier."""
+    found = []
+    for c in obj.named_children:
+        if c.type == "pair":
+            k = c.child_by_field_name("key")
+            if k is not None and (_text(k) == key or _string(k) == key):
+                found.append(_unwrap(c.child_by_field_name("value")))
+        elif c.type == "shorthand_property_identifier" and _text(c) == key:
+            found.append(c)
+    return [f for f in found if f is not None]
+
+
+def _topic_values(obj) -> list:
+    """The topic expressions of a kafkajs `{ topic }` or `{ topics: [...] }` argument."""
+    values = _pairs(obj, "topic")
+    for topics in _pairs(obj, "topics"):
+        values += list(topics.named_children) if topics.type == "array" else [topics]
+    return values
+
+
+def _dotted_name(node) -> bool:
+    """True for `Topics.ORDERS` or `config.topics.orders`: identifiers joined by dots."""
+    if node is None or node.type != "member_expression":
+        return False
+    while node.type == "member_expression":
+        prop = node.child_by_field_name("property")
+        if prop is None or prop.type != "property_identifier":
+            return False
+        node = node.child_by_field_name("object")
+    return node.type == "identifier"
+
+
 def _walk(root):
     stack = [root]
     while stack:
@@ -125,7 +172,7 @@ def _walk(root):
 
 class TypeScriptSource:
     id = "typescript.source"
-    version = "1.0.0"
+    version = "1.1.0"
 
     def matches(self, path: str) -> bool:
         return path.lower().endswith(EXTENSIONS)
@@ -145,6 +192,10 @@ class TypeScriptSource:
         self._symbols(root, blob, at, out)
         self._config(nodes, blob, at, out)
         self._fetch(nodes, data, blob, at, out)
+        self._string_constants(root, blob, at, out)
+        transport = self._messaging(nodes)
+        if transport:
+            self._topic_uses(nodes, transport, blob, at, out)
         if self._uses_express(nodes):
             self._express(nodes, blob, at, out)
         route = next_route(path)
@@ -299,6 +350,92 @@ class TypeScriptSource:
             else:
                 continue
             out.observations.append(obs("http_call", blob, at(fn, first), {"path": _static_path(text)}, ast_node_kind=n.type))
+
+    # -- event topics ----------------------------------------------------------
+
+    def _messaging(self, nodes) -> str | None:
+        """Transport of the broker client this file imports, if any."""
+        for n in nodes:
+            source = None
+            if n.type == "import_statement":
+                source = _string(n.child_by_field_name("source"))
+            elif n.type == "call_expression":
+                fn = n.child_by_field_name("function")
+                if fn is not None and ((fn.type == "identifier" and fn.text == b"require") or fn.type == "import"):
+                    args = _args(n)
+                    source = _string(args[0]) if args else None
+            if source in MESSAGING_PACKAGES:
+                return MESSAGING_PACKAGES[source]
+        return None
+
+    def _string_constants(self, root, blob, at, out):
+        """Top-level `const NAME = "value"` and `const Topics = { KEY: "value" }`.
+
+        Kept for the linker, which resolves a topic passed by name; an object
+        member is recorded as `Topics.KEY`. Names that read like credentials are
+        skipped so a value that may be a secret never enters a payload.
+        """
+        def emit(name, value_node, where):
+            value = _string(value_node)
+            if value is not None and _TOPIC_NAME.match(value) and not _SECRET_LIKE.search(name):
+                out.observations.append(obs("string_constant", blob, at(where, where), {"name": name, "value": value}, ast_node_kind=where.type))
+
+        for st in root.children:
+            decl = st.child_by_field_name("declaration") if st.type == "export_statement" else st
+            if decl is None or decl.type != "lexical_declaration" or not any(c.type == "const" for c in decl.children):
+                continue
+            for d in decl.named_children:
+                name, value = (d.child_by_field_name("name"), _unwrap(d.child_by_field_name("value"))) if d.type == "variable_declarator" else (None, None)
+                if name is None or name.type != "identifier" or value is None:
+                    continue
+                if value.type == "object":
+                    for pair in value.named_children:
+                        key = pair.child_by_field_name("key") if pair.type == "pair" else None
+                        if key is not None and key.type in ("property_identifier", "string"):
+                            emit(f"{_text(name)}.{_string(key) if key.type == 'string' else _text(key)}", _unwrap(pair.child_by_field_name("value")), pair)
+                else:
+                    emit(_text(name), value, d)
+
+    def _topic_uses(self, nodes, transport, blob, at, out):
+        """kafkajs `producer.send({ topic })`, `consumer.subscribe({ topic | topics })`,
+        and node-rdkafka `producer.produce(topic, ...)`, `consumer.subscribe([topic])`.
+
+        A topic is recorded as a literal, as a name for the linker to resolve,
+        or as dynamic when it is computed at run time.
+        """
+        for n in nodes:
+            if n.type != "call_expression":
+                continue
+            fn = n.child_by_field_name("function")
+            method = _tail_name(fn) if fn is not None and fn.type == "member_expression" else None
+            args = _args(n)
+            if method not in ("send", "sendBatch", "produce", "subscribe") or not args:
+                continue
+            role = "subscribe" if method == "subscribe" else "publish"
+            first = _unwrap(args[0])
+            if first.type == "object":
+                targets = _topic_values(first)
+                if not targets and method == "sendBatch":
+                    for pair in _pairs(first, "topicMessages"):
+                        for item in (pair.named_children if pair.type == "array" else []):
+                            targets += _topic_values(_unwrap(item)) if _unwrap(item).type == "object" else []
+                if not targets:
+                    continue  # `mailer.send({ to })`: an object without a topic is not a broker call
+            elif method in ("produce", "subscribe"):
+                targets = list(first.named_children) if first.type == "array" else [first]
+            else:
+                continue  # kafkajs `send` always takes an object
+            for item in targets:
+                item = _unwrap(item)
+                payload: dict = {"role": role, "transport": transport}
+                literal = _string(item)
+                if literal is not None and _TOPIC_NAME.match(literal):
+                    payload["topic"] = literal
+                elif item.type in ("identifier", "shorthand_property_identifier") or _dotted_name(item):
+                    payload["name"] = _text(item)
+                else:
+                    payload["dynamic"] = True
+                out.observations.append(obs("topic_use", blob, at(n, n), payload, ast_node_kind=n.type))
 
     # -- Express ------------------------------------------------------------
 

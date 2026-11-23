@@ -15,6 +15,8 @@ atexit.register(data.cleanup)
 root = Path(data.name)
 fixture = root / "Orders fixture"
 materialize("F01-python-api", fixture)
+monorepo = root / "Storefront fixture"
+materialize("F02-ts-monorepo", monorepo)
 config = root / "data"
 if "RKP_PG_PORT" not in os.environ:
     with socket.socket() as listener:
@@ -30,4 +32,5 @@ signal.signal(signal.SIGTERM, finish)
 path_file = Path(__file__).parent.parent / "test-results" / "fixture-path"
 path_file.parent.mkdir(exist_ok=True)
 path_file.write_text(str(fixture), encoding="utf-8")
+(path_file.parent / "fixture-path-monorepo").write_text(str(monorepo), encoding="utf-8")
 raise SystemExit(main())

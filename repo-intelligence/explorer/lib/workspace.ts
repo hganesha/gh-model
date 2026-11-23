@@ -4,6 +4,9 @@ export interface Capability {
   id: string;
   name: string;
   description: string;
+  /** Position on the free-form canvas; absent until the card is moved there. */
+  x?: number | null;
+  y?: number | null;
 }
 
 export interface Stage {
@@ -25,6 +28,7 @@ export interface Placement {
 
 export interface MapDocument {
   title: string;
+  layout?: "lanes" | "canvas";
   version: number;
   stages: Stage[];
   placements: Placement[];
@@ -59,6 +63,7 @@ export interface SnapshotPlacements {
   components: Record<string, Placement & { capability: string | null }>;
   version?: number;
   capabilities?: { id: string; name: string }[];
+  eligible_components?: number;
 }
 
 export type ConnectionMode = "github_pat" | "github_device" | "github_app" | "gitlab_token" | "git_https" | "git_ssh";
@@ -124,6 +129,41 @@ export function placementLabel(placement: Placement): string {
   if (placement.status === "declared") return "Declared in repository";
   if (placement.status === "suggested") return "Suggested by AI";
   return "Needs placing";
+}
+
+/** Why a component was left for review, in words a reader can act on. */
+export function placementReason(placement: Placement | undefined): string | null {
+  switch (placement?.reason) {
+    case "model_unavailable":
+    case "ambiguous_no_model":
+      return "No decision model is configured, so this was not placed automatically.";
+    case "egress_denied":
+      return "The decision model is not allowed to receive data, so this was not placed automatically.";
+    case "budget_exhausted":
+      return "The model call budget ran out before this component was considered.";
+    case "below_threshold":
+      return "The model was not confident enough to place this.";
+    case "below_margin":
+      return "The model could not separate the top candidates.";
+    case "order_sensitive":
+      return "The model changed its answer when the options were reordered.";
+    case "none_of_these":
+      return "The model judged that none of the candidates fit.";
+    case "input_too_large":
+      return "This component's facts were too large to send to the model.";
+    case "removed by owner":
+      return "Removed by an owner. It will not be placed automatically again.";
+    case "No remaining candidates":
+      return "Every candidate has been rejected.";
+    default:
+      return placement?.reason ? placement.reason.replaceAll("_", " ") : null;
+  }
+}
+
+/** True when automatic placement could not run at all, as opposed to declining. */
+export function placementBlocked(placements: Placement[]): "model_unavailable" | "egress_denied" | null {
+  const reasons = new Set(placements.filter((row) => !isPlaced(row)).map((row) => row.reason));
+  return reasons.has("model_unavailable") || reasons.has("ambiguous_no_model") ? "model_unavailable" : reasons.has("egress_denied") ? "egress_denied" : null;
 }
 
 export function isPlaced(row: Placement): boolean {

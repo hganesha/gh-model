@@ -97,6 +97,7 @@
 .plane-deployment { --p: var(--c-deployment); }
 .plane-files { --p: var(--c-files); }
 .plane-quality { --p: var(--c-quality); }
+.plane-purpose { --p: var(--c-quality); }
 
 /* ---------- base ---------- */
 

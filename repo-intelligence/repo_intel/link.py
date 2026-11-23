@@ -62,6 +62,7 @@ class _Linker:
         own = sorted((o["payload"] for s in summaries for o in _of(s, "package_declaration") if (o["payload"]["manifest_dir"] or ".") == self.unit), key=lambda p: (p["ecosystem"], p["name"]))
         self.package = own[0]["name"] if own else self.unit
         self.has_package = bool(own)
+        self.package_ref = ref(EntityKind.PACKAGE, {k: own[0][k] for k in ("ecosystem", "name", "manifest_dir")}, own[0]["name"]) if own else None
         self.declared = {(o["payload"]["ecosystem"], o["payload"]["name"]) for s in summaries for o in _of(s, "dependency_declaration")}
         self.workspace = {(p["ecosystem"], p["name"]) for p in workspace}
         self.out: list[dict[str, Any]] = []
@@ -273,6 +274,58 @@ class _Linker:
                 self.unknowns.append({"path": path, "subject": subject, "predicate": str(Predicate.READS_FROM), "status": "unknown", "reason": "dynamic_sql: the statement is built at runtime", "coverage_ref": scope})
         return counts
 
+    # -- event topics (Tier B)
+
+    def _constant(self, path: str, name: str) -> dict[str, Any] | None:
+        """The string constant `name` refers to in `path`: defined there, or imported by name.
+
+        `Topics.ORDERS` is an object member when `Topics` is defined or imported
+        here; a Python `module.NAME` falls back to `NAME` in this file.
+        """
+        head, _, rest = name.partition(".")
+        candidates = []
+        if name in self.bindings[path]:
+            candidates.append(self.bindings[path][name])
+        if rest and head in self.bindings[path]:
+            target, original = self.bindings[path][head]
+            candidates.append((target, f"{original}.{rest}"))
+        candidates.append((path, name))
+        if rest:
+            candidates.append((path, name.split(".")[-1]))
+        for target, original in candidates:
+            found = next((o for o in _of(self.files.get(target, {"observations": []}), "string_constant") if o["payload"]["name"] == original), None)
+            if found is not None:
+                return found
+        return None
+
+    def link_topics(self) -> dict[str, int]:
+        counts = {"literal": 0, "constant": 0, "unresolved": 0}
+        scope = f"event_topics:{self.unit}"
+        for path in sorted(self.files):
+            for o in _of(self.files[path], "topic_use"):
+                p = o["payload"]
+                predicate = Predicate.PUBLISHES_TO if p["role"] == "publish" else Predicate.SUBSCRIBES_TO
+                evidence = [o["evidence"]]
+                topic = p.get("topic")
+                if topic is not None:
+                    counts["literal"] += 1
+                elif p.get("name"):
+                    constant = self._constant(path, p["name"])
+                    if constant is not None:
+                        topic = constant["payload"]["value"]
+                        evidence.append(constant["evidence"])
+                        counts["constant"] += 1
+                if topic is None:
+                    counts["unresolved"] += 1
+                    if self.package_ref is not None:
+                        reason = f"topic {p['name']} does not resolve to a string constant in this unit" if p.get("name") else "the topic is computed at run time"
+                        self.unknowns.append({"path": path, "subject": self.package_ref, "predicate": str(predicate), "status": "unknown", "reason": reason, "coverage_ref": scope})
+                    continue
+                entity = ref(EntityKind.EVENT_TOPIC, {"name": topic}, topic)
+                self.emit("entity", path, {**entity, "attributes": {"transport": p.get("transport") or "unknown"}}, evidence, EvidenceClass.E3 if len(evidence) > 1 else EvidenceClass.E2)
+                self.relate(path, "@package", predicate, entity, evidence, {"via": "constant" if len(evidence) > 1 else "literal"})
+        return counts
+
     # -- tests
 
     def link_tests(self) -> None:
@@ -326,6 +379,7 @@ def _unit_link(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, Any]:
     linker.resolve_imports()
     routes = linker.link_routes()
     data = linker.link_data_access()
+    topics = linker.link_topics()
     linker.link_tests()
     linker.link_ai()
 
@@ -338,10 +392,12 @@ def _unit_link(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, Any]:
         CoverageEntry(domain="route_to_handler", scope=unit["name"], numerator=routes["symbol"] + routes["inline"], denominator=total_routes, detail=routes).row(),
         CoverageEntry(domain="data_access", scope=unit["name"], numerator=data["linked"], denominator=total_data, detail=data).row(),
     ]
+    if sum(topics.values()):  # reported only where a unit uses a message broker
+        coverage.append(CoverageEntry(domain="event_topics", scope=unit["name"], numerator=topics["literal"] + topics["constant"], denominator=sum(topics.values()), detail=topics).row())
     return {"unit": unit["name"], "observations": linker.out, "unknowns": linker.unknowns, "coverage": coverage, "exports": linker.exports()}
 
 
-UNIT_LINK = Step("unit.link", "0.3.0", _unit_link)
+UNIT_LINK = Step("unit.link", "0.5.0", _unit_link)
 
 
 # ---------------------------------------------------------------- repo-level

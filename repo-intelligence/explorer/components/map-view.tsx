@@ -6,6 +6,13 @@ import { kindLabel, measured, percent, plural } from "@/lib/format";
 import type { Summary } from "@/lib/types";
 import { Coverage, PlaneIcon } from "./ui";
 
+/** Business capabilities this snapshot's components are placed under. */
+export interface Purpose {
+  capabilities: { name: string; components: number; ai: number }[];
+  placed: number;
+  components: number;
+}
+
 export interface MapPrefs {
   zoom: number;
   grid: boolean;
@@ -77,6 +84,42 @@ function PlaneCard({ plane, summary, index, onOpen }: { plane: PlaneMeta; summar
   );
 }
 
+function PurposeCard({ purpose, onOpen }: { purpose: Purpose; onOpen: () => void }) {
+  const max = Math.max(1, ...purpose.capabilities.map((row) => row.components));
+  const ai = purpose.capabilities.reduce((n, row) => n + row.ai, 0);
+  return (
+    <button type="button" className="plane-card plane-purpose" onClick={onOpen} aria-label={`Open business map: ${plural(purpose.capabilities.length, "capability", "capabilities")}`}>
+      <div className="plane-top">
+        <span className="plane-icon">
+          <PlaneIcon plane="purpose" />
+        </span>
+        <span className="eyebrow">00 · PURPOSE</span>
+        <ArrowUpRight className="plane-open" size={15} aria-hidden="true" />
+      </div>
+      <div className="plane-title">
+        <h3>Purpose</h3>
+        <span className="plane-total">{purpose.capabilities.length.toLocaleString("en-US")}</span>
+      </div>
+      <p className="plane-blurb">Business capabilities this repository's components are placed under on the business map.</p>
+      <ul className="kind-rows">
+        {purpose.capabilities.map((row) => (
+          <li key={row.name}>
+            <span className="kind-name">{row.name}</span>
+            <span className="kind-meter" aria-hidden="true">
+              <i style={{ width: `${Math.max(3, (row.components / max) * 100)}%` }} />
+            </span>
+            <span className="kind-count">{row.components.toLocaleString("en-US")}</span>
+          </li>
+        ))}
+      </ul>
+      <div className="plane-foot">
+        <Coverage compact label="Components placed" ratio={{ numerator: purpose.placed, denominator: purpose.components }} />
+        {ai > 0 && <span className="unknown-chip">{ai} placed by AI, not confirmed</span>}
+      </div>
+    </button>
+  );
+}
+
 function QualityCard({ summary, index, onOpen }: { summary: Summary; index: number; onOpen: () => void }) {
   const domains = Object.entries(summary.coverage_totals ?? {});
   const ranked = domains.filter(([, r]) => measured(r)).sort((a, b) => percent(a[1]) - percent(b[1]));
@@ -124,7 +167,11 @@ export function MapView({
   onPrefs,
   onOpenPlane,
   onOpenQuality,
+  purpose,
+  onOpenPurpose,
 }: {
+  purpose?: Purpose | null;
+  onOpenPurpose?: () => void;
   summary: Summary;
   prefs: MapPrefs;
   onPrefs: (next: MapPrefs) => void;
@@ -157,6 +204,7 @@ export function MapView({
       </div>
 
       <div className="plane-grid" style={{ zoom: prefs.zoom }}>
+        {purpose && purpose.capabilities.length > 0 && onOpenPurpose && <PurposeCard purpose={purpose} onOpen={onOpenPurpose} />}
         {PLANES.map((plane, i) => (
           <PlaneCard key={plane.id} plane={plane} summary={summary} index={i} onOpen={() => onOpenPlane(plane.id)} />
         ))}

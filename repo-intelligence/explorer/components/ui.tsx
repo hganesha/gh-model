@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, Boxes, Braces, Database, FileText, FlaskConical, Loader2, Rocket, ShieldCheck, Sparkles, X } from "lucide-react";
+import { AlertTriangle, Boxes, Braces, Database, FileText, FlaskConical, Loader2, Rocket, ShieldCheck, Sparkles, Workflow, X } from "lucide-react";
 import { useEffect, useRef, type ReactNode } from "react";
 import type { ApiError } from "@/lib/api";
 import { measured, percent, percentLabel } from "@/lib/format";
@@ -14,6 +14,7 @@ const PLANE_ICONS = {
   tests: FlaskConical,
   deployment: Rocket,
   quality: ShieldCheck,
+  purpose: Workflow,
   files: FileText,
 } as const;
 

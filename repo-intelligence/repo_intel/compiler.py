@@ -243,6 +243,9 @@ def _unit_compile(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, An
                     lift(Predicate.EXPOSES, e["id"], e["evidence_ids"][:1])
                 elif e["kind"] == EntityKind.AI_COMPONENT and e["evidence_ids"]:
                     lift(Predicate.CONTAINS, e["id"], e["evidence_ids"][:1])
+            for a in list(shard.assertions.values()):  # what its package publishes and subscribes to, the component does
+                if a["subject"] == pkg_id and a["predicate"] in (Predicate.PUBLISHES_TO, Predicate.SUBSCRIBES_TO):
+                    lift(Predicate(a["predicate"]), a["object"], a["evidence_ids"], EvidenceClass(a["evidence_class"]), a["resolution"], {"via": "package"})
             touched: set[str] = set()
             for a in list(shard.assertions.values()):  # what its symbols read and write, the component reads and writes
                 if a["subject"] in symbol_ids and a["predicate"] in (Predicate.READS_FROM, Predicate.WRITES_TO):
@@ -255,7 +258,7 @@ def _unit_compile(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, An
     return shard.rows()
 
 
-UNIT_COMPILE = Step("unit.compile", "0.5.0", _unit_compile)
+UNIT_COMPILE = Step("unit.compile", "0.6.0", _unit_compile)
 
 
 # --------------------------------------------------------------- repo.compile

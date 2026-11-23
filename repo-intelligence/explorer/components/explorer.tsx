@@ -9,7 +9,7 @@ import { ConnectDialog, type ConnectTarget } from "./connect-dialog";
 import { DecisionsView } from "./decisions-view";
 import { EntityDrawer } from "./entity-drawer";
 import { DEFAULT_GRAPH_PREFS, GraphView, type GraphPrefs } from "./graph-view";
-import { MapView, ZOOM_STEPS, type MapPrefs } from "./map-view";
+import { MapView, ZOOM_STEPS, type MapPrefs, type Purpose } from "./map-view";
 import { PlaneView } from "./plane-view";
 import { QualityView } from "./quality-view";
 import { SearchDialog } from "./search-dialog";
@@ -59,6 +59,23 @@ function savePrefs(prefs: Prefs) {
   }
 }
 
+/** Workspace views are addressable (?workspace=business) so a reload or a shared link lands on them. */
+function readWorkspaceUrl(): "business" | "settings" | null {
+  const value = new URLSearchParams(window.location.search).get("workspace");
+  return value === "business" || value === "settings" ? value : null;
+}
+
+function writeWorkspaceUrl(next: "business" | "settings" | null) {
+  try {
+    const url = new URL(window.location.href);
+    if (next) url.searchParams.set("workspace", next);
+    else url.searchParams.delete("workspace");
+    window.history.replaceState(null, "", url);
+  } catch {
+    /* the address bar is a convenience */
+  }
+}
+
 function sortedSnapshots(repo: Repository): SnapshotRef[] {
   return [...(repo.snapshots ?? [])].sort((a, b) => b.compiled_at - a.compiled_at);
 }
@@ -94,6 +111,7 @@ export function Explorer() {
 
   useEffect(() => {
     setPrefs(loadPrefs());
+    setWorkspace(readWorkspaceUrl());
     setNow(Date.now());
     const t = setInterval(() => setNow(Date.now()), 60_000);
     return () => clearInterval(t);
@@ -102,6 +120,11 @@ export function Explorer() {
   const updatePrefs = useCallback((next: Prefs) => {
     setPrefs(next);
     savePrefs(next);
+  }, []);
+
+  const leaveWorkspace = useCallback(() => {
+    setWorkspace(null);
+    writeWorkspaceUrl(null);
   }, []);
 
   const repositories = useMemo(() => repos.data?.repositories ?? [], [repos.data]);
@@ -121,7 +144,7 @@ export function Explorer() {
   }, []);
 
   function selectRepo(id: string) {
-    setWorkspace(null);
+    leaveWorkspace();
     setRepoId(id);
     setHashChoice(null);
     setPick(null);
@@ -130,7 +153,7 @@ export function Explorer() {
   }
 
   function selectSnapshot(next: string) {
-    setWorkspace(null);
+    leaveWorkspace();
     setHashChoice(next);
     setPick(null);
     resetSnapshotState();
@@ -139,7 +162,7 @@ export function Explorer() {
 
   /** Open Timeline comparing another snapshot with the selected one; the older commit becomes "from". */
   function compareWith(other: SnapshotRef) {
-    setWorkspace(null);
+    leaveWorkspace();
     if (!snapshot) return;
     const { from, to } = orderPair(other, snapshot, commitDates(snapshots));
     setPick({ from: from.rkp_hash, to: to.rkp_hash });
@@ -149,7 +172,7 @@ export function Explorer() {
   }
 
   function switchView(next: ViewId) {
-    setWorkspace(null);
+    leaveWorkspace();
     setView(next);
     setPlane(null);
   }
@@ -161,7 +184,7 @@ export function Explorer() {
   const navigateEntity = useCallback((id: string) => setTrail((t) => (t[t.length - 1] === id ? t : [...t, id])), []);
 
   function onSnapshot(job: Job) {
-    setWorkspace(null);
+    leaveWorkspace();
     repos.reload();
     setRepoId(job.repository_id);
     setHashChoice(job.rkp_hash);
@@ -195,9 +218,25 @@ export function Explorer() {
   const shownSnapshot = snapshots.find((s) => s.rkp_hash === shownHash) ?? null;
   const activeEntityId = shownHash === hash ? (trail[trail.length - 1] ?? null) : null;
   const status = summary.data?.manifest?.status;
-  const purpose = [...new Set(Object.values(placements.data?.components ?? {}).filter(isPlaced).map((row) => row.capability).filter(Boolean))].sort();
+  const purpose = useMemo<Purpose | null>(() => {
+    const rows = Object.values(placements.data?.components ?? {}).filter((row) => isPlaced(row) && row.capability);
+    if (!rows.length) return null;
+    const byName = new Map<string, { name: string; components: number; ai: number }>();
+    for (const row of rows) {
+      const entry = byName.get(row.capability!) ?? { name: row.capability!, components: 0, ai: 0 };
+      entry.components += 1;
+      if (row.status === "ai") entry.ai += 1;
+      byName.set(entry.name, entry);
+    }
+    return {
+      capabilities: [...byName.values()].sort((a, b) => b.components - a.components || a.name.localeCompare(b.name)),
+      placed: rows.length,
+      components: Math.max(rows.length, placements.data?.eligible_components ?? 0),
+    };
+  }, [placements.data]);
   function openWorkspace(next: "business" | "settings") {
     setWorkspace(next);
+    writeWorkspaceUrl(next);
     setNavOpen(false);
     setTrail([]);
   }
@@ -257,7 +296,7 @@ export function Explorer() {
           </button>
         </div>
 
-        {repo && (
+        {repo && !workspace && (
           <div className="side-section">
             <div className="side-head">
               <h2>Snapshots</h2>
@@ -329,7 +368,7 @@ export function Explorer() {
         </header>
 
         <main id="main" tabIndex={-1}>
-          {workspace === "business" && <BusinessMapView key={placementRevision} onOpen={openEntity} />}
+          {workspace === "business" && <BusinessMapView key={placementRevision} onOpen={openEntity} onOpenSettings={() => openWorkspace("settings")} />}
           {workspace === "settings" && <SettingsView />}
           {!workspace && <>
           {repos.loading && <Loading label="Loading repositories" />}
@@ -362,14 +401,10 @@ export function Explorer() {
 
           {hash && summary.data && (
             <>
-              {view === "map" && plane === null && purpose.length > 0 && <section className="work-tool-panel workspace-purpose">
-                <h3>Purpose</h3><p>{purpose.join(" · ")}</p>
-                <button type="button" className="link-btn" onClick={() => openWorkspace("business")}>Open business map</button>
-              </section>}
               {view === "map" && plane === null && repo?.description && <p className="repo-description">{repo.description}</p>}
               {view === "map" &&
                 (plane === null ? (
-                  <MapView summary={summary.data} prefs={prefs.map} onPrefs={(map) => updatePrefs({ ...prefs, map })} onOpenPlane={setPlane} onOpenQuality={() => switchView("quality")} />
+                  <MapView summary={summary.data} prefs={prefs.map} onPrefs={(map) => updatePrefs({ ...prefs, map })} onOpenPlane={setPlane} onOpenQuality={() => switchView("quality")} purpose={purpose} onOpenPurpose={() => openWorkspace("business")} />
                 ) : (
                   <PlaneView key={`${hash}:${plane}`} hash={hash} planeId={plane} summary={summary.data} onBack={() => setPlane(null)} onOpenEntity={openEntity} activeEntityId={activeEntityId} />
                 ))}

@@ -1,0 +1,440 @@
+{
+  "commits": {
+    "F01-python-api": "9b37f8ace25313bb69f55b57f940b22482957631",
+    "F02-ts-monorepo": "6ade231762ede528b7d4d06ab33c3e0291740919",
+    "F03-python-ts-hybrid": "fce2d6daeefe2c62853d61426d970d98a2f19316",
+    "F04-java-maven": "bcb4b3ba2c5ec645eb9c9c8cfd23d151600b01d7",
+    "F05-go-services": "caa57b21789f78020aed0bed3bfb860414edc555",
+    "F06-iac-heavy": "4aa0ff659baabc2bf89456db7553010a687c6266",
+    "F07-event-driven": "df381dec0279b064f55ab44ad88f2065156b303b",
+    "F08-ai-agent": "0841349e255ca023f3917e3be2170925a5a1cc0a",
+    "F09-data-heavy": "7027b75c134c553969cfd4ec4d7b6c42640a71eb",
+    "F10-ambiguous-incomplete": "04289d97a17645b1940c4b8886d071286d04c3ee",
+    "benoitvallon/react-native-nw-react-calculator": "4f9628fa75d5ad2c2b8d29b611768990087abc15",
+    "developit/express-es6-rest-api": "9b8c005a38a0de820eac7e319e81b4318c320630",
+    "fastapi/full-stack-fastapi-template": "77e550a73bb49dd2967622c5ed11bf7a49603c93"
+  },
+  "coverage": {
+    "components": 21,
+    "eligible": 15,
+    "eligible_with_label": 13,
+    "shortlist_hits": 12
+  },
+  "decisions": {
+    "rules-only": {
+      "abstained": 15,
+      "accepted_correct": 0,
+      "accepted_wrong": 0,
+      "cases": [
+        {
+          "choice": null,
+          "name": "orders-api",
+          "reason": "ambiguous_no_model",
+          "score": null
+        },
+        {
+          "choice": null,
+          "name": "@acme/api",
+          "reason": "ambiguous_no_model",
+          "score": null
+        },
+        {
+          "choice": null,
+          "name": "@acme/web",
+          "reason": "ambiguous_no_model",
+          "score": null
+        },
+        {
+          "choice": null,
+          "name": "@acme/worker",
+          "reason": "ambiguous_no_model",
+          "score": null
+        },
+        {
+          "choice": null,
+          "name": "catalog-backend",
+          "reason": "ambiguous_no_model",
+          "score": null
+        },
+        {
+          "choice": null,
+          "name": "catalog-frontend",
+          "reason": "ambiguous_no_model",
+          "score": null
+        },
+        {
+          "choice": null,
+          "name": "status-api",
+          "reason": "ambiguous_no_model",
+          "score": null
+        },
+        {
+          "choice": null,
+          "name": "audit-service",
+          "reason": "ambiguous_no_model",
+          "score": null
+        },
+        {
+          "choice": null,
+          "name": "notifier-service",
+          "reason": "ambiguous_no_model",
+          "score": null
+        },
+        {
+          "choice": null,
+          "name": "orders-service",
+          "reason": "ambiguous_no_model",
+          "score": null
+        },
+        {
+          "choice": null,
+          "name": "app",
+          "reason": "ambiguous_no_model",
+          "score": null
+        },
+        {
+          "choice": null,
+          "name": "emails",
+          "reason": "ambiguous_no_model",
+          "score": null
+        },
+        {
+          "choice": null,
+          "name": "frontend",
+          "reason": "ambiguous_no_model",
+          "score": null
+        },
+        {
+          "choice": null,
+          "name": "express-es6-rest-api",
+          "reason": "ambiguous_no_model",
+          "score": null
+        },
+        {
+          "choice": null,
+          "name": "ReactNativeNWReactCalculator",
+          "reason": "ambiguous_no_model",
+          "score": null
+        }
+      ]
+    }
+  },
+  "labels": [
+    {
+      "eligible": true,
+      "expected": "customers",
+      "kind": "service",
+      "name": "orders-api",
+      "repository": "F01-python-api",
+      "root": "",
+      "shortlist": [
+        "customers",
+        "analysis",
+        "notifications",
+        "support",
+        "orders"
+      ]
+    },
+    {
+      "eligible": true,
+      "expected": "orders",
+      "kind": "service",
+      "name": "@acme/api",
+      "repository": "F02-ts-monorepo",
+      "root": "apps/api",
+      "shortlist": [
+        "orders",
+        "audit",
+        "analysis",
+        "notifications",
+        "returns"
+      ]
+    },
+    {
+      "eligible": false,
+      "expected": null,
+      "kind": "library",
+      "name": "@acme/shared",
+      "repository": "F02-ts-monorepo",
+      "root": "packages/shared",
+      "shortlist": [
+        "orders",
+        "audit",
+        "analysis",
+        "notifications",
+        "availability"
+      ]
+    },
+    {
+      "eligible": false,
+      "expected": null,
+      "kind": "library",
+      "name": "@acme/ui",
+      "repository": "F02-ts-monorepo",
+      "root": "packages/ui",
+      "shortlist": [
+        "orders",
+        "audit",
+        "analysis",
+        "notifications",
+        "catalogue"
+      ]
+    },
+    {
+      "eligible": true,
+      "expected": "orders",
+      "kind": "frontend_app",
+      "name": "@acme/web",
+      "repository": "F02-ts-monorepo",
+      "root": "apps/web",
+      "shortlist": [
+        "orders",
+        "audit",
+        "analysis",
+        "availability",
+        "notifications"
+      ]
+    },
+    {
+      "eligible": true,
+      "expected": null,
+      "kind": "worker",
+      "name": "@acme/worker",
+      "repository": "F02-ts-monorepo",
+      "root": "apps/worker",
+      "shortlist": [
+        "orders",
+        "customers",
+        "notifications",
+        "audit",
+        "returns"
+      ]
+    },
+    {
+      "eligible": false,
+      "expected": null,
+      "kind": "tooling",
+      "name": "acme-monorepo",
+      "repository": "F02-ts-monorepo",
+      "root": "",
+      "shortlist": [
+        "orders",
+        "catalogue",
+        "audit",
+        "notifications",
+        "analysis"
+      ]
+    },
+    {
+      "eligible": true,
+      "expected": "catalogue",
+      "kind": "service",
+      "name": "catalog-backend",
+      "repository": "F03-python-ts-hybrid",
+      "root": "backend",
+      "shortlist": [
+        "catalogue",
+        "availability",
+        "customers",
+        "analysis",
+        "calculation"
+      ]
+    },
+    {
+      "eligible": true,
+      "expected": "catalogue",
+      "kind": "frontend_app",
+      "name": "catalog-frontend",
+      "repository": "F03-python-ts-hybrid",
+      "root": "frontend",
+      "shortlist": [
+        "catalogue",
+        "availability",
+        "customers",
+        "analysis",
+        "calculation"
+      ]
+    },
+    {
+      "eligible": true,
+      "expected": "availability",
+      "kind": "service",
+      "name": "status-api",
+      "repository": "F06-iac-heavy",
+      "root": "",
+      "shortlist": [
+        "availability",
+        "analysis",
+        "audit",
+        "calculation",
+        "notifications"
+      ]
+    },
+    {
+      "eligible": true,
+      "expected": "audit",
+      "kind": "worker",
+      "name": "audit-service",
+      "repository": "F07-event-driven",
+      "root": "services/audit",
+      "shortlist": [
+        "audit",
+        "orders",
+        "notifications",
+        "calculation",
+        "customers"
+      ]
+    },
+    {
+      "eligible": true,
+      "expected": "notifications",
+      "kind": "worker",
+      "name": "notifier-service",
+      "repository": "F07-event-driven",
+      "root": "services/notifier",
+      "shortlist": [
+        "notifications",
+        "availability",
+        "orders",
+        "calculation",
+        "customers"
+      ]
+    },
+    {
+      "eligible": true,
+      "expected": "orders",
+      "kind": "service",
+      "name": "orders-service",
+      "repository": "F07-event-driven",
+      "root": "services/orders",
+      "shortlist": [
+        "orders",
+        "audit",
+        "analysis",
+        "notifications",
+        "returns"
+      ]
+    },
+    {
+      "eligible": false,
+      "expected": "support",
+      "kind": "unknown",
+      "name": "support-agent",
+      "repository": "F08-ai-agent",
+      "root": "",
+      "shortlist": [
+        "support",
+        "forecast",
+        "analysis",
+        "availability",
+        "notifications"
+      ]
+    },
+    {
+      "eligible": false,
+      "expected": "analysis",
+      "kind": "unknown",
+      "name": "warehouse",
+      "repository": "F09-data-heavy",
+      "root": "",
+      "shortlist": [
+        "orders",
+        "analysis",
+        "audit",
+        "notifications",
+        "customers"
+      ]
+    },
+    {
+      "eligible": true,
+      "expected": "identity",
+      "kind": "service",
+      "name": "app",
+      "repository": "fastapi/full-stack-fastapi-template",
+      "root": "backend",
+      "shortlist": [
+        "identity",
+        "calculation",
+        "customers",
+        "analysis",
+        "support"
+      ]
+    },
+    {
+      "eligible": true,
+      "expected": "notifications",
+      "kind": "frontend_app",
+      "name": "emails",
+      "repository": "fastapi/full-stack-fastapi-template",
+      "root": "packages/react-email",
+      "shortlist": [
+        "notifications",
+        "catalogue",
+        "calculation",
+        "support",
+        "analysis"
+      ]
+    },
+    {
+      "eligible": false,
+      "expected": null,
+      "kind": "tooling",
+      "name": "fastapi-full-stack-template",
+      "repository": "fastapi/full-stack-fastapi-template",
+      "root": "",
+      "shortlist": [
+        "calculation",
+        "support",
+        "analysis",
+        "catalogue",
+        "notifications"
+      ]
+    },
+    {
+      "eligible": true,
+      "expected": "identity",
+      "kind": "frontend_app",
+      "name": "frontend",
+      "repository": "fastapi/full-stack-fastapi-template",
+      "root": "frontend",
+      "shortlist": [
+        "catalogue",
+        "support",
+        "analysis",
+        "calculation",
+        "notifications"
+      ]
+    },
+    {
+      "eligible": true,
+      "expected": null,
+      "kind": "service",
+      "name": "express-es6-rest-api",
+      "repository": "developit/express-es6-rest-api",
+      "root": "",
+      "shortlist": [
+        "returns",
+        "analysis",
+        "forecast",
+        "availability",
+        "support"
+      ]
+    },
+    {
+      "eligible": true,
+      "expected": "calculation",
+      "kind": "frontend_app",
+      "name": "ReactNativeNWReactCalculator",
+      "repository": "benoitvallon/react-native-nw-react-calculator",
+      "root": "",
+      "shortlist": [
+        "calculation",
+        "customers",
+        "availability",
+        "catalogue",
+        "orders"
+      ]
+    }
+  ],
+  "threshold_tested": 0.88
+}

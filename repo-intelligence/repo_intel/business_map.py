@@ -58,6 +58,13 @@ class Capability(Model):
     id: Key
     name: Name
     description: str = Field("", max_length=500)
+    # Position on the free-form canvas; None until the card is moved there.
+    x: int | None = Field(None, ge=0, le=20000)
+    y: int | None = Field(None, ge=0, le=20000)
+
+    def meaning(self) -> tuple[str, str, str]:
+        """What placement reads: moving a card on the canvas changes nothing here."""
+        return self.id, self.name, self.description
 
 
 class Stage(Model):
@@ -82,6 +89,7 @@ class Placement(Model):
 
 class MapDefinition(Model):
     title: Name = "Business map"
+    layout: Literal["lanes", "canvas"] = "lanes"
     stages: tuple[Stage, ...] = Field(default=(), max_length=40)
 
     @model_validator(mode="after")
@@ -110,6 +118,19 @@ class BusinessMap(MapDefinition):
 
 class SaveMap(MapDefinition):
     expected_version: int = Field(ge=0)
+
+
+class Position(Model):
+    x: int = Field(ge=0, le=20000)
+    y: int = Field(ge=0, le=20000)
+    stage_id: Key | None = None  # dropping a card in another stage column moves it to that stage
+
+
+class ArrangeMap(Model):
+    """Canvas layout only: no names, descriptions or placements change."""
+    expected_version: int = Field(ge=0)
+    layout: Literal["lanes", "canvas"]
+    positions: dict[Key, Position] = Field(default_factory=dict, max_length=300)
 
 
 class ReviewPlacement(Model):
@@ -188,7 +209,25 @@ def edit(current: BusinessMap, body: SaveMap) -> BusinessMap:
         if row.capability_id and row.capability_id not in valid:
             row = row.model_copy(update={"capability_id": None, "status": "unplaced", "score": None, "decision_ref": None})
         placements.append(row.model_copy(update={"candidates": candidates}))
-    return current.model_copy(update={"title": body.title, "stages": body.stages, "placements": tuple(placements)})
+    return current.model_copy(update={"title": body.title, "layout": body.layout if "layout" in body.model_fields_set else current.layout, "stages": body.stages, "placements": tuple(placements)})
+
+
+def arrange(current: BusinessMap, body: ArrangeMap) -> BusinessMap:
+    if current.version != body.expected_version:
+        raise StaleVersion("This map changed. Reload it before saving.")
+    stage_ids = {stage.id for stage in current.stages}
+    known = current.capabilities()
+    if set(body.positions) - set(known) or any(p.stage_id and p.stage_id not in stage_ids for p in body.positions.values()):
+        raise ValueError("Unknown capability or stage.")
+    moved = {cap_id: p for cap_id, p in body.positions.items()}
+    stages = []
+    for stage in current.stages:
+        kept = [cap for cap in stage.capabilities if not (cap.id in moved and moved[cap.id].stage_id not in (None, stage.id))]
+        arriving = [known[cap_id] for cap_id, p in moved.items() if p.stage_id == stage.id and cap_id not in {c.id for c in stage.capabilities}]
+        stages.append(stage.model_copy(update={"capabilities": tuple(
+            cap.model_copy(update={"x": moved[cap.id].x, "y": moved[cap.id].y}) if cap.id in moved else cap for cap in [*kept, *arriving]
+        )}))
+    return current.model_copy(update={"layout": body.layout, "stages": tuple(stages)})
 
 
 def review(current: BusinessMap, body: ReviewPlacement, author: str) -> BusinessMap:

@@ -9,6 +9,12 @@ Environment: RKP_DATA_DIR (default ./.rkp-store), RKP_API_PORT (8787),
 RKP_PG_PORT (54329), RKP_ALLOW_LOCAL=1 to allow compiling local repositories.
 Decision models are used only if their credentials are set AND the provider is
 listed in RKP_ALLOW_PROVIDERS (comma-separated); otherwise ambiguous decisions abstain.
+
+Provider settings that are not secrets (endpoints, deployments, `azure-cli`
+sign-in, the allow list and the default alias) can be kept in
+<data dir>/providers.env as KEY=value lines so a workspace keeps its model
+across restarts. API keys are refused there; set them in the environment.
+The process environment wins over the file.
 """
 
 from __future__ import annotations
@@ -30,6 +36,33 @@ from .service import Service
 from .store import ObjectStore
 
 TENANT = "local"
+PROVIDER_FILE_KEYS = frozenset({
+    "RKP_ALLOW_PROVIDERS", "RKP_DECISION_DEFAULT", "RKP_JEV_MODEL",
+    "RKP_MSDECISION_ENDPOINT", "RKP_MSDECISION_DEPLOYMENT", "RKP_MSDECISION_AUTH",
+    "RKP_COHERE_RERANK_ENDPOINT", "RKP_COHERE_RERANK_DEPLOYMENT", "RKP_COHERE_RERANK_AUTH",
+})
+
+
+def load_provider_file(data_dir: Path, env: dict | None = None) -> list[str]:
+    """Apply <data dir>/providers.env to `env` without overriding what is set. Returns the keys applied."""
+    env = os.environ if env is None else env
+    path = data_dir / "providers.env"
+    if not path.is_file():
+        return []
+    applied = []
+    for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        key, sep, value = line.partition("=")
+        key, value = key.strip(), value.strip().strip('"').strip("'")
+        if not sep or key not in PROVIDER_FILE_KEYS:
+            # Never echo the line: a pasted key must not reach the log.
+            raise SystemExit(f"{path}:{number}: only non-secret provider settings belong here ({', '.join(sorted(PROVIDER_FILE_KEYS))}); set API keys in the environment.")
+        if key not in env:
+            env[key] = value
+            applied.append(key)
+    return applied
 
 
 def start_postgres(data_dir: Path, port: int) -> str:
@@ -67,6 +100,7 @@ def main() -> int:
     if len(token) < 16:
         print("RKP_DEV_TOKEN must be at least 16 characters; the API refuses every request without it.")
         return 2
+    load_provider_file(data_dir)
     conninfo = start_postgres(data_dir, int(os.environ.get("RKP_PG_PORT", "54329")))
     store = ObjectStore(data_dir / "objects", TENANT)
     allowed = frozenset(p for p in os.environ.get("RKP_ALLOW_PROVIDERS", "").split(",") if p)
