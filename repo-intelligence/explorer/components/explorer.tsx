@@ -1,6 +1,6 @@
 "use client";
 
-import { GitBranch, GitCommitHorizontal, GitCompareArrows, Lock, Menu, Plus, RefreshCw, Search, Unlock, X } from "lucide-react";
+import { GitBranch, GitCommitHorizontal, GitCompareArrows, Lock, Menu, Plus, RefreshCw, Search, Settings, Workflow, Unlock, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { snapshotPath, useApi } from "@/lib/api";
 import { relativeTime, shortSha } from "@/lib/format";
@@ -14,6 +14,9 @@ import { PlaneView } from "./plane-view";
 import { QualityView } from "./quality-view";
 import { SearchDialog } from "./search-dialog";
 import { TimelineView, type ComparePick } from "./timeline-view";
+import { BusinessMapView } from "./business-map-view";
+import { SettingsView } from "./settings-view";
+import { isPlaced, type SnapshotPlacements } from "@/lib/workspace";
 import { Badge, ErrorNote, Loading } from "./ui";
 import { PREDICATES } from "@/lib/planes";
 import { commitDates, orderPair } from "@/lib/snapshots";
@@ -85,6 +88,8 @@ export function Explorer() {
   const [connect, setConnect] = useState<ConnectTarget | null>(null);
   const [navOpen, setNavOpen] = useState(false);
   const [prefs, setPrefs] = useState<Prefs>(DEFAULT_PREFS);
+  const [workspace, setWorkspace] = useState<"business" | "settings" | null>(null);
+  const [placementRevision, setPlacementRevision] = useState(0);
   const [now, setNow] = useState<number | null>(null);
 
   useEffect(() => {
@@ -105,6 +110,7 @@ export function Explorer() {
   const snapshot = snapshots.find((s) => s.rkp_hash === hashChoice) ?? snapshots[0] ?? null;
   const hash = snapshot?.rkp_hash ?? null;
 
+  const placements = useApi<SnapshotPlacements>(hash && !workspace ? snapshotPath(hash, "placements") : null);
   const summary = useApi<Summary>(hash ? snapshotPath(hash, "summary") : null);
 
   const resetSnapshotState = useCallback(() => {
@@ -115,6 +121,7 @@ export function Explorer() {
   }, []);
 
   function selectRepo(id: string) {
+    setWorkspace(null);
     setRepoId(id);
     setHashChoice(null);
     setPick(null);
@@ -123,6 +130,7 @@ export function Explorer() {
   }
 
   function selectSnapshot(next: string) {
+    setWorkspace(null);
     setHashChoice(next);
     setPick(null);
     resetSnapshotState();
@@ -131,6 +139,7 @@ export function Explorer() {
 
   /** Open Timeline comparing another snapshot with the selected one; the older commit becomes "from". */
   function compareWith(other: SnapshotRef) {
+    setWorkspace(null);
     if (!snapshot) return;
     const { from, to } = orderPair(other, snapshot, commitDates(snapshots));
     setPick({ from: from.rkp_hash, to: to.rkp_hash });
@@ -140,6 +149,7 @@ export function Explorer() {
   }
 
   function switchView(next: ViewId) {
+    setWorkspace(null);
     setView(next);
     setPlane(null);
   }
@@ -151,6 +161,7 @@ export function Explorer() {
   const navigateEntity = useCallback((id: string) => setTrail((t) => (t[t.length - 1] === id ? t : [...t, id])), []);
 
   function onSnapshot(job: Job) {
+    setWorkspace(null);
     repos.reload();
     setRepoId(job.repository_id);
     setHashChoice(job.rkp_hash);
@@ -184,6 +195,12 @@ export function Explorer() {
   const shownSnapshot = snapshots.find((s) => s.rkp_hash === shownHash) ?? null;
   const activeEntityId = shownHash === hash ? (trail[trail.length - 1] ?? null) : null;
   const status = summary.data?.manifest?.status;
+  const purpose = [...new Set(Object.values(placements.data?.components ?? {}).filter(isPlaced).map((row) => row.capability).filter(Boolean))].sort();
+  function openWorkspace(next: "business" | "settings") {
+    setWorkspace(next);
+    setNavOpen(false);
+    setTrail([]);
+  }
 
   return (
     <div className={`shell ${drawerOpen ? "has-drawer" : ""}`}>
@@ -192,7 +209,7 @@ export function Explorer() {
       </a>
 
       {navOpen && <div className="nav-scrim" onClick={() => setNavOpen(false)} aria-hidden="true" />}
-      <nav className={`sidebar ${navOpen ? "is-open" : ""}`} aria-label="Repositories">
+      <nav className={`sidebar ${navOpen ? "is-open" : ""}`} aria-label="Explorer navigation">
         <div className="brand">
           <span className="brand-mark" aria-hidden="true">
             <i />
@@ -207,6 +224,11 @@ export function Explorer() {
           </button>
         </div>
 
+        <div className="side-section"><h2>Workspace</h2>
+          <button type="button" className={`btn btn-side ${workspace === "business" ? "is-selected" : ""}`} aria-current={workspace === "business" ? "page" : undefined}
+            onClick={() => openWorkspace("business")}><Workflow size={14} aria-hidden="true" /> Business map</button>
+        </div>
+
         <div className="side-section">
           <h2>Repositories</h2>
           {repos.loading && <Loading label="Loading repositories" />}
@@ -214,7 +236,7 @@ export function Explorer() {
           {repos.data && repositories.length === 0 && <p className="side-note">None connected yet.</p>}
           <ul className="repo-list">
             {repositories.map((r) => {
-              const selected = r.repository_id === repo?.repository_id;
+              const selected = !workspace && r.repository_id === repo?.repository_id;
               return (
                 <li key={r.repository_id}>
                   <button type="button" className={`repo-item ${selected ? "is-selected" : ""}`} aria-current={selected ? "true" : undefined} onClick={() => selectRepo(r.repository_id)}>
@@ -268,7 +290,10 @@ export function Explorer() {
           </div>
         )}
 
-        <p className="side-foot">Read-only. Everything shown is compiled from the repository at one commit.</p>
+        <div className="side-section workspace-nav-bottom">
+          <button type="button" className="btn btn-side" aria-current={workspace === "settings" ? "page" : undefined}
+            onClick={() => openWorkspace("settings")}><Settings size={14} aria-hidden="true" /> Settings</button>
+        </div>
       </nav>
 
       <div className="workspace">
@@ -277,8 +302,8 @@ export function Explorer() {
             <Menu size={18} aria-hidden="true" />
           </button>
           <div className="topbar-repo">
-            <h1>{repo ? repo.full_name : "RKP Explorer"}</h1>
-            {snapshot && (
+            <h1>{workspace ? "Workspace" : (repo ? repo.full_name : "RKP Explorer")}</h1>
+            {!workspace && snapshot && (
               <p>
                 <span className="topbar-commit">
                   <GitBranch size={12} aria-hidden="true" />
@@ -289,13 +314,13 @@ export function Explorer() {
               </p>
             )}
           </div>
-          <div className="view-switch" role="tablist" aria-label="View">
+          {!workspace && <div className="view-switch" role="tablist" aria-label="View">
             {VIEWS.map((v) => (
               <button type="button" key={v.id} role="tab" aria-selected={view === v.id} className={view === v.id ? "is-on" : ""} onClick={() => switchView(v.id)} disabled={!hash}>
                 {v.label}
               </button>
             ))}
-          </div>
+          </div>}
           <button type="button" className="search-trigger" onClick={() => setSearchOpen(true)} aria-label="Search entities" aria-keyshortcuts="Meta+K Control+K">
             <Search size={14} aria-hidden="true" />
             <span>Search</span>
@@ -304,6 +329,9 @@ export function Explorer() {
         </header>
 
         <main id="main" tabIndex={-1}>
+          {workspace === "business" && <BusinessMapView key={placementRevision} onOpen={openEntity} />}
+          {workspace === "settings" && <SettingsView />}
+          {!workspace && <>
           {repos.loading && <Loading label="Loading repositories" />}
           {repos.error && <ErrorNote error={repos.error} onRetry={repos.reload} what="repositories" />}
 
@@ -334,6 +362,10 @@ export function Explorer() {
 
           {hash && summary.data && (
             <>
+              {view === "map" && plane === null && purpose.length > 0 && <section className="work-tool-panel workspace-purpose">
+                <h3>Purpose</h3><p>{purpose.join(" · ")}</p>
+                <button type="button" className="link-btn" onClick={() => openWorkspace("business")}>Open business map</button>
+              </section>}
               {view === "map" && plane === null && repo?.description && <p className="repo-description">{repo.description}</p>}
               {view === "map" &&
                 (plane === null ? (
@@ -368,12 +400,14 @@ export function Explorer() {
               {view === "decisions" && <DecisionsView hash={hash} onOpenEntity={openEntity} />}
             </>
           )}
+          </>}
         </main>
       </div>
 
       {drawerOpen && shownHash && (
         <EntityDrawer
           hash={shownHash}
+          onPlacementChanged={() => { setPlacementRevision((n) => n + 1); placements.reload(); }}
           snapshotLabel={shownSnapshot ? `${shortSha(shownSnapshot.commit_sha)} · ${shownSnapshot.ref}` : "unknown snapshot"}
           otherSnapshot={shownHash !== hash}
           trail={trail}

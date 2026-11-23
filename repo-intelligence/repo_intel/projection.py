@@ -14,6 +14,8 @@ from typing import Any
 import psycopg
 from psycopg.types.json import Jsonb
 
+from . import business_map, registry, settings
+from .business_graph import DDL as LINEAGE_DDL, TABLES as LINEAGE_TABLES
 from .contracts import Manifest
 from .store import ObjectStore
 
@@ -55,14 +57,15 @@ def ensure_schema(conn: psycopg.Connection) -> None:
     setting absent it sees nothing. This is the backstop behind the tenant
     filters in the queries below (spec §11).
     """
-    conn.execute(DDL)
+    conn.execute(DDL + business_map.DDL + registry.DDL + settings.DDL + LINEAGE_DDL)
     conn.execute(f"DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '{APP_ROLE}') THEN CREATE ROLE {APP_ROLE} LOGIN; END IF; END $$")
-    for t in TABLES:
+    tables = dict.fromkeys(TABLES, "SELECT, INSERT") | business_map.TABLES | registry.TABLES | settings.TABLES | LINEAGE_TABLES
+    for t, grants in tables.items():
         conn.execute(f"ALTER TABLE {t} ENABLE ROW LEVEL SECURITY")
         conn.execute(f"ALTER TABLE {t} FORCE ROW LEVEL SECURITY")
         conn.execute(f"DROP POLICY IF EXISTS tenant_isolation ON {t}")
-        conn.execute(f"CREATE POLICY tenant_isolation ON {t} USING (tenant_id = current_setting('{_TENANT_SETTING}', true)) WITH CHECK (tenant_id = current_setting('{_TENANT_SETTING}', true))")
-        conn.execute(f"GRANT SELECT, INSERT ON {t} TO {APP_ROLE}")
+        conn.execute(f"CREATE POLICY tenant_isolation ON {t} USING (tenant_id = (SELECT current_setting('{_TENANT_SETTING}', true))) WITH CHECK (tenant_id = (SELECT current_setting('{_TENANT_SETTING}', true)))")
+        conn.execute(f"GRANT {grants} ON {t} TO {APP_ROLE}")
     conn.commit()
 
 
@@ -97,15 +100,27 @@ def dump(conn: psycopg.Connection) -> dict[str, list[tuple]]:
 
 
 def truncate_all(conn: psycopg.Connection) -> None:
-    conn.execute("TRUNCATE " + ", ".join(TABLES))
+    conn.execute("TRUNCATE " + ", ".join([*TABLES, *business_map.TABLES, *registry.TABLES, *settings.TABLES, *LINEAGE_TABLES]))
     conn.commit()
 
 
-def get_snapshot(conn: psycopg.Connection, tenant_id: str, *, rkp_hash: str | None = None, repository_id: str | None = None, commit_sha: str | None = None) -> dict[str, Any] | None:
+def get_snapshot(conn: psycopg.Connection, tenant_id: str, *, rkp_hash: str | None = None, repository_id: str | None = None, commit_sha: str | None = None, toolchain_hash: str | None = None) -> dict[str, Any] | None:
     if rkp_hash:
         row = conn.execute("SELECT manifest FROM snapshots WHERE tenant_id=%s AND rkp_hash=%s", (tenant_id, rkp_hash)).fetchone()
     else:
-        row = conn.execute("SELECT manifest FROM snapshots WHERE tenant_id=%s AND repository_id=%s AND commit_sha=%s", (tenant_id, repository_id, commit_sha)).fetchone()
+        row = conn.execute(
+            """SELECT s.manifest FROM snapshots s
+               LEFT JOIN repository_registry r USING (tenant_id, repository_id)
+               LEFT JOIN LATERAL (
+                 SELECT max((snap->>'compiled_at')::double precision) AS published
+                 FROM jsonb_array_elements(r.document->'snapshots') snap
+                 WHERE snap->>'rkp_hash' = s.rkp_hash
+               ) last_compile ON true
+               WHERE s.tenant_id=%s AND s.repository_id=%s AND s.commit_sha=%s
+                 AND (%s::text IS NULL OR s.manifest->>'toolchain_hash' = %s)
+               ORDER BY last_compile.published DESC NULLS LAST, s.rkp_hash LIMIT 1""",
+            (tenant_id, repository_id, commit_sha, toolchain_hash, toolchain_hash),
+        ).fetchone()
     return row[0] if row else None
 
 

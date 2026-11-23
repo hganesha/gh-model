@@ -15,9 +15,6 @@ from ..contracts import DecisionSpec
 from .runner import RuleResult
 
 SUPPORTED_ECOSYSTEMS = {"pypi", "npm"}
-SERVER = {"pypi": {"fastapi", "flask", "django", "starlette", "aiohttp", "sanic", "tornado"}, "npm": {"express", "fastify", "koa", "@nestjs/core", "hono"}}
-FRONTEND = {"npm": {"next", "react-dom", "vue", "svelte", "@angular/core", "nuxt"}}
-CONSUMER = {"pypi": {"confluent-kafka", "celery", "kafka-python", "aiokafka", "pika", "dramatiq", "rq"}, "npm": {"bullmq", "bull", "kafkajs", "amqplib"}}
 
 SPEC = DecisionSpec.model_validate({
     "id": "dm.component-kind", "version": "1.1.0", "scope": "unit",
@@ -59,12 +56,14 @@ def _features(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, Any]:
             if o["kind"] == "dependency_declaration" and o["payload"]["ecosystem"] == eco and o["payload"]["scope"] == "runtime":
                 deps[o["payload"]["name"]] = o["evidence"]["id"]
 
-    def having(names: Mapping[str, set[str]]) -> list[str]:
-        found = sorted(set(deps) & names.get(eco, set()))
+    roles = inputs["component_roles"].get(eco, {})
+
+    def having(role: str) -> list[str]:
+        found = sorted(set(deps).intersection(roles.get(role, ())))
         evidence.update(deps[n] for n in found)
         return found
 
-    server, frontend, consumer = having(SERVER), having(FRONTEND), having(CONSUMER)
+    server, frontend, consumer = having("server"), having("frontend"), having("consumer")
     endpoints = [o for s in summaries for o in s["observations"] if o["kind"] == "entity" and o["payload"]["kind"] == "Endpoint"]
     evidence.update(o["evidence"]["id"] for o in endpoints[:5])
     builds = [o for s in summaries for o in s["observations"] if o["kind"] == "entity" and o["payload"]["kind"] == "BuildTarget"]
@@ -96,7 +95,7 @@ def _features(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, Any]:
     return {"component": {"features": features, "evidence_ids": sorted(evidence), "package": {k: pkg["payload"][k] for k in ("ecosystem", "name", "manifest_dir")}}}
 
 
-FEATURES_BUILD = Step("features.build", "0.2.0", _features)
+FEATURES_BUILD = Step("features.build", "0.3.0", _features)
 
 
 def rules(f: Mapping[str, Any]) -> RuleResult:

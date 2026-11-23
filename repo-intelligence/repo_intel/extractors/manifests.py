@@ -23,7 +23,7 @@ def normalize_pypi(name: str) -> str:
 
 
 def _package(blob, at, ecosystem, name, path, attributes=None):
-    """`attributes` are shape facts about the manifest (booleans only), used by decisions."""
+    """Attributes describe the shape of the source manifest."""
     return obs("package_declaration", blob, at, {"ecosystem": ecosystem, "name": name, "manifest_dir": posixpath.dirname(path), "attributes": attributes or {}}, E1)
 
 
@@ -33,10 +33,14 @@ def _dependency(blob, at, ecosystem, name, specifier, scope="runtime"):
 
 class _Manifest:
     basename = ""
-    version = "1.1.0"
+    version = "1.2.0"
 
     def matches(self, path: str) -> bool:
         return posixpath.basename(path) == self.basename
+
+
+def _publication_version(raw) -> bool:
+    return isinstance(raw, str) and bool(re.fullmatch(r"[0-9][A-Za-z0-9._+!-]{0,63}", raw))
 
 
 _REQ = re.compile(r"^\s*([A-Za-z0-9][A-Za-z0-9._-]*)\s*(\[[^\]]*\])?\s*([^;]*)")
@@ -56,7 +60,7 @@ class PyProject(_Manifest):
             return Extraction(diagnostics=[diagnostic(self.id, "info", "no [project] name declared")])
         m = re.search(rb"^name\s*=.*$", data, re.M)
         name_at = span(data, m.start(), m.end()) if m else whole_file(data)
-        out = [_package(blob, name_at, "pypi", normalize_pypi(project["name"]), path, {"has_cli_entry": bool(project.get("scripts"))})]
+        out = [_package(blob, name_at, "pypi", normalize_pypi(project["name"]), path, {"has_cli_entry": bool(project.get("scripts")), "publishable": _publication_version(project.get("version"))})]
         deps = project.get("dependencies", [])
         for raw in deps if isinstance(deps, list) else []:
             parsed = _REQ.match(raw) if isinstance(raw, str) else None
@@ -79,7 +83,7 @@ class PackageJson(_Manifest):
             return Extraction(diagnostics=[diagnostic(self.id, "info", "no package name declared")])
         name_at = find_span(data, json.dumps(doc["name"])) or whole_file(data)
         scripts = doc.get("scripts") if isinstance(doc.get("scripts"), dict) else {}
-        shape = {"is_workspace_root": "workspaces" in doc, "has_cli_entry": "bin" in doc, "has_library_entry": any(k in doc for k in ("main", "module", "exports", "types")), "has_start_script": "start" in scripts, "private": doc.get("private") is True}
+        shape = {"is_workspace_root": "workspaces" in doc, "has_cli_entry": "bin" in doc, "has_library_entry": any(k in doc for k in ("main", "module", "exports", "types")), "has_start_script": "start" in scripts, "private": doc.get("private") is True, "publishable": doc.get("private") is not True and _publication_version(doc.get("version"))}
         out = [_package(blob, name_at, "npm", doc["name"], path, shape)]
         for section, scope in self.SCOPES.items():
             block = doc.get(section)

@@ -44,19 +44,30 @@ def main() -> int:
     gateway = Gateway(gateway.aliases, frozenset({gateway.aliases[alias].provider}))  # explicit, for this run only
     if hasattr(gateway.aliases[alias], "max_wait"):
         gateway.aliases[alias].max_wait = 90.0  # a smoke test can afford to sit out a per-minute limit
-    spec = dm.SPEC.model_copy(update={"strategy": [s.model_copy(update={"model_ref": alias}) if s.kind == "decision_model" else s for s in dm.SPEC.strategy]})
-    always_ask = lambda f: RuleResult("ambiguous", candidates=("service", "worker", "cli", "library", "tooling"))
+    results = run_check(gateway, alias)
+    for result in results:
+        scores = ", ".join(f"{k}={v:.3f}" for k, v in sorted((result["option_scores"] or {}).items(), key=lambda kv: -kv[1]))
+        print(f"{result['case']}\n   -> {result['selected_label'] or 'ABSTAIN'} ({result['abstain_reason'] or 'accepted'}) by {result['model_ref']}; attempts={result['attempts']}\n   scores: {scores or 'none'}")
+    failures = any(row["abstain_reason"] in ("model_unavailable", "egress_denied") for row in results)
+    return 1 if failures else 0
+
+
+def run_check(gateway: Gateway, alias: str) -> list[dict]:
+    spec = dm.SPEC.model_copy(update={"strategy": [
+        step.model_copy(update={"model_ref": alias}) if step.kind == "decision_model" else step
+        for step in dm.SPEC.strategy
+    ]})
     budget = Budget(max_calls=40)
-    failures = 0
     with tempfile.TemporaryDirectory() as tmp:
         ledger = Ledger(ObjectStore(tmp, "live-check"))
-        for name, features in CASES.items():
-            r = evaluate(spec, "ent_live_check", features, always_ask, ledger=ledger, gateway=gateway, budget=budget, criteria=dm.CRITERIA)
-            scores = ", ".join(f"{k}={v:.3f}" for k, v in sorted((r.option_scores or {}).items(), key=lambda kv: -kv[1]))
-            print(f"{name}\n   -> {r.selected_label or 'ABSTAIN'} ({r.abstain_reason or 'accepted'}) by {r.model_ref}; attempts={r.attempts}\n   scores: {scores or 'none'}")
-            failures += r.abstain_reason in ("model_unavailable", "egress_denied")
-    print(f"model calls used: {budget.used}")
-    return 1 if failures else 0
+        return [
+            {"case": name, **evaluate(
+                spec, "ent_live_check", features,
+                lambda _: RuleResult("ambiguous", candidates=("service", "worker", "cli", "library", "tooling")),
+                ledger=ledger, gateway=gateway, budget=budget, criteria=dm.CRITERIA,
+            ).row()}
+            for name, features in CASES.items()
+        ]
 
 
 if __name__ == "__main__":

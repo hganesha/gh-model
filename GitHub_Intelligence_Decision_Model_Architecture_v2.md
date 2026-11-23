@@ -20,12 +20,12 @@ Appendix A lists every v1 finding and where it is resolved.
 
 ## 1. Executive design
 
-Build a read-only repository intelligence compiler that turns a pinned GitHub commit into a **Repository Knowledge Package (RKP)**: a typed, evidence-backed representation of the software system covering topology, languages and frameworks, packages and components, entry points, APIs and event contracts, data schemas, AI integrations, build and deployment declarations, and tests. The RKP is maintained incrementally as commits arrive and is exposed to the platform Context Resolver through typed, authorized queries. It is never exposed as an unrestricted repository-wide LLM scan.
+Build a read-only repository intelligence compiler that turns a pinned Git commit into a **Repository Knowledge Package (RKP)**: a typed, evidence-backed representation of the software system covering topology, languages and frameworks, packages and components, entry points, APIs and event contracts, data schemas, AI integrations, build and deployment declarations, and tests. The RKP is maintained incrementally as commits arrive and is exposed to the platform Context Resolver through typed, authorized queries. It is never exposed as an unrestricted repository-wide LLM scan.
 
 **Principle.** Deterministic extractors produce observations. Decision functions, backed by decision models, resolve bounded semantic uncertainty over those observations. A compiler turns both into evidence-backed assertions. Verifiers check invariants before publish. Unknowns and abstentions are recorded as first-class output. What must be reproducible is the inputs, the recorded decisions and the emitted artifacts; model reasoning itself is not assumed deterministic.
 
 ### 1.1 Non-goals for v1
-- Reconstructing business requirements from source.
+- Reconstructing business requirements from source. The workspace can place a component under a capability its owner defined. Placement uses the owner’s closed label set.
 - Claiming that declared infrastructure is running anywhere.
 - Proving dynamic call paths from static analysis. Call edges carry a resolution grade and are never presented as sound.
 - Executing repository code in any form at ingestion: no scripts, builds, install hooks, tests, IaC plans or dependency installs.
@@ -49,7 +49,7 @@ Build a read-only repository intelligence compiler that turns a pinned GitHub co
 | Contracts | OpenAPI 3.x | protobuf, GraphQL SDL | AsyncAPI |
 | Build/deploy | Dockerfile, docker-compose, GitHub Actions, Kubernetes manifests, Terraform (static HCL) | Helm (unrendered templates), Kustomize | Bicep, Pulumi |
 | Decisions | DM01–DM07, DM10 | DM08 behavior candidates, behind a flag, excluded from unattended routing | DM09 requirements lineage (v1.1) |
-| Human-facing UI | RKP Explorer: read-only views plus owner overrides (§18) | — | requirements plane (with DM09); editing knowledge in the UI |
+| Human-facing UI | RKP Explorer: published snapshots, owner overrides, business map and settings (§18) | — | requirements plane (with DM09); editing knowledge in the UI |
 
 Unsupported input always yields a coverage warning and unknowns, never an invented inventory.
 
@@ -104,6 +104,8 @@ flowchart TD
     SUF --> HA[Harness adapter and MCP context.expand]
 ```
 
+Repository connectors expose metadata lookup, repository enumeration, ref resolution and an exact-commit fetch. GitHub App and GitLab adapters also authenticate push notifications. The connector scope ends at the bare Git object store.
+
 ### 3.2 Trust zones
 1. **Untrusted source zone.** Repository bytes, READMEs, issues, PR text, comments, generated artifacts, file and symbol *names*, and anything a model writes after reading them. No execution. No credentials mounted.
 2. **Extractor zone.** Sandboxed parsers with no network and a read-only mount of exactly the inputs the step declared. Manifests are parsed as data and never installed.
@@ -147,7 +149,7 @@ Three properties follow.
 | Thing | ID | Derived from |
 |---|---|---|
 | Tenant | `tenant_id` | platform |
-| Repository | `repository_id` | GitHub host plus numeric repository ID (stable across rename and transfer); never owner/name |
+| Repository | `repository_id` | Host plus provider repository ID where available. Plain Git uses a hash of the canonical host and remote path. Existing GitHub IDs remain stable across rename and transfer |
 | Blob | `blob_sha256` | file content; the Git blob OID is kept alongside as the retrieval key |
 | Evidence | `ev_…` | hash of `(blob_sha256, span, observation_kind)` |
 | Entity | `ent_…` | hash of `(repository_id, entity_kind, natural_key)` |
@@ -195,7 +197,7 @@ Replay: pinned commit, same toolchain, same ledger entries produce the same `rkp
 The stages below describe what happens; execution order and reuse are governed by the build graph in §3.3.
 
 ### Stage 0 — Admission and source pinning
-Inputs: the authenticated principal, the GitHub installation and repository, a ref or SHA, and an ingestion profile. The service resolves the ref to a full commit SHA, confirms that the installation still has access and that policy allows the repository's data classification, and fetches the tree through a partial clone into a bare per-tenant mirror. No hooks run, LFS objects are not smudged, submodules are recorded and not followed, and symlinks are recorded and never followed outside the root.
+Inputs are the authenticated principal, connection, repository, ref or SHA, and ingestion profile. The connector resolves the ref, checks repository visibility, and fetches exactly the pinned commit into a bare per-tenant mirror. Admission also applies the workspace policy for the repository’s data classification. No hooks run, LFS objects are not smudged, submodules are recorded and not followed, and symlinks are recorded and never followed outside the root.
 
 The path manifest lists every tracked path with blob hash, size and mode. Policy exclusions (vendored trees, generated output, binaries, oversized files) are applied and recorded with a reason. An exclusion is never silent.
 
@@ -268,6 +270,8 @@ A decision function is a versioned unit with declared input features, a closed l
 | DM08 | Behavior candidates | component or flow | entry point, route, tests, docs | behavior hypotheses | targeted LLM (open-ended output) | evidence spans, reviewed sample | experimental |
 | DM09 | Requirements lineage | feature | issues, docs, tests, commits | requirement to implementation to test | graph, decision model, targeted LLM | source-linked trace | deferred |
 | DM10 | Change impact | commit delta | KnowledgeDelta, reverse dependencies, tests | affected nodes with uncertainty | deterministic graph; decision model scores borderline nodes | comparison with later observed diffs | yes |
+
+Two capability decisions extend this registry. `dm.dependency-capability` derives `ExternalDependency —PROVIDES→ TechnicalCapability` from a declared package and the pinned technical catalogue. `dm.capability-placement` chooses among the owner-defined business capabilities shortlisted for a component. Its decisions are part of the workspace overlay (§18.1). Rules and model choices retain the decision version, evidence and effective model policy in their cache identity.
 
 ### 7.1 Invocation gate
 Rules do not emit a confidence number. A ruleset returns one of four outcomes, and the outcome decides what happens next:
@@ -573,7 +577,7 @@ Conditions are evaluated on the target's graph neighborhood, which is known befo
 
 **Units.** Tenant, then repository, then path scope, then sensitivity ceiling. A path scope is a policy-defined set of globs; the default is the whole repository. GitHub grants access per repository, so path scopes are a platform policy layered on top.
 
-**Principal.** A service identity acting on behalf of a user. The user's access to the repository is checked against GitHub when a context is resolved and cached for at most five minutes. Installation removal and membership-change webhooks flush the cache.
+**Principal.** The single-user deployment grants its local administrator access to the repositories readable through the configured connections. Service credentials can carry broader access than an end user. Before adding another user, GI-022 must check that user’s repository access against each connector host, bound the cache lifetime, and invalidate access when permission changes.
 
 **Visibility rules.**
 - Evidence is visible if its path (from the snapshot manifest) is in the principal's path scope and its sensitivity is at or below the ceiling.
@@ -739,12 +743,20 @@ Every figure is reported with a 95% interval and broken down by language, reposi
 Added after the v1 review. v1 had no human-facing surface; without one, coverage, unknowns, conflicts and decision outcomes are visible only through the API.
 
 ### 18.1 Purpose and boundary
-The Explorer is a read-only web view of published RKP snapshots for engineers and repository owners. It is a second consumer of the authorized query service, alongside the Context Resolver, and sits in the consumer trust zone (§3.2).
+The Explorer shows published RKP snapshots and provides workspace tools for engineers and repository owners. It is a second consumer of the authorized query service, alongside the Context Resolver, and sits in the consumer trust zone (§3.2).
 
 - It holds no copy of the knowledge. Every view is a call to the `/v1` API made server-side with the signed-in user's identity; the browser never receives service credentials.
 - It has no database. View preferences live in the browser.
-- Its only write is submitting owner overrides (§8.6), for principals with admin rights.
+- Workspace administrators edit owner overrides (§8.6), business maps and settings through versioned authenticated API requests. The local development credential represents one workspace administrator.
 - It never embeds a deployed application and never executes or previews repository code.
+
+The business map is a tenant-scoped PostgreSQL overlay with immutable revisions and a version-checked save. Its active value chain stores stages, capabilities and reviewed placements. Component lineage follows unchanged identity or an unambiguous move supported by shared content evidence. A previously placed component without a current identity is flagged as orphaned. The compiler does not read the map.
+
+`dm.capability-placement` shortlists the workspace’s capability IDs before invoking the decision runner. Its result and score are overlay records. Confirmed edits take precedence, and a rejection removes the capability from subsequent candidate sets for that component. Dependencies between mapped capabilities retain the grade and evidence of the underlying edges. Cross-repository matches are candidate-grade workspace results.
+
+Connector credentials are held in the OS keychain or mounted as secret-manager values. The Explorer handles references and GitHub’s short-lived user authorization code.
+
+Extractor enablement, compile decision policies and model assignments are pinned in the toolchain manifest. Placement policy is pinned to placement decision inputs. Provider egress defaults off. Environment-owned provider allow-lists and defaults are visible to administrators as read-only settings.
 
 ### 18.2 Basis: the Stratum studio
 The Explorer starts from the existing Stratum prototype (Next.js App Router, React; `dynamic-repository-control-studio`).

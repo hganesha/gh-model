@@ -14,7 +14,9 @@ from collections.abc import Mapping
 from typing import Any
 
 from .buildgraph import Step, StepInputs
+from .capabilities import CapabilityCatalogue, match_package
 from .contracts import Assertion, Conflict, CoverageEntry, DecisionResult, Entity, Evidence, Unknown, decision_id
+from .decisions import dependency as dm_dependency
 from .decisions.component import TOPOLOGY_SPEC, topology_rules
 from .hashing import digest
 from .link import match_call, normalize_route
@@ -259,6 +261,67 @@ UNIT_COMPILE = Step("unit.compile", "0.5.0", _unit_compile)
 # --------------------------------------------------------------- repo.compile
 
 
+def _dependency_capabilities(
+    repo: str,
+    shards: dict[str, dict[str, Any]],
+    global_shard: _Shard,
+    catalogue_data: dict[str, Any],
+) -> tuple[list[dict[str, Any]], CoverageEntry]:
+    catalogue = CapabilityCatalogue.model_validate(catalogue_data)
+    catalogue_hash = digest(catalogue_data)
+    definitions = {item.key: item for item in catalogue.capabilities}
+    by_package = catalogue.package_mappings()
+    dependencies = {
+        e["id"]: e["natural_key"]
+        for shard in shards.values()
+        for e in shard["entities"]
+        if e["kind"] == EntityKind.EXTERNAL_DEPENDENCY and e["natural_key"]["ecosystem"] in ("npm", "pypi")
+    }
+    declarations: dict[str, set[str]] = {}
+    for shard in shards.values():
+        evidence = {e["id"]: e for e in shard["evidence"]}
+        for edge in shard["assertions"]:
+            target = edge["object"]
+            if edge["predicate"] == Predicate.DEPENDS_ON and target in dependencies:
+                cited = declarations.setdefault(target, set())
+                cited.update(global_shard.cite(evidence[i]) for i in edge["evidence_ids"])
+
+    decisions = []
+    classified = 0
+    for subject, cited in sorted(declarations.items()):
+        evidence_ids = sorted(cited)
+        key = dependencies[subject]
+        matches = match_package(by_package, key["ecosystem"], key["name"])
+        if not matches:
+            decisions.append(dm_dependency.decision(subject, evidence_ids, catalogue_hash, None).row())
+            continue
+        classified += 1
+        for match in matches:
+            definition = definitions[match.capability]
+            target = global_shard.entity(Entity.make(
+                repo, EntityKind.TECHNICAL_CAPABILITY,
+                {"taxonomy": catalogue.taxonomy.key, "key": definition.key}, definition.name,
+                attributes={"description": definition.description},
+            ))
+            decision = dm_dependency.decision(subject, evidence_ids, catalogue_hash, match)
+            decisions.append(decision.row())
+            global_shard.assertion(Assertion.make(
+                subject, Predicate.PROVIDES, target,
+                qualifiers={"basis": "curated_package"},
+                assertion_kind=AssertionKind.DERIVED_RELATION,
+                epistemic_status=EpistemicStatus.SUPPORTED,
+                evidence_class=EvidenceClass.E3,
+                evidence_ids=evidence_ids,
+                confidence=match.confidence,
+                decision_ref=decision.decision_id,
+            ))
+    coverage = CoverageEntry(
+        domain="dependency_capability", scope="@repo", numerator=classified,
+        denominator=len(declarations), detail={"ecosystems": ["npm", "pypi"]},
+    )
+    return decisions, coverage
+
+
 def _repo_compile(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, Any]:
     repo: str = inputs["repository_id"]
     shards: dict[str, dict[str, Any]] = inputs["shards"]
@@ -302,17 +365,23 @@ def _repo_compile(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, An
     component_of = {(e["natural_key"]["root"] or "."): e["id"] for e in components}
 
     declared = matched = 0
+    workspace_exports: dict[str, list[dict]] = {"operations": [], "unresolved_calls": []}
     for name in sorted(links):
         for op in links[name]["exports"]["contract_operations"]:
             declared += 1
             interface = Entity.make(repo, EntityKind.INTERFACE, op["interface"]["natural_key"], op["interface"]["name"]).id
-            hits = [(e, ev) for e, ev, _ in endpoints if e["natural_key"]["method"] == op["method"] and normalize_route(e["natural_key"]["route"]) == normalize_route(op["route"])]
+            hits = [(e, ev, unit) for e, ev, unit in endpoints if e["natural_key"]["method"] == op["method"] and normalize_route(e["natural_key"]["route"]) == normalize_route(op["route"])]
             op_ev = g.cite(op["evidence"])
+            component_ids = sorted({component_of[unit] for _, _, unit in hits if unit in component_of})
+            workspace_exports["operations"].append({
+                "interface": interface, "component": component_ids[0] if len(component_ids) == 1 else None,
+                "method": op["method"], "route": op["route"], "evidence_ids": [op_ev],
+            })
             if not hits:
                 conflicts.append(Conflict.make("declared_vs_implemented", [interface], [op_ev], f"{op['method']} {op['route']} is declared in {op['path']} and no implementation was found").row())
                 continue
             matched += 1
-            for e, ev in hits:
+            for e, ev, _ in hits:
                 g.assertion(Assertion.make(interface, Predicate.CONTAINS, e["id"], qualifiers={"basis": "contract_match"}, assertion_kind=AssertionKind.DERIVED_RELATION, epistemic_status=EpistemicStatus.SUPPORTED, evidence_class=EvidenceClass.E3, evidence_ids=[op_ev, g.cite(ev)]))
         for call in links[name]["exports"]["http_calls"]:
             caller = package_of.get(name)
@@ -321,6 +390,11 @@ def _repo_compile(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, An
             hits = [(e, ev) for e, ev, _ in endpoints if match_call(call["call_path"], e["natural_key"]["route"])]
             # The call's method is not known; a plain fetch is a GET, so prefer GET when one matches.
             hits = [h for h in hits if h[0]["natural_key"]["method"] == "GET"] or hits
+            if not hits:
+                workspace_exports["unresolved_calls"].append({
+                    "caller": component_of.get(name, caller), "path": call["call_path"],
+                    "evidence_ids": [g.cite(call["evidence"])],
+                })
             for e, ev in hits:  # a path match is a lead, not proof: candidate, inferred
                 g.assertion(Assertion.make(caller, Predicate.CONSUMES, e["id"], qualifiers={"via": "http"}, assertion_kind=AssertionKind.DERIVED_RELATION, epistemic_status=EpistemicStatus.INFERRED, evidence_class=EvidenceClass.E4, evidence_ids=[g.cite(call["evidence"]), g.cite(ev)], resolution="candidate"))
                 if name in component_of:
@@ -351,6 +425,11 @@ def _repo_compile(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, An
                 g.unknowns[row["id"]] = row
     coverage.append(CoverageEntry(domain="deployment_refs", scope="@repo", numerator=deploy_resolved, denominator=deploy_refs).row())
 
+    dependency_decisions, dependency_coverage = _dependency_capabilities(
+        repo, shards, g, inputs["capability_catalogue"],
+    )
+    coverage.append(dependency_coverage.row())
+
     # DM01: repository topology, by rules over the declared packages.
     pkgs = [e for s in shards.values() for e in s["entities"] if e["kind"] == EntityKind.PACKAGE]
     topo_features = {"packages": len(pkgs), "ecosystems": sorted({p["natural_key"]["ecosystem"] for p in pkgs}), "workspace_root": any(p["attributes"].get("is_workspace_root") for p in pkgs)}
@@ -375,10 +454,10 @@ def _repo_compile(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, An
     for x in exclusions:
         reasons[x["reason"]] = reasons.get(x["reason"], 0) + 1
     coverage.append(CoverageEntry(domain="inventory", scope="@repo", numerator=files_total, denominator=files_total + len(exclusions), detail={"excluded_by_reason": dict(sorted(reasons.items())), "oversize_not_parsed": sorted(unparsed_oversize)}).row())
-    return {"global_shard": g.rows(), "coverage": coverage, "conflicts": conflicts, "decisions": [topology]}
+    return {"global_shard": g.rows(), "coverage": coverage, "conflicts": conflicts, "decisions": [topology, *dependency_decisions], "workspace_exports": workspace_exports}
 
 
-REPO_COMPILE = Step("repo.compile", "0.3.0", _repo_compile)
+REPO_COMPILE = Step("repo.compile", "0.5.0", _repo_compile)
 
 from .link import UNIT_LINK  # noqa: E402
 

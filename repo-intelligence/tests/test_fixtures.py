@@ -144,6 +144,23 @@ def test_goldens_due_by_the_compiler_milestone(name, compiled):
     assert check(name, compiled(name), COMPILER_MILESTONE) == []
 
 
+def test_dependency_capability_coverage_on_fixture_bases(compiled):
+    all_declared, all_classified = set(), set()
+    for name in FIXTURES:
+        base = compiled(name)[0]
+        declared = {
+            e["id"]: (e["natural_key"]["ecosystem"], e["name"])
+            for e in base["entities"].values()
+            if e["kind"] == "ExternalDependency" and e["natural_key"]["ecosystem"] in ("npm", "pypi")
+        }
+        classified = {e["subject"] for e in base["assertions"] if e["predicate"] == "PROVIDES"}
+        coverage = next(c for c in base["coverage"] if c["domain"] == "dependency_capability")
+        assert (coverage["numerator"], coverage["denominator"]) == (len(classified), len(declared))
+        all_declared.update(declared.values())
+        all_classified.update(declared[subject] for subject in classified)
+    assert (len(all_classified), len(all_declared)) == (15, 17)
+
+
 def test_configuration_values_never_enter_the_graph(compiled):
     from repo_intel.hashing import canonical
     for commit in compiled("F06-iac-heavy"):

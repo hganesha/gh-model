@@ -61,6 +61,7 @@ def test_connect_compile_and_read_a_repository(client, f01):
     summary = c.get(f"/v1/snapshots/{h}/summary", headers=AUTH).json()
     assert summary["topology"] == "single" and summary["planes"]["contracts"]["kinds"]["Endpoint"] == 2 and summary["planes"]["data"]["kinds"]["Table"] == 1
     assert summary["coverage_totals"]["route_to_handler"] == {"numerator": 2, "denominator": 2} and summary["files"] == 9
+    assert summary["coverage_totals"]["dependency_capability"] == {"numerator": 3, "denominator": 3}
 
     endpoints = c.get(f"/v1/snapshots/{h}/entities", headers=AUTH, params={"plane": "contracts"}).json()
     assert sorted(e["name"] for e in endpoints["entities"]) == ["GET /customers", "POST /customers"] and endpoints["truncated"] is False
@@ -75,7 +76,15 @@ def test_connect_compile_and_read_a_repository(client, f01):
     assert all(a["subject"] in detail["neighbours"] and a["object"] in detail["neighbours"] for a in detail["assertions"])
 
     decisions = c.get(f"/v1/snapshots/{h}/decisions", headers=AUTH).json()["decisions"]
-    assert {d["spec"].split("@")[0] for d in decisions} == {"dm.component-kind", "dm.repository-topology"}
+    assert {d["spec"].split("@")[0] for d in decisions} == {"dm.component-kind", "dm.repository-topology", "dm.dependency-capability"}
+    deps = c.get(f"/v1/snapshots/{h}/entities", headers=AUTH, params={"kind": "ExternalDependency"}).json()["entities"]
+    fastapi = next(e for e in deps if e["name"] == "fastapi")
+    dependency = c.get(f"/v1/snapshots/{h}/entities/{fastapi['id']}", headers=AUTH).json()
+    provides = next(a for a in dependency["assertions"] if a["predicate"] == "PROVIDES")
+    assert dependency["neighbours"][provides["object"]]["kind"] == "TechnicalCapability"
+    decision = next(d for d in decisions if d["decision_id"] == provides["decision_ref"])
+    assert decision["decision_method"] == "rules" and decision["selected_label"] == "web-application-framework"
+    assert decision["evidence_ids"] == provides["evidence_ids"]
 
     again = _finish(c, c.post("/v1/repositories/" + repos["repositories"][0]["repository_id"] + "/compilations", headers=AUTH, json={"ref": shas[1]}).json()["id"])
     assert again["status"] == "complete" and again["rkp_hash"] != h

@@ -32,6 +32,7 @@ class EntityKind(StrEnum):
     TEST = "Test"
     OWNER = "Owner"
     EXTERNAL_DEPENDENCY = "ExternalDependency"
+    TECHNICAL_CAPABILITY = "TechnicalCapability"
     # Reserved for DM08/DM09; not emitted in v1.
     FEATURE = "Feature"
     REQUIREMENT = "Requirement"
@@ -82,6 +83,7 @@ class Predicate(StrEnum):
     CONSUMES = "CONSUMES"
     CALLS = "CALLS"
     DEPENDS_ON = "DEPENDS_ON"
+    PROVIDES = "PROVIDES"
     READS_FROM = "READS_FROM"
     WRITES_TO = "WRITES_TO"
     PUBLISHES_TO = "PUBLISHES_TO"
@@ -125,6 +127,7 @@ RELATIONS: dict[Predicate, RelationSchema] = {
     P.CONSUMES: _r(_CODE | {K.AI_COMPONENT}, {K.INTERFACE, K.ENDPOINT, K.MODEL_ENDPOINT}),
     P.CALLS: _r({K.SYMBOL}, {K.SYMBOL}),
     P.DEPENDS_ON: _r(_CODE, {K.PACKAGE, K.COMPONENT, K.EXTERNAL_DEPENDENCY}),
+    P.PROVIDES: _r({K.EXTERNAL_DEPENDENCY}, {K.TECHNICAL_CAPABILITY}, weakest=EvidenceClass.E3),
     P.READS_FROM: _r(_CODE, {K.TABLE, K.STORAGE_RESOURCE, K.DATA_SCHEMA}),
     P.WRITES_TO: _r(_CODE, {K.TABLE, K.STORAGE_RESOURCE, K.DATA_SCHEMA}),
     P.PUBLISHES_TO: _r(_CODE, {K.EVENT_TOPIC}),

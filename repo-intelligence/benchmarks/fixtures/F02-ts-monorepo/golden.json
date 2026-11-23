@@ -202,6 +202,38 @@
         "path": "apps/api/Dockerfile"
       },
       "since": "M1"
+    },
+    {
+      "kind": "TechnicalCapability",
+      "natural_key": {
+        "taxonomy": "stackgraph.technical-capabilities",
+        "key": "message-queue-and-job-processing"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "TechnicalCapability",
+      "natural_key": {
+        "taxonomy": "stackgraph.technical-capabilities",
+        "key": "relational-database-access"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "TechnicalCapability",
+      "natural_key": {
+        "taxonomy": "stackgraph.technical-capabilities",
+        "key": "web-application-framework"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "TechnicalCapability",
+      "natural_key": {
+        "taxonomy": "stackgraph.technical-capabilities",
+        "key": "web-frontend-framework"
+      },
+      "since": "M2"
     }
   ],
   "edges": [
@@ -317,6 +349,96 @@
           "protocol": "http",
           "method": "GET",
           "route": "/orders"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "ExternalDependency",
+        "natural_key": {
+          "ecosystem": "npm",
+          "name": "@prisma/client"
+        }
+      },
+      "predicate": "PROVIDES",
+      "object": {
+        "kind": "TechnicalCapability",
+        "natural_key": {
+          "taxonomy": "stackgraph.technical-capabilities",
+          "key": "relational-database-access"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "ExternalDependency",
+        "natural_key": {
+          "ecosystem": "npm",
+          "name": "bullmq"
+        }
+      },
+      "predicate": "PROVIDES",
+      "object": {
+        "kind": "TechnicalCapability",
+        "natural_key": {
+          "taxonomy": "stackgraph.technical-capabilities",
+          "key": "message-queue-and-job-processing"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "ExternalDependency",
+        "natural_key": {
+          "ecosystem": "npm",
+          "name": "express"
+        }
+      },
+      "predicate": "PROVIDES",
+      "object": {
+        "kind": "TechnicalCapability",
+        "natural_key": {
+          "taxonomy": "stackgraph.technical-capabilities",
+          "key": "web-application-framework"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "ExternalDependency",
+        "natural_key": {
+          "ecosystem": "npm",
+          "name": "next"
+        }
+      },
+      "predicate": "PROVIDES",
+      "object": {
+        "kind": "TechnicalCapability",
+        "natural_key": {
+          "taxonomy": "stackgraph.technical-capabilities",
+          "key": "web-frontend-framework"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "ExternalDependency",
+        "natural_key": {
+          "ecosystem": "npm",
+          "name": "react"
+        }
+      },
+      "predicate": "PROVIDES",
+      "object": {
+        "kind": "TechnicalCapability",
+        "natural_key": {
+          "taxonomy": "stackgraph.technical-capabilities",
+          "key": "web-frontend-framework"
         }
       },
       "since": "M2"

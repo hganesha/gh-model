@@ -2,9 +2,10 @@
 
 import { Check, Circle, Loader2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { api, ApiError, eventsUrl } from "@/lib/api";
+import { api, ApiError, eventsUrl, useApi } from "@/lib/api";
 import { shortSha } from "@/lib/format";
 import type { Job, JobEvent, Repository } from "@/lib/types";
+import type { SettingsView } from "@/lib/workspace";
 import { Modal } from "./ui";
 
 const STEPS: { id: string; label: string; stages: string[] }[] = [
@@ -180,6 +181,13 @@ export type ConnectTarget = { mode: "connect" } | { mode: "recompile"; repositor
 export function ConnectDialog({ target, onClose, onSnapshot }: { target: ConnectTarget; onClose: () => void; onSnapshot: (job: Job) => void }) {
   const recompile = target.mode === "recompile";
   const [url, setUrl] = useState("");
+  const [connection, setConnection] = useState("github-cli");
+  const [page, setPage] = useState(0);
+  const configuration = useApi<SettingsView>(recompile ? null : "settings");
+  const browse = useApi<{ repositories: { selector: string; full_name: string; default_branch: string }[]; has_more: boolean }>(
+    page ? `settings/connections/${connection}/repositories?page=${page}` : null,
+  );
+  const plain = configuration.data?.settings.connections.find((c) => c.id === connection)?.mode.startsWith("git_") ?? false;
   const [ref, setRef] = useState(recompile ? (target.ref ?? "") : "");
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -201,7 +209,7 @@ export function ConnectDialog({ target, onClose, onSnapshot }: { target: Connect
       const started = recompile
         ? // repository_id contains a slash that must stay a path separator
           await api<Job>(`repositories/${target.repository.repository_id}/compilations`, { body: trimmedRef ? { ref: trimmedRef } : {} })
-        : await api<Job>("repositories", { body: trimmedRef ? { url: url.trim(), ref: trimmedRef } : { url: url.trim() } });
+        : await api<Job>("repositories", { body: { url: url.trim(), ref: trimmedRef || undefined, connection_id: connection } });
       setJobId(started.id);
     } catch (err) {
       setSubmitError(err instanceof ApiError ? err.message : "The request could not be sent.");
@@ -214,7 +222,7 @@ export function ConnectDialog({ target, onClose, onSnapshot }: { target: Connect
   const settled = job?.status === "complete" || job?.status === "failed";
 
   return (
-    <Modal title={title} onClose={onClose} className="connect-modal">
+    <Modal title={title} onClose={onClose} className="connect-modal work-tool-dialog">
       {jobId === null ? (
         <form onSubmit={submit} className="form">
           {recompile ? (
@@ -223,11 +231,31 @@ export function ConnectDialog({ target, onClose, onSnapshot }: { target: Connect
             </p>
           ) : (
             <>
-              <p className="form-lead">Point the compiler at a GitHub repository. It is read, never modified.</p>
               <label className="field">
-                <span>Repository</span>
-                <input data-autofocus value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://github.com/owner/name or owner/name" required autoComplete="off" spellCheck={false} autoCapitalize="none" />
+                <span>Connection</span>
+                <select value={connection} onChange={(e) => { setConnection(e.target.value); setPage(0); setUrl(""); setRef(""); }}>
+                  <option value="github-cli">GitHub CLI</option>
+                  {configuration.data?.settings.connections.map((row) => <option key={row.id} value={row.id}>{row.name} · {row.host}</option>)}
+                </select>
               </label>
+              <button type="button" className="btn btn-quiet" onClick={() => page ? browse.reload() : setPage(1)}>Browse repositories</button>
+              {browse.loading && <p role="status">Loading repositories…</p>}
+              {browse.error && <p className="form-error" role="alert">{browse.error.message}</p>}
+              {browse.data && <div className="work-tool-controls">
+                <label className="field"><span>Visible repositories</span><select value={url} onChange={(e) => {
+                  setUrl(e.target.value);
+                  setRef(browse.data?.repositories.find((r) => r.selector === e.target.value)?.default_branch ?? "");
+                }}>
+                  <option value="">Choose a repository</option>
+                  {browse.data.repositories.map((row) => <option key={row.selector} value={row.selector}>{row.full_name}</option>)}
+                </select></label>
+                {page > 1 && <button type="button" className="btn btn-quiet" onClick={() => setPage(page - 1)}>Previous</button>}
+                {browse.data.has_more && <button type="button" className="btn btn-quiet" onClick={() => setPage(page + 1)}>Next</button>}
+              </div>}
+              {!plain && <label className="field">
+                <span>Repository URL or name</span>
+                <input data-autofocus value={url} onChange={(e) => setUrl(e.target.value)} placeholder="owner/name" required autoComplete="off" spellCheck={false} autoCapitalize="none" />
+              </label>}
             </>
           )}
           <label className="field">
@@ -245,7 +273,7 @@ export function ConnectDialog({ target, onClose, onSnapshot }: { target: Connect
             <button type="button" className="btn btn-quiet" onClick={onClose}>
               Cancel
             </button>
-            <button type="submit" className="btn btn-primary" disabled={submitting || (!recompile && !url.trim())}>
+            <button type="submit" className="btn btn-primary" disabled={submitting || (!recompile && !plain && !url.trim())}>
               {submitting && <Loader2 size={14} className="spin" aria-hidden="true" />}
               {recompile ? "Recompile" : "Connect and compile"}
             </button>

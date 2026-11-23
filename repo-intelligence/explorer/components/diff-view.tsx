@@ -544,6 +544,9 @@ export function DiffView({ from, to, sameCommit, basis, onOpenEntity }: { from: 
         {data.truncated && <p className="notice notice-warn">Truncated: the server returned only part of this comparison. Counts in the summary are complete; the lists below are not.</p>}
       </header>
 
+      {(data.capabilities_touched?.length ?? 0) > 0 && <section className="panel">
+        <h3>Capabilities touched</h3><ul>{data.capabilities_touched?.map((cap) => <li key={cap}>{cap}</li>)}</ul>
+      </section>}
       {nothing && e.added + e.removed + e.changed + e.moved + e.evidence_changed === 0 && data.assertions.length === 0 ? (
         <div className="empty-plane">
           <h3>Nothing differs.</h3>
