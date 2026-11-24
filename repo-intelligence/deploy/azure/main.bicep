@@ -4,6 +4,7 @@
 //     -> API (Container App, internal only, one replica)
 //          -> PostgreSQL Flexible Server (Burstable B1ms)
 //          -> Azure Files share mounted at /data (object store, git mirrors, providers.env)
+//          -> Key Vault (GitHub device sign-in tokens)
 //   One user-assigned identity pulls images from ACR and signs in to Azure model deployments.
 //
 // Deployed twice by deploy.sh: first with deployApps=false (infrastructure, so images
@@ -63,12 +64,14 @@ var names = {
   storage: toLower(take('${prefix}st${suffix}', 24))
   share: 'rkp-data'
   postgres: '${prefix}-pg-${suffix}'
+  vault: take('${prefix}kv${suffix}', 24)
   environment: '${prefix}-env'
   api: '${prefix}-api'
   explorer: '${prefix}-explorer'
 }
 var postgresAdmin = 'rkpadmin'
 var acrPullRole = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')
+var vaultSecretsOfficerRole = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b86a8fe4-44ce-4948-aee5-eccb2c155cd7')
 
 resource identity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
   name: names.identity
@@ -116,6 +119,29 @@ resource storage 'Microsoft.Storage/storageAccounts@2023-05-01' = {
 resource share 'Microsoft.Storage/storageAccounts/fileServices/shares@2023-05-01' = {
   name: '${storage.name}/default/${names.share}'
   properties: { shareQuota: 100 }
+}
+
+// Credentials the app obtains itself (GitHub device sign-in). Access is by role only;
+// the app's identity may read and write secrets, nothing else.
+resource vault 'Microsoft.KeyVault/vaults@2023-07-01' = {
+  name: names.vault
+  location: location
+  properties: {
+    tenantId: subscription().tenantId
+    sku: { family: 'A', name: 'standard' }
+    enableRbacAuthorization: true
+    softDeleteRetentionInDays: 7
+  }
+}
+
+resource vaultSecrets 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(vault.id, identity.id, vaultSecretsOfficerRole)
+  scope: vault
+  properties: {
+    roleDefinitionId: vaultSecretsOfficerRole
+    principalId: identity.properties.principalId
+    principalType: 'ServicePrincipal'
+  }
 }
 
 resource postgres 'Microsoft.DBforPostgreSQL/flexibleServers@2022-12-01' = {
@@ -230,6 +256,7 @@ resource api 'Microsoft.App/containerApps@2024-03-01' = if (deployApps) {
             { name: 'RKP_DATA_DIR', value: '/data' }
             { name: 'RKP_MANAGED_SECRET_DIR', value: '/secrets' }
             { name: 'AZURE_CLIENT_ID', value: identity.properties.clientId }
+            { name: 'RKP_KEY_VAULT_URL', value: vault.properties.vaultUri }
           ]
           volumeMounts: concat([ { volumeName: 'data', mountPath: '/data' } ], hasGithubToken ? [ { volumeName: 'secrets', mountPath: '/secrets' } ] : [])
           probes: [
@@ -263,7 +290,7 @@ resource api 'Microsoft.App/containerApps@2024-03-01' = if (deployApps) {
       ] : [])
     }
   }
-  dependsOn: [ acrPull, postgresFromAzure ]
+  dependsOn: [ acrPull, postgresFromAzure, vaultSecrets ]
 }
 
 resource explorer 'Microsoft.App/containerApps@2024-03-01' = if (deployApps) {
@@ -331,4 +358,5 @@ output storageAccount string = storage.name
 output shareName string = names.share
 output identityPrincipalId string = identity.properties.principalId
 output postgresServer string = postgres.name
+output vaultName string = vault.name
 output explorerUrl string = explorerUrl

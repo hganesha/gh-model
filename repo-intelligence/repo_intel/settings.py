@@ -24,7 +24,7 @@ CREATE TABLE IF NOT EXISTS workspace_settings_revisions (
   author text NOT NULL, updated_at timestamptz NOT NULL DEFAULT clock_timestamp(),
   PRIMARY KEY (tenant_id, version));
 """
-REF = re.compile(r"^(keychain|managed):[a-zA-Z0-9._-]{1,100}$")
+REF = re.compile(r"^(keychain|managed|vault):[a-zA-Z0-9._-]{1,100}$")
 PROVIDERS = ("jev", "microsoft-decision", "azure-openai", "cohere-rerank", "openai-embeddings")
 EXTRACTOR_IDS = frozenset(e.id for e in EXTRACTORS)
 MODEL_FUNCTIONS = ("dm.component-kind", "dm.capability-placement")

@@ -188,6 +188,13 @@ export function ConnectDialog({ target, onClose, onSnapshot }: { target: Connect
     page ? `settings/connections/${connection}/repositories?page=${page}` : null,
   );
   const plain = configuration.data?.settings.connections.find((c) => c.id === connection)?.mode.startsWith("git_") ?? false;
+  const cliAvailable = configuration.data?.github_cli !== false;
+  const firstConnection = configuration.data?.settings.connections[0]?.id;
+  // Where `gh` is not installed (the hosted server), start from the first configured connection instead.
+  useEffect(() => {
+    if (!cliAvailable && connection === "github-cli" && firstConnection) setConnection(firstConnection);
+  }, [cliAvailable, connection, firstConnection]);
+  const noConnection = !cliAvailable && !firstConnection;
   const [ref, setRef] = useState(recompile ? (target.ref ?? "") : "");
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -234,11 +241,12 @@ export function ConnectDialog({ target, onClose, onSnapshot }: { target: Connect
               <label className="field">
                 <span>Connection</span>
                 <select value={connection} onChange={(e) => { setConnection(e.target.value); setPage(0); setUrl(""); setRef(""); }}>
-                  <option value="github-cli">GitHub CLI</option>
+                  {cliAvailable && <option value="github-cli">GitHub CLI</option>}
                   {configuration.data?.settings.connections.map((row) => <option key={row.id} value={row.id}>{row.name} · {row.host}</option>)}
                 </select>
               </label>
-              <button type="button" className="btn btn-quiet" onClick={() => page ? browse.reload() : setPage(1)}>Browse repositories</button>
+              {noConnection && <p className="form-error" role="alert">This server has no GitHub CLI. Add a connection in Settings → Connections (GitHub device sign-in) first.</p>}
+              <button type="button" className="btn btn-quiet" disabled={noConnection} onClick={() => page ? browse.reload() : setPage(1)}>Browse repositories</button>
               {browse.loading && <p role="status">Loading repositories…</p>}
               {browse.error && <p className="form-error" role="alert">{browse.error.message}</p>}
               {browse.data && <div className="work-tool-controls">
@@ -273,7 +281,7 @@ export function ConnectDialog({ target, onClose, onSnapshot }: { target: Connect
             <button type="button" className="btn btn-quiet" onClick={onClose}>
               Cancel
             </button>
-            <button type="submit" className="btn btn-primary" disabled={submitting || (!recompile && !plain && !url.trim())}>
+            <button type="submit" className="btn btn-primary" disabled={submitting || (!recompile && (noConnection || (!plain && !url.trim())))}>
               {submitting && <Loader2 size={14} className="spin" aria-hidden="true" />}
               {recompile ? "Recompile" : "Connect and compile"}
             </button>

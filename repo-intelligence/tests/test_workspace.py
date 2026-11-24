@@ -430,6 +430,48 @@ def test_github_token_connection_browse_and_compile(workspace, f01, monkeypatch,
     assert token not in json.dumps(_get(client, "settings"))
 
 
+def test_hosted_device_sign_in_keeps_the_token_in_key_vault():
+    """Hosted, a device sign-in token goes to Key Vault with the app's identity, not to an OS keychain."""
+    import httpx
+
+    from repo_intel import connectors
+
+    vault, seen = {}, []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        seen.append((request.method, request.url.path, request.headers["Authorization"]))
+        name = request.url.path.rsplit("/", 1)[-1]
+        assert request.url.params["api-version"] == "7.4"
+        if request.method == "PUT":
+            vault[name] = json.loads(request.content)["value"]
+            return httpx.Response(200, json={"id": name})
+        return httpx.Response(200, json={"value": vault[name]}) if name in vault else httpx.Response(404, json={})
+
+    class Credential:
+        scopes = []
+        def get_token(self, scope):
+            self.scopes.append(scope)
+            return type("Token", (), {"token": "vault-access", "expires_on": 4_000_000_000})()
+
+    credential = Credential()
+    secrets = connectors.SecretReferences("https://rkp-kv.vault.azure.net/", credential, httpx.Client(transport=httpx.MockTransport(handle)))
+    reference = secrets.device_reference("github_main")
+    assert secrets.writable == "vault" and reference == "vault:github-device-github-main"
+    secrets.put_device_token(reference, "gho_device_token")
+    assert secrets.get(reference) == "gho_device_token"
+    assert [m for m, *_ in seen] == ["PUT", "GET"] and all(auth == "Bearer vault-access" for *_, auth in seen)
+    assert credential.scopes == ["https://vault.azure.net/.default"]  # one token, reused
+    with pytest.raises(connectors.ConnectorError, match="no value"):
+        secrets.get("vault:github-device-other")
+    with pytest.raises(connectors.ConnectorError, match="letters, digits"):
+        secrets.get("vault:bad_name")
+    # Without a vault, device sign-in keeps using the OS keychain, and vault references fail clearly.
+    local = connectors.SecretReferences("")
+    assert local.device_reference("github") == "keychain:github-device-github"
+    with pytest.raises(connectors.ConnectorError, match="No Key Vault"):
+        local.get("vault:github-device-github")
+
+
 def test_installation_token_signs_app_jwt_and_caches_credential(monkeypatch):
     import base64
     from datetime import UTC, datetime, timedelta

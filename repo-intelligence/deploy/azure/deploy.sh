@@ -30,7 +30,8 @@
 # No local Docker: images are built in the registry with `az acr build`.
 # Every run rotates the database passwords, the Explorer-to-API token and, with sign-in, the client
 # secret and session key (everyone signs in again); data is kept.
-# Remove everything with:  az group delete -n <resource-group>  (and, with --entra, the app registration)
+# Remove everything with:  az group delete -n <resource-group>  (and, with --entra, the app registration;
+# the Key Vault stays soft-deleted for 7 days: az keyvault purge -n <name> before redeploying to that group)
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -53,7 +54,7 @@ while [[ $# -gt 0 ]]; do
     --allow-any) allow_any=1; shift ;;
     --providers-file) providers="$2"; shift 2 ;;
     --github-token-from-gh) github=1; shift ;;
-    -h|--help) sed -n '2,33p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,34p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "Unknown option: $1 (see --help)" >&2; exit 2 ;;
   esac
 done
@@ -195,4 +196,7 @@ Remove:   az group delete -n $group
 EOF
 if [[ $github -eq 1 ]]; then
   echo "GitHub: in Settings, add a connection of type GitHub token with credential reference managed:github-token."
+else
+  echo "GitHub: create a GitHub OAuth App with Device Flow enabled (github.com/settings/developers), then in"
+  echo "        Settings add a connection 'GitHub device sign-in' with its client ID, save, and start device sign-in."
 fi

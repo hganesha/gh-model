@@ -25,7 +25,7 @@ function toggle<T>(values: T[], item: T, on: boolean): T[] {
   return on ? [...new Set([...values, item])] : values.filter((v) => v !== item);
 }
 
-function ConnectionEditor({ value, onChange }: { value: Connection; onChange: (row: Connection) => void }) {
+function ConnectionEditor({ value, onChange, store }: { value: Connection; onChange: (row: Connection) => void; store: "vault" | "keychain" }) {
   function field(key: keyof Connection, raw: string) {
     onChange({ ...value, [key]: raw || null });
   }
@@ -41,7 +41,8 @@ function ConnectionEditor({ value, onChange }: { value: Connection; onChange: (r
     <label className="field"><span>Name</span><input required value={value.name} onChange={(e) => onChange({ ...value, name: e.target.value })} /></label>
     <label className="field"><span>Authentication</span><select value={value.mode} onChange={(e) => mode(e.target.value as ConnectionMode)}>{Object.entries(modes).map(([id, label]) => <option value={id} key={id}>{label}</option>)}</select></label>
     <label className="field"><span>Host</span><input value={value.host} disabled={github} required onChange={(e) => onChange({ ...value, host: e.target.value })} /></label>
-    <label className="field"><span>Credential reference</span><input autoComplete="off" value={value.credential_ref ?? ""} required={value.mode !== "github_device"} placeholder="keychain:my-connection" onChange={(e) => field("credential_ref", e.target.value)} /></label>
+    <label className="field"><span>Credential reference</span><input autoComplete="off" value={value.credential_ref ?? ""} required={value.mode !== "github_device"}
+      placeholder={value.mode === "github_device" ? `Optional: kept in ${store === "vault" ? "Key Vault" : "the OS keychain"}` : `${store}:my-connection`} onChange={(e) => field("credential_ref", e.target.value)} /></label>
     {value.mode === "github_device" && <label className="field"><span>OAuth client ID</span><input required value={value.client_id ?? ""} onChange={(e) => field("client_id", e.target.value)} /></label>}
     {value.mode.startsWith("git_") && <label className="field"><span>Remote URL</span><input required value={value.remote ?? ""} onChange={(e) => field("remote", e.target.value)} /></label>}
     {value.mode === "github_app" && <>
@@ -102,17 +103,21 @@ function Connections({ view, draft, update, busy, setStatus }: {
       {new Date(check.checked_at * 1000).toLocaleString()} · {check.repositories_sampled === undefined ? check.message : `${check.repositories_sampled} repositories on the first page`}
       {check.scopes?.length ? ` · ${check.scopes.join(", ")}` : ""}</p>;
   }
+  const store = view.credential_store ?? "keychain";
+  const hosted = store === "vault";
   return <section className="work-tool-panel">
     <h3>Connections</h3>
-    <p className="group-note">Store credentials in the OS keychain or a mounted secret manager. To rotate a credential, update its value there or save a new reference here.</p>
-    <div className="work-tool-row"><strong>GitHub CLI · github.com</strong>{info("github-cli")}
+    {hosted
+      ? <p className="group-note">This server keeps credentials in Azure Key Vault (<code>vault:</code>) or a mounted secret (<code>managed:</code>). To sign in to GitHub from here, add a connection with GitHub device sign-in and your GitHub OAuth App&apos;s client ID, save, then start device sign-in.</p>
+      : <p className="group-note">Store credentials in the OS keychain or a mounted secret manager. To rotate a credential, update its value there or save a new reference here.</p>}
+    {view.github_cli !== false && <div className="work-tool-row"><strong>GitHub CLI · github.com</strong>{info("github-cli")}
       <button type="button" className="btn btn-quiet btn-small" disabled={Boolean(waiting)} onClick={() => void check("github-cli")}>Test connection</button>
-    </div>
+    </div>}
     {draft.connections.map((row) => {
       const saved = JSON.stringify(row) === JSON.stringify(persisted.get(row.id));
       const webhook = view.last_webhook[row.id];
       return <div className="work-tool-row" key={row.id}>
-        <ConnectionEditor value={row} onChange={(next) => update((prev) => ({ ...prev, connections: prev.connections.map((item) => item.id === next.id ? next : item) }))} />
+        <ConnectionEditor value={row} store={store} onChange={(next) => update((prev) => ({ ...prev, connections: prev.connections.map((item) => item.id === next.id ? next : item) }))} />
         {info(row.id)}
         {row.webhook_ref && <p className="group-note">Webhook {webhook ? `last received ${new Date(Number(webhook) * 1000).toLocaleString()}` : "awaiting its first tracked push"} · <code>{`/v1/webhooks/${row.id}`}</code></p>}
         {devices[row.id] && <p className="note">
