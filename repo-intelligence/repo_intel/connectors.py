@@ -68,7 +68,13 @@ def request_json(url: str, headers: dict[str, str] | None = None, form: dict[str
                 raise ConnectorError("Repository host response was too large.")
             return json.loads(raw), response.headers
     except HTTPError as exc:
-        raise ConnectorError(f"Repository host returned HTTP {exc.code}.") from None
+        error = ConnectorError(f"Repository host returned HTTP {exc.code}.")
+        try:  # OAuth endpoints explain a refusal with an error code in the body
+            code = json.loads(exc.read(64 * 1024)).get("error")
+            error.oauth_error = code if isinstance(code, str) else None
+        except (ValueError, AttributeError, OSError):
+            pass
+        raise error from None
     except (URLError, ValueError, TimeoutError):
         raise ConnectorError("Repository host could not be reached or returned invalid data.") from None
 
@@ -429,10 +435,26 @@ def build(config: Connection | None, secrets: SecretReferences, apps: Installati
     return PlainGit(config, credential) if config.mode.startswith("git_") else HostedConnector(config, credential)
 
 
+# GitHub answers a refused device-code request with HTTP 400 and an OAuth error code; say what to fix.
+DEVICE_ERRORS = {
+    "device_flow_disabled": "Device sign-in is not enabled for this GitHub OAuth App. Tick “Enable Device Flow” in the app's settings on GitHub, then try again.",
+    "incorrect_client_credentials": "GitHub does not recognise this OAuth client ID. Copy the Client ID from the OAuth App's page on GitHub.",
+    "unauthorized_client": "This GitHub app cannot use device sign-in. Use an OAuth App with “Enable Device Flow” ticked.",
+}
+
+
 def begin_device(config: Connection) -> dict[str, Any]:
-    data, _ = request_json(
-        "https://github.com/login/device/code", form={"client_id": config.client_id, "scope": "repo"},
-    )
+    try:
+        data, _ = request_json(
+            "https://github.com/login/device/code", form={"client_id": config.client_id, "scope": "repo"},
+        )
+    except ConnectorError as exc:
+        if exc.oauth_error in DEVICE_ERRORS:
+            raise ConnectorError(DEVICE_ERRORS[exc.oauth_error]) from None
+        raise
+    if not isinstance(data, dict) or "device_code" not in data:
+        code = data.get("error") if isinstance(data, dict) else None
+        raise ConnectorError(DEVICE_ERRORS.get(code, "GitHub refused device sign-in."))
     now = time.monotonic()
     interval = max(5, int(data["interval"]))
     return {

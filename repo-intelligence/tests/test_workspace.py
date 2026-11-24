@@ -430,6 +430,33 @@ def test_github_token_connection_browse_and_compile(workspace, f01, monkeypatch,
     assert token not in json.dumps(_get(client, "settings"))
 
 
+def test_device_sign_in_explains_why_github_refused(monkeypatch):
+    """GitHub refuses a device-code request with HTTP 400 and an OAuth error code; the user is told what to fix."""
+    import io
+    from urllib.error import HTTPError
+
+    from repo_intel import connectors
+    from repo_intel.settings import Connection
+
+    cfg = Connection(id="gh", name="GitHub", mode="github_device", host="github.com", client_id="Ov23exampleClient")
+
+    def refuse(code):
+        def open_(request, timeout):
+            body = io.BytesIO(json.dumps({"error": code, "error_description": "from GitHub"}).encode())
+            raise HTTPError(request.full_url, 400, "Bad Request", {}, body)
+        monkeypatch.setattr(connectors, "build_opener", lambda *a: type("Opener", (), {"open": staticmethod(open_)})())
+
+    refuse("device_flow_disabled")
+    with pytest.raises(connectors.ConnectorError, match="Enable Device Flow"):
+        connectors.begin_device(cfg)
+    refuse("incorrect_client_credentials")
+    with pytest.raises(connectors.ConnectorError, match="Client ID"):
+        connectors.begin_device(cfg)
+    refuse("something_new")
+    with pytest.raises(connectors.ConnectorError, match="HTTP 400"):
+        connectors.begin_device(cfg)
+
+
 def test_hosted_device_sign_in_keeps_the_token_in_key_vault():
     """Hosted, a device sign-in token goes to Key Vault with the app's identity, not to an OS keychain."""
     import httpx
