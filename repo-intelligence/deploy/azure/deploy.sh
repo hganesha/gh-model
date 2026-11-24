@@ -5,6 +5,8 @@
 #
 #   -g, --resource-group NAME   resource group to create or update      (default: rkp)
 #   -l, --location REGION       Azure region                            (default: eastus2)
+#       --db-location REGION    region for PostgreSQL only, when its small tier is not offered to
+#                               your subscription in --location (error SkuNotAvailable)
 #   -p, --prefix PREFIX         resource name prefix, 2-8 characters    (default: rkp)
 #       --entra                 sign in with Microsoft Entra ID (your current az tenant). Creates or
 #                               updates the app registration "<prefix>-explorer-<group>" with the
@@ -34,13 +36,14 @@ set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 app_root="$(cd "$here/../.." && pwd)"
 
-group=rkp location=eastus2 prefix=rkp providers="" github=0 allow_any=0
+group=rkp location=eastus2 db_location="" prefix=rkp providers="" github=0 allow_any=0
 entra=0 oidc_issuer="" oidc_client_id="" admin_roles="" admin_roles_set=0
 allowed=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -g|--resource-group) group="$2"; shift 2 ;;
     -l|--location) location="$2"; shift 2 ;;
+    --db-location) db_location="$2"; shift 2 ;;
     -p|--prefix) prefix="$2"; shift 2 ;;
     --entra) entra=1; shift ;;
     --oidc-issuer) oidc_issuer="$2"; shift 2 ;;
@@ -50,7 +53,7 @@ while [[ $# -gt 0 ]]; do
     --allow-any) allow_any=1; shift ;;
     --providers-file) providers="$2"; shift 2 ;;
     --github-token-from-gh) github=1; shift ;;
-    -h|--help) sed -n '2,31p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,33p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "Unknown option: $1 (see --help)" >&2; exit 2 ;;
   esac
 done
@@ -85,7 +88,7 @@ allowed_json="$(printf '%s\n' "${allowed[@]+"${allowed[@]}"}" | python3 -c 'impo
 pg_password="$(secret)" app_password="$(secret)" api_token="$(secret)" github_token=""
 [[ $github -eq 1 ]] && github_token="$(gh auth token)"
 
-params=(prefix="$prefix" location="$location" allowedIpRanges="$allowed_json"
+params=(prefix="$prefix" location="$location" postgresLocation="${db_location:-$location}" allowedIpRanges="$allowed_json"
         postgresAdminPassword="$pg_password" appDbPassword="$app_password" apiToken="$api_token" githubToken="$github_token")
 sign_in_params=()
 

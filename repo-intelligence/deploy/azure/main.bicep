@@ -16,6 +16,8 @@ targetScope = 'resourceGroup'
 @maxLength(8)
 param prefix string = 'rkp'
 param location string = resourceGroup().location
+@description('Region for PostgreSQL; defaults to location. Burstable servers are sometimes not offered to a subscription in a region.')
+param postgresLocation string = location
 
 @description('Create the two container apps. False on the first pass, before images exist.')
 param deployApps bool = false
@@ -118,7 +120,7 @@ resource share 'Microsoft.Storage/storageAccounts/fileServices/shares@2023-05-01
 
 resource postgres 'Microsoft.DBforPostgreSQL/flexibleServers@2022-12-01' = {
   name: names.postgres
-  location: location
+  location: postgresLocation
   sku: {
     name: 'Standard_B1ms'
     tier: 'Burstable'
