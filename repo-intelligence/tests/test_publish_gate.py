@@ -7,16 +7,16 @@ import pytest
 from fastapi.testclient import TestClient
 
 from conftest import REPO_ID
-from repo_intel.api import create_app
-from repo_intel.compiler import preferred
-from repo_intel.contracts import Assertion, Conflict, Evidence, Span, Unknown, assertion_id, entity_id
+from repo_intel.server.api import create_app
+from repo_intel.compile.compiler import preferred
+from repo_intel.compile.contracts import Assertion, Conflict, Evidence, Span, Unknown, assertion_id, entity_id
 from repo_intel.decisions import overrides as override_store
-from repo_intel.fixtures import materialize
-from repo_intel.hashing import digest, merkle_root
-from repo_intel.ontology import check_relation
-from repo_intel.pipeline import EMPTY_OVERRIDES, compile_commit, load_shards, stage_snapshot
-from repo_intel.store import ObjectStore
-from repo_intel.verify import content_leaves, verify_snapshot
+from repo_intel.compile.fixtures import materialize
+from repo_intel.storage.hashing import digest, merkle_root
+from repo_intel.compile.ontology import check_relation
+from repo_intel.compile.pipeline import EMPTY_OVERRIDES, compile_commit, load_shards, stage_snapshot
+from repo_intel.storage.store import ObjectStore
+from repo_intel.compile.verify import content_leaves, verify_snapshot
 
 REQUIRED = ("inventory", "parse", "contract_match", "deployment_refs", "decisions")
 
@@ -187,7 +187,7 @@ def test_conflict_precedence_is_override_then_evidence_class():
 
 def test_compiler_records_functional_conflicts_with_a_preference(tmp_path, monkeypatch):
     """repo.compile finds the violation itself and the owner's preference decides it."""
-    from repo_intel import buildgraph, compiler
+    from repo_intel.compile import buildgraph, compiler
     real = compiler._dependency_capabilities
 
     def with_aliases(repo, shards, g, catalogue):

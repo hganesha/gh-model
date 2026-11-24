@@ -5,11 +5,11 @@ import functools
 import pytest
 
 from conftest import REPO_ID
-from repo_intel.contracts import entity_id
-from repo_intel.fixtures import FIXTURES_DIR, list_fixtures, load_golden, materialize
-from repo_intel.ontology import EntityKind, check_relation
-from repo_intel.pipeline import compile_commit, load_shards
-from repo_intel.store import ObjectStore
+from repo_intel.compile.contracts import entity_id
+from repo_intel.compile.fixtures import FIXTURES_DIR, list_fixtures, load_golden, materialize
+from repo_intel.compile.ontology import EntityKind, check_relation
+from repo_intel.compile.pipeline import compile_commit, load_shards
+from repo_intel.storage.store import ObjectStore
 
 FIXTURES = list_fixtures()
 MILESTONES = {"M0", "M1", "M2", "M3", "M4", "M5"}
@@ -140,7 +140,7 @@ def test_adversarial_file_name_is_inert_data(compiled):
 @pytest.mark.parametrize("name", FIXTURES)
 def test_goldens_due_by_the_compiler_milestone(name, compiled):
     """Everything the goldens expect by the compiler's current milestone, on every commit."""
-    from repo_intel.golden_check import COMPILER_MILESTONE, check
+    from repo_intel.compile.golden_check import COMPILER_MILESTONE, check
     assert check(name, compiled(name), COMPILER_MILESTONE) == []
 
 
@@ -162,7 +162,7 @@ def test_dependency_capability_coverage_on_fixture_bases(compiled):
 
 
 def test_configuration_values_never_enter_the_graph(compiled):
-    from repo_intel.hashing import canonical
+    from repo_intel.storage.hashing import canonical
     for commit in compiled("F06-iac-heavy"):
         blob = canonical([commit["entities"], commit["assertions"]])
         assert b"postgresql://db/status" not in blob and b"status-db" not in blob.replace(b'"name":"status"', b"")

@@ -32,8 +32,8 @@ The default threshold of 0.88 is kept. On this sample it gave no wrong placement
 The public samples were [Full Stack FastAPI Template](https://github.com/fastapi/full-stack-fastapi-template), [Express ES6 REST API](https://github.com/developit/express-es6-rest-api), and [React Native NW React Calculator](https://github.com/benoitvallon/react-native-nw-react-calculator). The result file contains the exact commit IDs. An earlier candidate public sample tripped the publish gate on an example environment file. The three recorded samples completed with the normal publish gate.
 
 ~~~bash
-.venv/bin/python -m repo_intel.decisions.placement_benchmark --public
-.venv/bin/python -m repo_intel.decisions.placement_benchmark --public --model microsoft-decision --threshold 0.88
+.venv/bin/python benchmarks/placement_benchmark.py --public
+.venv/bin/python benchmarks/placement_benchmark.py --public --model microsoft-decision --threshold 0.88
 ~~~
 
 The second command requires a configured model alias and an explicit `RKP_ALLOW_PROVIDERS` entry. It sends bounded features from the public samples and the synthetic fixtures to that provider. For Azure, set `RKP_MSDECISION_ENDPOINT`, `RKP_MSDECISION_DEPLOYMENT` and `RKP_MSDECISION_AUTH=azure-cli`, and install the `azure` extra.
@@ -72,7 +72,7 @@ Component kind ([fixture evaluation](component-kind-gpt-4.1-mini-2026-11-23.json
 In a real compile only the components rules leave ambiguous go to the model. Across six fixture repositories compiled through the API, that was 4 components (in F08, F09 and F10). Both decision models answered `none_of_these` for all 4, so they stay unclassified rather than guessed.
 
 ~~~bash
-.venv/bin/python -m repo_intel.decisions.placement_benchmark --embedding openai-embeddings --model microsoft-decision --model azure-openai --model cohere-rerank
+.venv/bin/python benchmarks/placement_benchmark.py --embedding openai-embeddings --model microsoft-decision --model azure-openai --model cohere-rerank
 .venv/bin/python -m repo_intel.decisions.fixture_eval azure-openai out.json
 ~~~
 

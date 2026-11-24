@@ -12,10 +12,10 @@ from __future__ import annotations
 import sys
 import tempfile
 
-from ..store import ObjectStore
-from . import component as dm
-from .gateway import Gateway
-from .runner import Budget, Ledger, RuleResult, evaluate
+from repo_intel.storage.store import ObjectStore
+from repo_intel.decisions import component as dm
+from repo_intel.decisions.gateway import Gateway
+from repo_intel.decisions.runner import Budget, Ledger, RuleResult, evaluate
 
 _NONE = {"http_endpoints_declared_in_code": 0, "depends_on_http_server_framework": False, "depends_on_web_frontend_framework": False, "depends_on_message_queue_or_job_consumer_library": False,
          "has_container_build_with_start_command": False, "declares_command_line_entry_point": False, "declares_importable_library_entry_point": False, "declares_start_script": False,

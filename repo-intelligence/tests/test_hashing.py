@@ -2,8 +2,8 @@ import random
 
 from hypothesis import given, strategies as st
 
-from repo_intel.contracts import Assertion, Evidence, Span, assertion_id, entity_id
-from repo_intel.hashing import digest, make_id, merkle_root, rows_digest
+from repo_intel.compile.contracts import Assertion, Evidence, Span, assertion_id, entity_id
+from repo_intel.storage.hashing import digest, make_id, merkle_root, rows_digest
 
 json_values = st.recursive(
     st.none() | st.booleans() | st.integers(-2**53 + 1, 2**53 - 1) | st.text(max_size=20),

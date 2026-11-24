@@ -14,9 +14,9 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from ..buildgraph import Step, StepInputs
-from ..contracts import DecisionSpec
-from .runner import verifier
+from repo_intel.compile.buildgraph import Step, StepInputs
+from repo_intel.compile.contracts import DecisionSpec
+from repo_intel.decisions.runner import verifier
 
 SPEC = DecisionSpec.model_validate({
     "id": "dm.behavior-candidates", "version": "0.1.0", "scope": "component",

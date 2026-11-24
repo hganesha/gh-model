@@ -13,13 +13,14 @@ import psycopg
 import pytest
 from fastapi.testclient import TestClient
 
-from repo_intel import gc, migrations, projection, registry
-from repo_intel.api import create_app
-from repo_intel.fixtures import materialize
-from repo_intel.pipeline import load_manifest
-from repo_intel.rebuild_projection import rebuild
-from repo_intel.service import TERMINAL, Service
-from repo_intel.store import ObjectStore
+from repo_intel.storage import gc, migrations
+from repo_intel.knowledge import projection, registry
+from repo_intel.server.api import create_app
+from repo_intel.compile.fixtures import materialize
+from repo_intel.compile.pipeline import load_manifest
+from repo_intel.knowledge.rebuild_projection import rebuild
+from repo_intel.server.service import TERMINAL, Service
+from repo_intel.storage.store import ObjectStore
 
 TOKEN = "test-token-for-local-cluster-only"
 AUTH = {"Authorization": f"Bearer {TOKEN}"}
@@ -123,7 +124,7 @@ def test_projection_rebuilds_from_the_store(system, f01, pg_conninfo):
         result = rebuild(conn, store)
         assert result["snapshots"] == 2 and result["tombstones"] == 1
         assert projection.dump(conn, "tenant-a") == before
-    run = subprocess.run([".venv/bin/python", "-m", "repo_intel.rebuild_projection", "--tenant", "tenant-a", "--store-root", str(store.root.parent), "--conninfo", pg_conninfo, "--dry-run"], capture_output=True, text=True)
+    run = subprocess.run([".venv/bin/python", "-m", "repo_intel.knowledge.rebuild_projection", "--tenant", "tenant-a", "--store-root", str(store.root.parent), "--conninfo", pg_conninfo, "--dry-run"], capture_output=True, text=True)
     assert run.returncode == 0 and "3 snapshot(s)" in run.stdout
 
 
@@ -368,7 +369,7 @@ def test_late_secret_finding_retracts_the_snapshot(system, f01, monkeypatch):
     repo, shas = f01
     job = _local(service, repo, shas[0])
     assert service.rescan_secrets() == []
-    from repo_intel import secrets
+    from repo_intel.ingest import secrets
     import re
     # A detector added after publish flags a value that the compiled output contains.
     monkeypatch.setattr(secrets, "_DETECTORS", [*secrets._DETECTORS, ("late_rule", re.compile(rb"create_customer"), 0)])
@@ -440,7 +441,7 @@ def test_store_touch_and_sweep(tmp_path):
 
 
 def test_business_map_reads_neither_retracted_nor_quarantined_snapshots():
-    from repo_intel import business_graph
+    from repo_intel.workspace import business_graph
     repo = {"default_branch": "main", "snapshots": [
         {"rkp_hash": "a", "ref": "main", "compiled_at": 1},
         {"rkp_hash": "b", "ref": "main", "compiled_at": 2, "quarantined": True},

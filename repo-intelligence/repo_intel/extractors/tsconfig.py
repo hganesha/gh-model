@@ -12,8 +12,8 @@ import json
 import posixpath
 import re
 
-from ..ontology import EvidenceClass
-from .base import Extraction, diagnostic, find_span, obs, whole_file
+from repo_intel.compile.ontology import EvidenceClass
+from repo_intel.extractors.base import Extraction, diagnostic, find_span, obs, whole_file
 
 _NAME = re.compile(r"^(tsconfig|jsconfig)(\.[A-Za-z0-9_-]+)?\.json$")
 

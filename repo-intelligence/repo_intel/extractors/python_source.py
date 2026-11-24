@@ -26,8 +26,8 @@ from typing import Any
 import tree_sitter_python
 from tree_sitter import Language, Node, Parser
 
-from ..ontology import EntityKind, Predicate
-from .base import PACKAGE, UNIT, Extraction, diagnostic, entity, obs, ref, relation, span
+from repo_intel.compile.ontology import EntityKind, Predicate
+from repo_intel.extractors.base import PACKAGE, UNIT, Extraction, diagnostic, entity, obs, ref, relation, span
 
 _LANGUAGE = Language(tree_sitter_python.language())
 

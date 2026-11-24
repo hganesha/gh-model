@@ -6,7 +6,7 @@ import json
 
 from repo_intel.extractors.prisma import PrismaSchema
 from repo_intel.extractors.typescript_source import TypeScriptSource, next_route
-from repo_intel.hashing import sha256_hex
+from repo_intel.storage.hashing import sha256_hex
 
 TS = TypeScriptSource()
 PRISMA = PrismaSchema()

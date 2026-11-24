@@ -13,10 +13,10 @@ import re
 from collections.abc import Mapping
 from typing import Any
 
-from ..buildgraph import Step, StepInputs
-from ..contracts import DecisionSpec, Entity
-from ..ontology import EntityKind
-from .runner import RuleResult, verifier
+from repo_intel.compile.buildgraph import Step, StepInputs
+from repo_intel.compile.contracts import DecisionSpec, Entity
+from repo_intel.compile.ontology import EntityKind
+from repo_intel.decisions.runner import RuleResult, verifier
 
 
 def _spec(spec_id: str, scope: str, schema: str, sources: list[str], criteria_ref: str) -> DecisionSpec:

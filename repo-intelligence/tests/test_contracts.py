@@ -2,8 +2,8 @@ import json
 
 import pytest
 
-from repo_intel import export_schemas
-from repo_intel.contracts import DecisionResult, DecisionSpec, decision_id
+from repo_intel.compile import export_schemas
+from repo_intel.compile.contracts import DecisionResult, DecisionSpec, decision_id
 
 SPEC = {
     "id": "dm.component-boundary", "version": "1.0.0", "scope": "unit",
@@ -22,7 +22,7 @@ SPEC = {
 def test_exported_schemas_are_current():
     for name, text in export_schemas.render().items():
         path = export_schemas.SCHEMA_DIR / name
-        assert path.exists(), f"run `python -m repo_intel.export_schemas` ({name} missing)"
+        assert path.exists(), f"run `python -m repo_intel.compile.export_schemas` ({name} missing)"
         assert path.read_text() == text, f"{name} is stale"
         json.loads(text)
 

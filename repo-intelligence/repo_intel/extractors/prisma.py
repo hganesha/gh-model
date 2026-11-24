@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import re
 
-from ..ontology import EntityKind, Predicate
-from .base import PACKAGE, Extraction, diagnostic, entity, ref, relation, span
+from repo_intel.compile.ontology import EntityKind, Predicate
+from repo_intel.extractors.base import PACKAGE, Extraction, diagnostic, entity, ref, relation, span
 
 SCALARS = {"String", "Boolean", "Int", "BigInt", "Float", "Decimal", "DateTime", "Json", "Bytes", "Unsupported"}
 DATASTORE = "default"

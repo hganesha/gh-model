@@ -7,11 +7,11 @@ import psycopg
 import pytest
 from fastapi.testclient import TestClient
 
-from repo_intel import projection
-from repo_intel.api import create_app
-from repo_intel.github import GitHubError, parse_slug
-from repo_intel.service import Service
-from repo_intel.store import ObjectStore
+from repo_intel.knowledge import projection
+from repo_intel.server.api import create_app
+from repo_intel.ingest.github import GitHubError, parse_slug
+from repo_intel.server.service import Service
+from repo_intel.storage.store import ObjectStore
 
 TOKEN = "test-token-for-local-cluster-only"
 AUTH = {"Authorization": f"Bearer {TOKEN}"}
@@ -126,8 +126,8 @@ def test_hosted_database_applies_schema_and_connects_as_the_app_role(pg_conninfo
     import psycopg
     import pytest
     from psycopg.conninfo import conninfo_to_dict
-    from repo_intel import projection
-    from repo_intel.serve import external_postgres
+    from repo_intel.knowledge import projection
+    from repo_intel.server.serve import external_postgres
 
     app = external_postgres(pg_conninfo + " sslmode=disable", "a-long-app-password-123")
     params = conninfo_to_dict(app)

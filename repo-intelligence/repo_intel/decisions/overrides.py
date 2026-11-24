@@ -24,9 +24,9 @@ from typing import Any
 
 from pydantic import Field
 
-from ..contracts import Model
-from ..hashing import digest, make_id
-from ..store import ObjectStore
+from repo_intel.compile.contracts import Model
+from repo_intel.storage.hashing import digest, make_id
+from repo_intel.storage.store import ObjectStore
 
 
 class DecisionOverride(Model):

@@ -6,13 +6,13 @@ import httpx
 import pytest
 
 from conftest import REPO_ID
-from repo_intel.contracts import DecisionSpec
+from repo_intel.compile.contracts import DecisionSpec
 from repo_intel.decisions import component as dm
 from repo_intel.decisions.gateway import EgressDenied, Gateway, ModelUnavailable, ScriptedModel, jev, microsoft_decision
 from repo_intel.decisions.runner import NONE_OF_THESE, Budget, Ledger, RuleResult, evaluate
-from repo_intel.fixtures import materialize
-from repo_intel.pipeline import compile_commit, load_shards
-from repo_intel.store import ObjectStore
+from repo_intel.compile.fixtures import materialize
+from repo_intel.compile.pipeline import compile_commit, load_shards
+from repo_intel.storage.store import ObjectStore
 
 SPEC = dm.SPEC
 FEATURES = {"ecosystem": "pypi", "package": "x", "http_endpoints": 0}
@@ -370,7 +370,7 @@ def test_rerank_adapter_maps_options_to_documents_and_normalises_scores():
 
 def test_provider_file_applies_settings_but_refuses_keys(tmp_path):
     import pytest
-    from repo_intel.serve import load_provider_file
+    from repo_intel.server.serve import load_provider_file
 
     assert load_provider_file(tmp_path, {}) == []
     (tmp_path / "providers.env").write_text(
@@ -436,8 +436,8 @@ def test_chat_model_answers_by_letter_probabilities():
 
 def test_hosted_embedding_retries_a_dropped_connection(tmp_path, monkeypatch):
     from repo_intel.decisions import placement
-    from repo_intel.settings import PlacementPolicy
-    from repo_intel.store import ObjectStore
+    from repo_intel.workspace.settings import PlacementPolicy
+    from repo_intel.storage.store import ObjectStore
 
     attempts = []
     def handler(request):

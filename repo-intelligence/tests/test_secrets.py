@@ -3,14 +3,15 @@ import pytest
 from fastapi.testclient import TestClient
 
 from conftest import REPO_ID
-from repo_intel import projection, secrets
-from repo_intel.api import create_app
-from repo_intel.contracts import Entity, Evidence, entity_id
+from repo_intel.knowledge import projection
+from repo_intel.ingest import secrets
+from repo_intel.server.api import create_app
+from repo_intel.compile.contracts import Entity, Evidence, entity_id
 from repo_intel.extractors.base import whole_file
-from repo_intel.fixtures import list_fixtures, load_golden, materialize
-from repo_intel.hashing import canonical
-from repo_intel.pipeline import PublishGateError, compile_commit, leaked_secrets, load_shards, stage_snapshot
-from repo_intel.store import ObjectStore
+from repo_intel.compile.fixtures import list_fixtures, load_golden, materialize
+from repo_intel.storage.hashing import canonical
+from repo_intel.compile.pipeline import PublishGateError, compile_commit, leaked_secrets, load_shards, stage_snapshot
+from repo_intel.storage.store import ObjectStore
 
 TOKEN = "test-token-for-local-cluster-only"
 AUTH = {"Authorization": f"Bearer {TOKEN}"}
@@ -52,7 +53,7 @@ def test_publish_gate_blocks_a_leaking_extractor(tmp_path, f01, monkeypatch):
     assert leaked_secrets(store, pm, [{"oops": "key is AKIAIOSFODNN7EXAMPLE"}]) == [".env.example"]
     assert leaked_secrets(store, pm, [{"fine": "AWS_ACCESS_KEY_ID"}]) == []
 
-    from repo_intel import pipeline
+    from repo_intel.compile import pipeline
     monkeypatch.setattr(pipeline, "leaked_secrets", lambda *a: [".env.example"])
     with pytest.raises(PublishGateError, match="secret value"):
         compile_commit(store, repo, REPO_ID, shas[0])
@@ -85,7 +86,7 @@ def test_url_password_collision_requires_independent_cited_identity(store):
 
 
 def test_redacted_extraction_preserves_offsets_and_keeps_raw_credentials_from_parsers(store):
-    from repo_intel.buildgraph import StepRunner
+    from repo_intel.compile.buildgraph import StepRunner
     from repo_intel.extractors import extract_file
 
     source = b'''from fastapi import FastAPI
