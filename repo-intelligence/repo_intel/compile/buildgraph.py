@@ -508,7 +508,10 @@ class _Worker:
         self.inputs = self.root / "inputs"
         self.inputs.mkdir()
         inputs = _real(self.inputs)
-        python = [sys.executable, "-I", "-B", "-m", f"{__name__.rsplit('.', 1)[0]}.step_worker", "--inputs", inputs]
+        # Normalised: started as `../.venv/bin/python`, the interpreter path runs through a
+        # directory bwrap does not mount. Not resolved: a venv's python is a symlink and
+        # must keep its venv path to find its site-packages.
+        python = [os.path.normpath(os.path.abspath(sys.executable)), "-I", "-B", "-m", f"{__name__.rsplit('.', 1)[0]}.step_worker", "--inputs", inputs]
         if tool == "sandbox-exec":
             cmd = [tool_path, "-p", _seatbelt_profile(inputs), *python]
         elif tool == "landlock":
