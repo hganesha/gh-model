@@ -78,7 +78,8 @@
         "complete",
         "partial",
         "failed",
-        "retracted"
+        "retracted",
+        "quarantined"
       ],
       "title": "Status",
       "type": "string"
