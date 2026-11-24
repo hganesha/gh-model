@@ -15,15 +15,6 @@ from .contracts import DecisionSpec, Model
 from .decisions.gateway import Gateway
 from .extractors import EXTRACTORS
 
-TABLES = {"workspace_settings": "SELECT, INSERT, UPDATE", "workspace_settings_revisions": "SELECT, INSERT"}
-DDL = """
-CREATE TABLE IF NOT EXISTS workspace_settings (
-  tenant_id text PRIMARY KEY, version int NOT NULL, document jsonb NOT NULL);
-CREATE TABLE IF NOT EXISTS workspace_settings_revisions (
-  tenant_id text NOT NULL, version int NOT NULL, document jsonb NOT NULL,
-  author text NOT NULL, updated_at timestamptz NOT NULL DEFAULT clock_timestamp(),
-  PRIMARY KEY (tenant_id, version));
-"""
 REF = re.compile(r"^(keychain|managed|vault):[a-zA-Z0-9._-]{1,100}$")
 PROVIDERS = ("jev", "microsoft-decision", "azure-openai", "cohere-rerank", "openai-embeddings")
 EXTRACTOR_IDS = frozenset(e.id for e in EXTRACTORS)
@@ -74,6 +65,10 @@ class RepositoryTracking(Model):
     # Providers this repository's excerpts may go to. None inherits the workspace policy;
     # otherwise the effective set is the intersection with it, so a repository can only narrow.
     allowed_providers: tuple[str, ...] | None = None
+    # Push-tracked repositories (spec §4.5): tags compile eagerly; pull requests
+    # compile on the first context request ("lazy") or after the debounce ("eager").
+    tags: bool = True
+    pull_requests: Literal["off", "lazy", "eager"] = "lazy"
 
     @model_validator(mode="after")
     def valid_refs(self) -> Self:
@@ -159,11 +154,31 @@ class PlacementPolicy(Model):
     embedding_provider: Literal["local", "openai-embeddings"] = "local"
 
 
+class RetentionPolicy(Model):
+    """What garbage collection keeps (spec §4.5, §12). Defaults follow the spec."""
+
+    branch_days: int = Field(30, ge=1, le=3650)  # branch snapshots, plus each ref's current head
+    pull_request_days_after_close: int = Field(7, ge=0, le=3650)
+    tag_days: int | None = Field(None, ge=1, le=36500)  # None: kept while the tag is tracked
+    blob_cache_days: int = Field(14, ge=0, le=3650)  # source blobs; refilled from the host by OID
+    step_cache_days: int = Field(30, ge=0, le=3650)  # step outputs, ledger and placement caches, by last use
+    mirror_days: int = Field(14, ge=1, le=3650)  # bare mirrors not fetched into for this long
+
+
+class ParityPolicy(Model):
+    """Production shadow compiles (spec §6 safety net)."""
+
+    shadow_rate: float = Field(0.02, ge=0, le=1)  # share of compiles also compiled cold
+    nightly_head: bool = True  # shadow-compile each default-branch head once a day
+
+
 class Settings(Model):
     connections: tuple[Connection, ...] = Field(default=(), max_length=50)
     repositories: dict[str, RepositoryTracking] = Field(default_factory=dict, max_length=500)
     compile: CompileSettings = Field(default_factory=CompileSettings)
     business_map: PlacementPolicy = Field(default_factory=PlacementPolicy)
+    retention: RetentionPolicy = Field(default_factory=RetentionPolicy)
+    parity: ParityPolicy = Field(default_factory=ParityPolicy)
 
     @model_validator(mode="after")
     def unique_connections(self) -> Self:

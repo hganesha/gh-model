@@ -11,39 +11,6 @@ from pydantic import Field, StringConstraints, model_validator
 
 from .contracts import Model
 
-TABLES = {
-    "business_maps": "SELECT, INSERT, UPDATE",
-    "business_map_stages": "SELECT, INSERT, DELETE",
-    "business_map_capabilities": "SELECT, INSERT, DELETE",
-    "business_map_placements": "SELECT, INSERT, DELETE",
-    "business_map_revisions": "SELECT, INSERT",
-}
-DDL = """
-CREATE TABLE IF NOT EXISTS business_maps (
-  tenant_id text NOT NULL, map_id text NOT NULL, version int NOT NULL,
-  PRIMARY KEY (tenant_id, map_id));
-CREATE TABLE IF NOT EXISTS business_map_stages (
-  tenant_id text NOT NULL, map_id text NOT NULL, stage_id text NOT NULL, position int NOT NULL,
-  name text NOT NULL, PRIMARY KEY (tenant_id, map_id, stage_id),
-  FOREIGN KEY (tenant_id, map_id) REFERENCES business_maps (tenant_id, map_id));
-CREATE TABLE IF NOT EXISTS business_map_capabilities (
-  tenant_id text NOT NULL, map_id text NOT NULL, stage_id text NOT NULL, capability_id text NOT NULL,
-  position int NOT NULL, name text NOT NULL, description text NOT NULL,
-  PRIMARY KEY (tenant_id, map_id, capability_id),
-  FOREIGN KEY (tenant_id, map_id, stage_id)
-    REFERENCES business_map_stages (tenant_id, map_id, stage_id));
-CREATE TABLE IF NOT EXISTS business_map_placements (
-  tenant_id text NOT NULL, map_id text NOT NULL, lineage_id text NOT NULL, capability_id text,
-  row jsonb NOT NULL, PRIMARY KEY (tenant_id, map_id, lineage_id),
-  FOREIGN KEY (tenant_id, map_id) REFERENCES business_maps (tenant_id, map_id),
-  FOREIGN KEY (tenant_id, map_id, capability_id)
-    REFERENCES business_map_capabilities (tenant_id, map_id, capability_id));
-CREATE TABLE IF NOT EXISTS business_map_revisions (
-  tenant_id text NOT NULL, map_id text NOT NULL, version int NOT NULL, author text NOT NULL,
-  created_at timestamptz NOT NULL DEFAULT clock_timestamp(), document jsonb NOT NULL,
-  PRIMARY KEY (tenant_id, map_id, version),
-  FOREIGN KEY (tenant_id, map_id) REFERENCES business_maps (tenant_id, map_id));
-"""
 
 ACTIVE_MAP = "default"
 Key = Annotated[str, StringConstraints(pattern=r"^[a-zA-Z0-9_-]{1,80}$")]

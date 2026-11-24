@@ -311,7 +311,7 @@ class Manifest(Model):
     conflicts_ref: str
     unknowns_ref: str
     ledger_entries_ref: str
-    status: Literal["complete", "partial", "failed", "retracted"]
+    status: Literal["complete", "partial", "failed", "retracted", "quarantined"]
     content_hash: str
     provenance_hash: str
     rkp_hash: str
