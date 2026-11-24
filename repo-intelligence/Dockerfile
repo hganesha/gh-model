@@ -18,4 +18,4 @@ ENV PYTHONUNBUFFERED=1 \
     RKP_API_PORT=8787 \
     RKP_DATA_DIR=/data
 EXPOSE 8787
-CMD ["python", "-m", "repo_intel.serve"]
+CMD ["python", "-m", "repo_intel.server.serve"]

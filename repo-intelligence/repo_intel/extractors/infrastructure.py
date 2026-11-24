@@ -24,9 +24,9 @@ from typing import Any
 
 import yaml
 
-from ..contracts import Span
-from ..ontology import EntityKind, EvidenceClass, Predicate
-from .base import Extraction, diagnostic, entity, obs, ref, relation, span, whole_file
+from repo_intel.compile.contracts import Span
+from repo_intel.compile.ontology import EntityKind, EvidenceClass, Predicate
+from repo_intel.extractors.base import Extraction, diagnostic, entity, obs, ref, relation, span, whole_file
 
 E1, E4 = EvidenceClass.E1, EvidenceClass.E4
 K = EntityKind

@@ -9,16 +9,16 @@ import httpx
 import pytest
 
 from conftest import REPO_ID
-from repo_intel.contracts import DecisionSpec, entity_id
+from repo_intel.compile.contracts import DecisionSpec, entity_id
 from repo_intel.decisions import behavior as dm_behavior
 from repo_intel.decisions import component as dm
 from repo_intel.decisions import linking
 from repo_intel.decisions.gateway import ChatLlmClient, Gateway, ModelUnavailable, ScriptedLlm, ScriptedModel, TokenBucket, jev, pin
 from repo_intel.decisions.overrides import DecisionOverride, OverrideDocument, Overrides
 from repo_intel.decisions.runner import NONE_OF_THESE, Budget, Ledger, RuleResult, evaluate, hypothesize
-from repo_intel.fixtures import materialize
-from repo_intel.pipeline import compile_commit, load_shards
-from repo_intel.settings import CompileSettings, RepositoryTracking, Settings, effective_compile
+from repo_intel.compile.fixtures import materialize
+from repo_intel.compile.pipeline import compile_commit, load_shards
+from repo_intel.workspace.settings import CompileSettings, RepositoryTracking, Settings, effective_compile
 
 FEATURES = {"ecosystem": "pypi", "package": "x", "http_endpoints": 0}
 AMBIGUOUS = lambda f: RuleResult("ambiguous", candidates=("service", "library", "cli"))
@@ -226,7 +226,7 @@ def test_behavior_candidates_are_off_by_default_and_never_more_than_hypotheses(t
 
     llm = ScriptedLlm(answer)
     gw = Gateway({}, frozenset({"scripted"}), {"llm-default": llm})
-    from repo_intel.store import ObjectStore
+    from repo_intel.storage.store import ObjectStore
     off = ObjectStore(tmp_path / "off", "t")
     plain = compile_commit(off, repo, REPO_ID, commits[0], gateway=gw)
     assert llm.calls == [] and not any(e["kind"] == "Feature" for s in load_shards(off, plain.manifest).values() for e in s["entities"])
@@ -293,7 +293,7 @@ def test_ambiguous_http_and_deployment_matches_go_through_the_ledger(tmp_path):
     repo = tmp_path / "repo"
     repo.mkdir()
     sha = _repo(repo, SERVICES)
-    from repo_intel.store import ObjectStore
+    from repo_intel.storage.store import ObjectStore
     plain_store = ObjectStore(tmp_path / "plain", "t")
     ents, assertions, ledger = _graph(plain_store, compile_commit(plain_store, repo, REPO_ID, sha))
     http = [d for d in ledger.values() if d["spec"].startswith("dm.http-consumer-target")]
@@ -338,7 +338,7 @@ def test_unresolved_orm_model_is_offered_its_candidate_tables(tmp_path):
     repo = tmp_path / "repo"
     repo.mkdir()
     sha = _repo(repo, ORM)
-    from repo_intel.store import ObjectStore
+    from repo_intel.storage.store import ObjectStore
     plain = ObjectStore(tmp_path / "plain", "t")
     result = compile_commit(plain, repo, REPO_ID, sha)
     ents, assertions, ledger = _graph(plain, result)
@@ -363,7 +363,7 @@ def test_table_candidates_match_by_class_or_name():
 
 
 def test_primary_stack_and_topology_are_ledger_decisions(tmp_path):
-    from repo_intel.store import ObjectStore
+    from repo_intel.storage.store import ObjectStore
     repo = tmp_path / "repo"
     commits = materialize("F03-python-ts-hybrid", repo)
     store = ObjectStore(tmp_path / "s", "t")

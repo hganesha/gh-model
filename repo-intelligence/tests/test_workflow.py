@@ -15,8 +15,8 @@ def test_compile_workflow_end_to_end(tmp_path, f01, pg_conninfo, monkeypatch):
     from temporalio.worker import Worker
 
     from conftest import REPO_ID
-    from repo_intel import projection
-    from repo_intel.workflows import ACTIVITIES, TASK_QUEUE, CompileCommit, CompileRequest, workflow_id
+    from repo_intel.knowledge import projection
+    from repo_intel.server.workflows import ACTIVITIES, TASK_QUEUE, CompileCommit, CompileRequest, workflow_id
 
     repo, shas = f01
     monkeypatch.setenv("RKP_STORE_ROOT", str(tmp_path / "store"))
@@ -52,9 +52,9 @@ def test_ref_workflow_coalesces_rapid_pushes_and_duplicates(tmp_path, pg_conninf
     from temporalio.worker import Worker
 
     from conftest import REPO_ID
-    from repo_intel import projection, registry
-    from repo_intel.fixtures import materialize
-    from repo_intel.workflows import ACTIVITIES, TASK_QUEUE, WORKFLOWS, CompileRequest, RefCompiler, ref_workflow_id
+    from repo_intel.knowledge import projection, registry
+    from repo_intel.compile.fixtures import materialize
+    from repo_intel.server.workflows import ACTIVITIES, TASK_QUEUE, WORKFLOWS, CompileRequest, RefCompiler, ref_workflow_id
 
     origin = tmp_path / "origin"
     shas = materialize("F01-python-api", origin)[:1]

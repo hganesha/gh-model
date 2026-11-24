@@ -2,7 +2,7 @@
 
 Small synthetic repositories the compiler is tested against. Each is `base/`
 plus ordered overlays under `commits/`, with a `golden.json` saying what the
-compiler must produce. `repo_intel/fixtures.py` turns one into a real Git
+compiler must produce. `repo_intel/compile/fixtures.py` turns one into a real Git
 repository with stable commit SHAs.
 
 ## Planted test data: nothing here is real

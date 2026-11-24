@@ -29,8 +29,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
-from ..contracts import Diagnostic, Evidence, Observation, Span
-from ..ontology import EntityKind, EvidenceClass, Predicate
+from repo_intel.compile.contracts import Diagnostic, Evidence, Observation, Span
+from repo_intel.compile.ontology import EntityKind, EvidenceClass, Predicate
 
 UNIT = "@unit"
 PACKAGE = "@package"

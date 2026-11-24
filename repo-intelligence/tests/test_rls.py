@@ -4,9 +4,9 @@ import psycopg
 import pytest
 
 from conftest import REPO_ID
-from repo_intel import projection
-from repo_intel.pipeline import compile_commit
-from repo_intel.store import ObjectStore
+from repo_intel.knowledge import projection
+from repo_intel.compile.pipeline import compile_commit
+from repo_intel.storage.store import ObjectStore
 
 
 @pytest.fixture

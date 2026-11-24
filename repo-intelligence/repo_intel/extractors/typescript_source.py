@@ -14,8 +14,8 @@ import posixpath
 import re
 from functools import cache
 
-from ..ontology import EntityKind, Predicate
-from .base import PACKAGE, UNIT, Extraction, diagnostic, entity, obs, ref, relation, span
+from repo_intel.compile.ontology import EntityKind, Predicate
+from repo_intel.extractors.base import PACKAGE, UNIT, Extraction, diagnostic, entity, obs, ref, relation, span
 
 EXTENSIONS = (".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs")
 EXPRESS_METHODS = {"get", "post", "put", "patch", "delete"}

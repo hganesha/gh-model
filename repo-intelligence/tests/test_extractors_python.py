@@ -1,7 +1,7 @@
 """Python source extractor, called directly on inline source bytes."""
 
 from repo_intel.extractors.python_source import EXTRACTORS, PythonSource
-from repo_intel.ontology import EntityKind, Predicate, check_relation
+from repo_intel.compile.ontology import EntityKind, Predicate, check_relation
 
 BLOB = "0" * 64
 X = PythonSource()
@@ -415,7 +415,7 @@ def test_test_observations():
 
 
 def test_linker_observations_on_fixtures():
-    from repo_intel.fixtures import FIXTURES_DIR
+    from repo_intel.compile.fixtures import FIXTURES_DIR
 
     def uses(rel):
         r = X.extract(rel, (FIXTURES_DIR / rel).read_bytes(), BLOB)
@@ -614,8 +614,8 @@ def test_dropping_a_table_does_not_declare_it(tmp_path):
     """A migration that drops a table refers to it without bringing it into the graph."""
     import subprocess
 
-    from repo_intel.pipeline import compile_commit, load_shards
-    from repo_intel.store import ObjectStore
+    from repo_intel.compile.pipeline import compile_commit, load_shards
+    from repo_intel.storage.store import ObjectStore
 
     repo = tmp_path / "repo"
     (repo / "migrations").mkdir(parents=True)

@@ -3,10 +3,10 @@
 import pytest
 
 from conftest import REPO_ID
-from repo_intel.delta import knowledge_delta
-from repo_intel.fixtures import materialize
-from repo_intel.pipeline import compile_commit
-from repo_intel.store import ObjectStore
+from repo_intel.knowledge.delta import knowledge_delta
+from repo_intel.compile.fixtures import materialize
+from repo_intel.compile.pipeline import compile_commit
+from repo_intel.storage.store import ObjectStore
 
 
 @pytest.fixture(scope="module")
@@ -99,9 +99,9 @@ def test_snapshots_of_different_repositories_are_refused(snaps, tmp_path):
 def test_diff_endpoint(snaps, pg_conninfo, tmp_path):
     import psycopg
     from fastapi.testclient import TestClient
-    from repo_intel import projection
-    from repo_intel.api import create_app
-    from repo_intel.service import Service
+    from repo_intel.knowledge import projection
+    from repo_intel.server.api import create_app
+    from repo_intel.server.service import Service
     store, m = snaps("F01-python-api")
     with psycopg.connect(pg_conninfo) as admin:
         projection.ensure_schema(admin)

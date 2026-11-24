@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from ..capabilities import CapabilityMapping
-from ..contracts import DecisionResult, decision_id
-from ..hashing import digest
+from repo_intel.compile.capabilities import CapabilityMapping
+from repo_intel.compile.contracts import DecisionResult, decision_id
+from repo_intel.storage.hashing import digest
 
 SPEC_ID = "dm.dependency-capability"
 SPEC_VERSION = "1.0.0"

@@ -26,8 +26,8 @@ import xml.etree.ElementTree as ET
 
 import yaml
 
-from ..ontology import EvidenceClass
-from .base import Extraction, diagnostic, find_span, obs, span, whole_file
+from repo_intel.compile.ontology import EvidenceClass
+from repo_intel.extractors.base import Extraction, diagnostic, find_span, obs, span, whole_file
 
 E1 = EvidenceClass.E1
 

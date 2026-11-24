@@ -11,14 +11,17 @@ import pytest
 from fastapi.testclient import TestClient
 
 from conftest import REPO_ID
-from repo_intel import buildgraph, extractors, gc, lineage, parity, pipeline, projection, registry
-from repo_intel.api import create_app
-from repo_intel.buildgraph import Step
-from repo_intel.delta import knowledge_delta
-from repo_intel.fixtures import list_fixtures, materialize
-from repo_intel.pipeline import compile_commit, load_manifest
-from repo_intel.service import TERMINAL, Service
-from repo_intel.store import ObjectStore
+from repo_intel.compile import buildgraph, pipeline
+from repo_intel import extractors
+from repo_intel.storage import gc
+from repo_intel.knowledge import lineage, parity, projection, registry
+from repo_intel.server.api import create_app
+from repo_intel.compile.buildgraph import Step
+from repo_intel.knowledge.delta import knowledge_delta
+from repo_intel.compile.fixtures import list_fixtures, materialize
+from repo_intel.compile.pipeline import compile_commit, load_manifest
+from repo_intel.server.service import TERMINAL, Service
+from repo_intel.storage.store import ObjectStore
 
 TOKEN = "test-token-for-local-cluster-only"
 AUTH = {"Authorization": f"Bearer {TOKEN}"}

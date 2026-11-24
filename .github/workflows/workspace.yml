@@ -37,10 +37,10 @@ jobs:
           # The Temporal tests start the SDK's dev server (downloaded on first use).
           RKP_TEMPORAL_TESTS: "1"
         run: |
-          .venv/bin/python -m repo_intel.step_worker --selfcheck
+          .venv/bin/python -m repo_intel.compile.step_worker --selfcheck
           .venv/bin/python -m pytest -q
-          .venv/bin/python -m repo_intel.golden_check
-          .venv/bin/python -m repo_intel.parity
+          .venv/bin/python -m repo_intel.compile.golden_check
+          .venv/bin/python -m repo_intel.knowledge.parity
       - name: Run Explorer browser suite (includes a production build replaying recorded fixture responses)
         working-directory: repo-intelligence/explorer
         run: |

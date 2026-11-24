@@ -4,7 +4,7 @@
     {
       "name": "api",
       "runtimeExecutable": "sh",
-      "runtimeArgs": ["-c", "cd repo-intelligence && exec .venv/bin/python -m repo_intel.serve"],
+      "runtimeArgs": ["-c", "cd repo-intelligence && exec .venv/bin/python -m repo_intel.server.serve"],
       "port": 8787
     },
     {

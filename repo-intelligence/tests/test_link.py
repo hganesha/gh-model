@@ -3,11 +3,11 @@
 import pytest
 
 from conftest import REPO_ID
-from repo_intel.contracts import Evidence, Span, entity_id
-from repo_intel.fixtures import load_golden, materialize
-from repo_intel.link import _Linker, match_call, normalize_route
-from repo_intel.pipeline import compile_commit, load_shards
-from repo_intel.store import ObjectStore
+from repo_intel.compile.contracts import Evidence, Span, entity_id
+from repo_intel.compile.fixtures import load_golden, materialize
+from repo_intel.compile.link import _Linker, match_call, normalize_route
+from repo_intel.compile.pipeline import compile_commit, load_shards
+from repo_intel.storage.store import ObjectStore
 
 
 @pytest.fixture(scope="module")
@@ -417,7 +417,7 @@ def test_f01_orm_model_class_is_an_alias_of_its_table(graphs):
 
 
 def test_deployment_units_running_one_image_are_candidate_aliases():
-    from repo_intel.link import link_repo
+    from repo_intel.compile.link import link_repo
 
     class G:
         def __init__(self):

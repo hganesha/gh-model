@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from repo_intel.fixtures import materialize
-from repo_intel.store import ObjectStore
+from repo_intel.compile.fixtures import materialize
+from repo_intel.storage.store import ObjectStore
 
 REPO_ID = "github.com/1001"
 
