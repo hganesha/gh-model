@@ -279,7 +279,7 @@ class AuthenticatedGit:
     def __init__(self, config: Connection, credential: Callable[[], str]):
         self.config, self.credential = config, credential
 
-    def run(self, args: list[str], *, timeout: int = 60, authenticate: bool = True) -> str:
+    def run(self, args: list[str], *, timeout: int = 60, authenticate: bool = True, stdin: bytes | None = None) -> str:
         env = {
             "PATH": os.environ.get("PATH", ""), "HOME": os.environ.get("HOME", ""),
             "GIT_TERMINAL_PROMPT": "0", "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": os.devnull,
@@ -304,7 +304,8 @@ class AuthenticatedGit:
                     RKP_GIT_PASSWORD=self.credential(),
                 )
             try:
-                return subprocess.run(["git", *flags, *args], env=env, capture_output=True, check=True, text=True, timeout=timeout).stdout
+                done = subprocess.run(["git", *flags, *args], env=env, input=stdin, capture_output=True, check=True, timeout=timeout)
+                return done.stdout.decode("utf-8", "replace")
             except (subprocess.SubprocessError, OSError):
                 raise ConnectorError("Git could not read this ref with the configured connection.") from None
 
@@ -319,9 +320,12 @@ class AuthenticatedGit:
         self.run(["init", "-q", "--bare", f"--object-format=sha{256 if len(sha) == 64 else 1}", str(mirror)], authenticate=False)
         # Recheck access through ls-remote/REST at resolve time, even when the object is cached.
         try:
-            self.run(["-C", str(mirror), "cat-file", "-e", f"{sha}^{{commit}}"], authenticate=False)
-        except ConnectorError:
-            self.run(["-C", str(mirror), "fetch", "-q", "--depth", "1", "--no-tags", "--no-recurse-submodules", url, sha], timeout=900)
+            github.partial_fetch(
+                lambda args, timeout, stdin: self.run(args, timeout=timeout, stdin=stdin, authenticate=args[2] != "config"),
+                mirror, url, sha,
+            )
+        except github.GitHubError as exc:
+            raise ConnectorError(str(exc)) from None
         return mirror
 
 
