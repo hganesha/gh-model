@@ -43,11 +43,11 @@ Build a read-only repository intelligence compiler that turns a pinned Git commi
 
 | Area | Tier A — certified in v1 | Tier B — best effort, reported as partial coverage | Deferred |
 |---|---|---|---|
-| Languages | Python, TypeScript/JavaScript | — | Java, Go, others (inventory and manifests only) |
-| Web/API | FastAPI, Express, Next.js route handlers | Flask, Django, NestJS | — |
-| Data | SQLAlchemy, Prisma, SQL DDL, Alembic and Prisma migrations | Django ORM, TypeORM | dynamic SQL resolution |
-| Contracts | OpenAPI 3.x | protobuf, GraphQL SDL | AsyncAPI |
-| Build/deploy | Dockerfile, docker-compose, GitHub Actions, Kubernetes manifests, Terraform (static HCL) | Helm (unrendered templates), Kustomize | Bicep, Pulumi |
+| Languages | Python, TypeScript/JavaScript | Java, Kotlin, Scala, Go, C#, Ruby, Swift (lexed and pattern-matched, not parsed: E2 for literal forms, E4 for conventions) | Rust and others (inventory and manifests only) |
+| Web/API | FastAPI, Express, Next.js route handlers | Flask, Django, NestJS; Spring MVC/WebFlux, JAX-RS, Micronaut, Ktor, Play; net/http, gin, echo, fiber, chi, gorilla/mux; ASP.NET Core controllers and minimal APIs; Rails, Sinatra; Vapor; gRPC services and GraphQL resolvers in all of these | — |
+| Data | SQLAlchemy, Prisma, SQL DDL, Alembic and Prisma migrations | Django ORM, TypeORM; JPA, EF Core, ActiveRecord, GORM, Fluent; SQL literals given to JDBC, database/sql, Dapper and ActiveRecord | dynamic SQL resolution |
+| Contracts | OpenAPI 3.x | protobuf, GraphQL SDL, AsyncAPI 2 and 3 | — |
+| Build/deploy | Dockerfile, docker-compose, GitHub Actions, Kubernetes manifests, Terraform (static HCL) | Helm (charts, and templates with their actions blanked), Kustomize, CloudFormation and AWS SAM, Serverless Framework, Bicep, Pulumi (YAML, TypeScript and Python programs), Bazel, Nx, Turborepo | — |
 | Decisions | DM01–DM07, DM10 | DM08 behavior candidates, behind a flag, excluded from unattended routing | DM09 requirements lineage (v1.1) |
 | Human-facing UI | RKP Explorer: published snapshots, owner overrides, business map and settings (§18) | — | requirements plane (with DM09); editing knowledge in the UI |
 
@@ -405,6 +405,8 @@ The data and ML relations:
 
 `CALLS` also links programs (COBOL `CALL`, CICS `LINK` and `XCTL`, SAS macro calls, `cfinvoke`, `EXEC` of a procedure). `RUNS` takes a program as its object, and `DEPENDS_ON` takes a data schema (a copybook) or program.
 
+`DEPENDS_ON` also links build targets to the build targets they depend on (Bazel `deps`, Nx and Turborepo `dependsOn`).
+
 `READS_FROM` and `WRITES_TO` also take jobs, tasks and notebooks as subjects, and datasets and models as objects. `DEPENDS_ON` also links tasks to their upstream tasks. All of these are declared (E1) or parsed (E2); a read or write whose target is computed at run time is not guessed, but counted against the `data_lineage` coverage domain.
 
 Each relation has a schema: permitted subject and object kinds, direction, cardinality (functional or many), permitted qualifiers and the minimum evidence class. Multiple edges and conflicting assertions between the same pair are allowed.
@@ -698,7 +700,7 @@ Every figure is reported with a 95% interval and broken down by language, reposi
 6. **Prompt injection.** Hostile README, comment and file-name text changes neither compiler policy, nor a decision's output contract, nor the instruction channel of a context bundle.
 7. **Unauthorized expansion.** A path-scoped principal cannot reach a restricted component or its evidence through query, adjacency, counts, diff or MCP expansion.
 8. **Replay.** Frozen ledger and pinned inputs reproduce `rkp_hash`.
-9. **Unsupported language.** A Java or Go repository yields inventory, manifests, coverage warnings and unknowns, and no invented components.
+9. **Unsupported language.** A package in a language with no front end (Rust, for one) yields inventory, manifests, coverage warnings and unknowns, and no invented components.
 10. **Context ablation.** Same commit, task, harness and model, with and without the bundle, under matched limits; outcomes and exploration recorded.
 11. **Rename.** Moving a component directory yields new entity IDs, a `moved` delta entry with lineage, and incremental-cold parity.
 12. **Coalescing and redelivery.** Ten rapid pushes and duplicated webhook deliveries result in one published snapshot for the final head and no duplicate work.
@@ -731,7 +733,7 @@ Every figure is reported with a 95% interval and broken down by language, reposi
 ### 16.1 Resolved in this version (defaults; each is a policy setting)
 | Question from v1 | Default |
 |---|---|
-| Language priority | Python and TypeScript/JavaScript; others inventory-only |
+| Language priority | Python and TypeScript/JavaScript certified; Java, Kotlin, Scala, Go, C#, Ruby and Swift best effort; others inventory-only |
 | Incremental SLA | default branch per push with coalescing; PRs lazy; tags eager (§4.5) |
 | Evidence retention | no source text in the graph; blob cache with TTL under tenant policy (§12) |
 | Observed runtime | out of scope; ontology keeps declared and observed separate, so a later connector adds `observed_*` assertions without changing declared ones |

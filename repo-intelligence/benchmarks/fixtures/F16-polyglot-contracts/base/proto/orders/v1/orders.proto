@@ -1,0 +1,19 @@
+syntax = "proto3";
+package shop.orders.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// The order service. CreateOrder is declared before it is implemented.
+service Orders {
+  rpc GetOrder(GetOrderRequest) returns (Order);
+  rpc CreateOrder(CreateOrderRequest) returns (Order);
+}
+
+message GetOrderRequest { string id = 1; }
+message CreateOrderRequest { repeated string sku = 1; }
+message Order {
+  string id = 1;
+  google.protobuf.Timestamp placed_at = 2;
+  message Line { string sku = 1; int32 qty = 2; }
+  repeated Line lines = 3;
+}

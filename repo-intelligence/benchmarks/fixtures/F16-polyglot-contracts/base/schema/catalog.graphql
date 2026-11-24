@@ -1,0 +1,14 @@
+# The catalog API, served by services/catalog.
+type Query {
+  products(first: Int): [Product!]!
+  product(id: ID!): Product
+}
+
+type Mutation {
+  addProduct(name: String!): Product
+}
+
+type Product {
+  id: ID!
+  name: String!
+}

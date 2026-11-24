@@ -1,99 +1,190 @@
 {
-  "fixture": "F04-java-maven",
-  "description": "Java Maven multi-module project. Exercises the unsupported-language path (acceptance test 9): inventory and coverage warnings, no invented components. 'since' names the milestone whose compiler must produce the item.",
-  "entities": [
-    {
-      "kind": "Artifact",
-      "natural_key": {
-        "path": "pom.xml"
-      },
-      "since": "M0"
-    },
-    {
-      "kind": "Artifact",
-      "natural_key": {
-        "path": "service/src/main/java/com/example/ledger/service/LedgerController.java"
-      },
-      "since": "M0"
-    },
-    {
-      "kind": "Package",
-      "natural_key": {
-        "ecosystem": "maven",
-        "name": "com.example.ledger:ledger-service",
-        "manifest_dir": "service"
-      },
-      "since": "M1"
-    },
-    {
-      "kind": "Package",
-      "natural_key": {
-        "ecosystem": "maven",
-        "name": "com.example.ledger:ledger-core",
-        "manifest_dir": "core"
-      },
-      "since": "M1"
+ "fixture": "F04-java-maven",
+ "description": "Java Maven multi-module project: a pom-packaged parent with modules, a library and a Spring Boot web service. Maven modules are a workspace; Spring MVC routes are endpoints. 'since' names the milestone whose compiler must produce the item.",
+ "entities": [
+  {
+   "kind": "Artifact",
+   "natural_key": {
+    "path": "pom.xml"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "Artifact",
+   "natural_key": {
+    "path": "service/src/main/java/com/example/ledger/service/LedgerController.java"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "Package",
+   "natural_key": {
+    "ecosystem": "maven",
+    "name": "com.example.ledger:ledger-service",
+    "manifest_dir": "service"
+   },
+   "since": "M1"
+  },
+  {
+   "kind": "Package",
+   "natural_key": {
+    "ecosystem": "maven",
+    "name": "com.example.ledger:ledger-core",
+    "manifest_dir": "core"
+   },
+   "since": "M1"
+  },
+  {
+   "kind": "Endpoint",
+   "natural_key": {
+    "component_root": "service",
+    "protocol": "http",
+    "method": "GET",
+    "route": "/entries"
+   },
+   "since": "M0",
+   "attributes": {
+    "framework": "spring"
+   }
+  },
+  {
+   "kind": "ExternalDependency",
+   "natural_key": {
+    "ecosystem": "maven",
+    "name": "org.springframework.boot:spring-boot-starter-web"
+   },
+   "since": "M1"
+  },
+  {
+   "kind": "Component",
+   "natural_key": {
+    "root": "service"
+   },
+   "since": "M2",
+   "attributes": {
+    "component_kind": "service"
+   }
+  },
+  {
+   "kind": "Component",
+   "natural_key": {
+    "root": "core"
+   },
+   "since": "M2",
+   "attributes": {
+    "component_kind": "library"
+   }
+  },
+  {
+   "kind": "Component",
+   "natural_key": {
+    "root": ""
+   },
+   "since": "M2",
+   "attributes": {
+    "component_kind": "tooling"
+   }
+  }
+ ],
+ "edges": [
+  {
+   "subject": {
+    "kind": "Package",
+    "natural_key": {
+     "ecosystem": "maven",
+     "name": "com.example.ledger:ledger-service",
+     "manifest_dir": "service"
     }
-  ],
-  "edges": [],
-  "absent_entities": [],
-  "exclusions": [],
-  "forbidden_kinds": [
-    "Component",
-    "Endpoint",
-    "Table",
-    "Symbol"
-  ],
-  "expected_unknowns": [
-    {
-      "since": "M2",
-      "detail": "component boundary and interfaces unknown for every Maven module: language java is inventory-only"
+   },
+   "predicate": "DEPENDS_ON",
+   "object": {
+    "kind": "Package",
+    "natural_key": {
+     "ecosystem": "maven",
+     "name": "com.example.ledger:ledger-core",
+     "manifest_dir": "core"
     }
-  ],
-  "expected_conflicts": [],
-  "commits": [
+   },
+   "since": "M1"
+  },
+  {
+   "subject": {
+    "kind": "Component",
+    "natural_key": {
+     "root": "service"
+    }
+   },
+   "predicate": "EXPOSES",
+   "object": {
+    "kind": "Endpoint",
+    "natural_key": {
+     "component_root": "service",
+     "protocol": "http",
+     "method": "GET",
+     "route": "/entries"
+    }
+   },
+   "since": "M2"
+  }
+ ],
+ "absent_entities": [],
+ "exclusions": [],
+ "forbidden_kinds": [
+  "Table",
+  "Symbol"
+ ],
+ "expected_unknowns": [],
+ "expected_conflicts": [],
+ "commits": [
+  {
+   "dir": "01-add-class",
+   "expect": "one Artifact added; nothing else",
+   "added_entities": [
     {
-      "dir": "01-add-class",
-      "expect": "one Artifact added; nothing else",
-      "added_entities": [
-        {
-          "kind": "Artifact",
-          "natural_key": {
-            "path": "core/src/main/java/com/example/ledger/core/Account.java"
-          },
-          "since": "M0"
-        }
-      ],
-      "removed_entities": []
+     "kind": "Artifact",
+     "natural_key": {
+      "path": "core/src/main/java/com/example/ledger/core/Account.java"
+     },
+     "since": "M0"
+    }
+   ],
+   "removed_entities": []
+  },
+  {
+   "dir": "02-add-module",
+   "expect": "new Maven Package from manifest (M1) and its Component (M2)",
+   "added_entities": [
+    {
+     "kind": "Artifact",
+     "natural_key": {
+      "path": "batch/pom.xml"
+     },
+     "since": "M0"
     },
     {
-      "dir": "02-add-module",
-      "expect": "new Maven Package from manifest only (M1); still no Component",
-      "added_entities": [
-        {
-          "kind": "Artifact",
-          "natural_key": {
-            "path": "batch/pom.xml"
-          },
-          "since": "M0"
-        },
-        {
-          "kind": "Package",
-          "natural_key": {
-            "ecosystem": "maven",
-            "name": "com.example.ledger:ledger-batch",
-            "manifest_dir": "batch"
-          },
-          "since": "M1"
-        }
-      ],
-      "removed_entities": []
+     "kind": "Package",
+     "natural_key": {
+      "ecosystem": "maven",
+      "name": "com.example.ledger:ledger-batch",
+      "manifest_dir": "batch"
+     },
+     "since": "M1"
     },
     {
-      "dir": "03-bump-dependency",
-      "expect": "DEPENDS_ON specifier changes (M1): one assertion removed, one added",
-      "added_entities": [],
-      "removed_entities": []
+     "kind": "Component",
+     "natural_key": {
+      "root": "batch"
+     },
+     "since": "M2"
     }
-  ]
+   ],
+   "removed_entities": []
+  },
+  {
+   "dir": "03-bump-dependency",
+   "expect": "DEPENDS_ON specifier changes (M1): one assertion removed, one added",
+   "added_entities": [],
+   "removed_entities": []
+  }
+ ]
 }

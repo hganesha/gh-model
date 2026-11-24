@@ -1,0 +1,347 @@
+{
+ "fixture": "F18-build-monorepo",
+ "description": "A monorepo whose Go backend is built with Bazel and whose web workspace runs Turborepo and Nx. Exercises build targets and the dependencies between them. 'since' names the milestone whose compiler must produce the item.",
+ "entities": [
+  {
+   "kind": "BuildTarget",
+   "natural_key": {
+    "tool": "bazel",
+    "label": "//services/api:api_lib"
+   },
+   "since": "M0",
+   "attributes": {
+    "rule": "go_library",
+    "external_deps": [
+     "@org_golang_x_sync//errgroup"
+    ]
+   }
+  },
+  {
+   "kind": "BuildTarget",
+   "natural_key": {
+    "tool": "bazel",
+    "label": "//services/api:api"
+   },
+   "since": "M0",
+   "attributes": {
+    "rule": "go_binary"
+   }
+  },
+  {
+   "kind": "BuildTarget",
+   "natural_key": {
+    "tool": "bazel",
+    "label": "//services/api:api_test"
+   },
+   "since": "M0",
+   "attributes": {
+    "rule": "go_test"
+   }
+  },
+  {
+   "kind": "BuildTarget",
+   "natural_key": {
+    "tool": "bazel",
+    "label": "//libs/db:db"
+   },
+   "since": "M0",
+   "attributes": {
+    "rule": "go_library"
+   }
+  },
+  {
+   "kind": "BuildTarget",
+   "natural_key": {
+    "tool": "turbo",
+    "label": "build"
+   },
+   "since": "M0",
+   "attributes": {
+    "depends_on_upstream": [
+     "build"
+    ]
+   }
+  },
+  {
+   "kind": "BuildTarget",
+   "natural_key": {
+    "tool": "turbo",
+    "label": "test"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "BuildTarget",
+   "natural_key": {
+    "tool": "turbo",
+    "label": "lint"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "BuildTarget",
+   "natural_key": {
+    "tool": "turbo",
+    "label": "dev"
+   },
+   "since": "M0",
+   "attributes": {
+    "persistent": true
+   }
+  },
+  {
+   "kind": "BuildTarget",
+   "natural_key": {
+    "tool": "nx",
+    "label": "site:build"
+   },
+   "since": "M0",
+   "attributes": {
+    "executor": "@nx/next:build",
+    "depends_on_upstream": [
+     "build"
+    ],
+    "implicit_dependencies": [
+     "ui"
+    ]
+   }
+  },
+  {
+   "kind": "BuildTarget",
+   "natural_key": {
+    "tool": "nx",
+    "label": "site:lint"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "BuildTarget",
+   "natural_key": {
+    "tool": "nx",
+    "label": "ui:build"
+   },
+   "since": "M0",
+   "attributes": {
+    "project_type": "library"
+   }
+  },
+  {
+   "kind": "Endpoint",
+   "natural_key": {
+    "component_root": "",
+    "protocol": "http",
+    "method": "GET",
+    "route": "/status"
+   },
+   "since": "M0",
+   "attributes": {
+    "framework": "net/http"
+   }
+  },
+  {
+   "kind": "Endpoint",
+   "natural_key": {
+    "component_root": "",
+    "protocol": "http",
+    "method": "POST",
+    "route": "/orders"
+   },
+   "since": "M0",
+   "attributes": {
+    "framework": "net/http"
+   }
+  },
+  {
+   "kind": "Component",
+   "natural_key": {
+    "root": ""
+   },
+   "since": "M2",
+   "attributes": {
+    "component_kind": "service"
+   }
+  },
+  {
+   "kind": "Component",
+   "natural_key": {
+    "root": "web"
+   },
+   "since": "M2",
+   "attributes": {
+    "component_kind": "tooling"
+   }
+  },
+  {
+   "kind": "Component",
+   "natural_key": {
+    "root": "web/apps/site"
+   },
+   "since": "M2",
+   "attributes": {
+    "component_kind": "frontend_app"
+   }
+  },
+  {
+   "kind": "Component",
+   "natural_key": {
+    "root": "web/packages/ui"
+   },
+   "since": "M2",
+   "attributes": {
+    "component_kind": "library"
+   }
+  }
+ ],
+ "edges": [
+  {
+   "subject": {
+    "kind": "BuildTarget",
+    "natural_key": {
+     "tool": "bazel",
+     "label": "//services/api:api_lib"
+    }
+   },
+   "predicate": "DEPENDS_ON",
+   "object": {
+    "kind": "BuildTarget",
+    "natural_key": {
+     "tool": "bazel",
+     "label": "//libs/db:db"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "BuildTarget",
+    "natural_key": {
+     "tool": "bazel",
+     "label": "//services/api:api"
+    }
+   },
+   "predicate": "DEPENDS_ON",
+   "object": {
+    "kind": "BuildTarget",
+    "natural_key": {
+     "tool": "bazel",
+     "label": "//services/api:api_lib"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "BuildTarget",
+    "natural_key": {
+     "tool": "bazel",
+     "label": "//services/api:api_test"
+    }
+   },
+   "predicate": "DEPENDS_ON",
+   "object": {
+    "kind": "BuildTarget",
+    "natural_key": {
+     "tool": "bazel",
+     "label": "//services/api:api_lib"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "BuildTarget",
+    "natural_key": {
+     "tool": "turbo",
+     "label": "test"
+    }
+   },
+   "predicate": "DEPENDS_ON",
+   "object": {
+    "kind": "BuildTarget",
+    "natural_key": {
+     "tool": "turbo",
+     "label": "build"
+    }
+   },
+   "since": "M0"
+  }
+ ],
+ "absent_entities": [
+  {
+   "kind": "BuildTarget",
+   "natural_key": {
+    "tool": "bazel",
+    "label": "//services/api:main.go"
+   },
+   "why": "srcs that name files are sources, not targets"
+  },
+  {
+   "kind": "BuildTarget",
+   "natural_key": {
+    "tool": "bazel",
+    "label": "@org_golang_x_sync//errgroup"
+   },
+   "why": "a label in another repository is an attribute, not a target here"
+  }
+ ],
+ "exclusions": [],
+ "forbidden_kinds": [],
+ "expected_unknowns": [],
+ "expected_conflicts": [],
+ "commits": [
+  {
+   "dir": "01-auth-library",
+   "expect": "a new Bazel library and the api's dependency on it",
+   "added_entities": [
+    {
+     "kind": "BuildTarget",
+     "natural_key": {
+      "tool": "bazel",
+      "label": "//libs/auth:auth"
+     },
+     "since": "M0"
+    }
+   ],
+   "removed_entities": []
+  },
+  {
+   "dir": "02-typecheck-task",
+   "expect": "a new Turborepo task; test now also depends on it",
+   "added_entities": [
+    {
+     "kind": "BuildTarget",
+     "natural_key": {
+      "tool": "turbo",
+      "label": "typecheck"
+     },
+     "since": "M0",
+     "attributes": {
+      "depends_on_upstream": [
+       "build"
+      ]
+     }
+    }
+   ],
+   "removed_entities": []
+  },
+  {
+   "dir": "03-site-e2e",
+   "expect": "a new Nx target that depends on the project's own build",
+   "added_entities": [
+    {
+     "kind": "BuildTarget",
+     "natural_key": {
+      "tool": "nx",
+      "label": "site:e2e"
+     },
+     "since": "M0",
+     "attributes": {
+      "executor": "@nx/playwright:playwright"
+     }
+    }
+   ],
+   "removed_entities": []
+  }
+ ],
+ "decision_cases": []
+}

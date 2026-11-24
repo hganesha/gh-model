@@ -37,8 +37,14 @@ LANGUAGES = {
     ".ipynb": "jupyter", ".scala": "scala", ".r": "r", ".cfg": "ini",
     ".cbl": "cobol", ".cob": "cobol", ".cobol": "cobol", ".cpy": "cobol", ".jcl": "jcl", ".prc": "jcl", ".proc": "jcl",
     ".sas": "sas", ".cfm": "cfml", ".cfc": "cfml", ".bteq": "bteq", ".btq": "bteq", ".tpt": "tpt",
+    # More languages, API contracts, and build and infrastructure files.
+    ".kt": "kotlin", ".kts": "kotlin", ".cs": "csharp", ".fs": "fsharp", ".swift": "swift", ".gradle": "gradle", ".sbt": "sbt",
+    ".csproj": "msbuild", ".fsproj": "msbuild", ".vbproj": "msbuild", ".gemspec": "ruby", ".rake": "ruby", ".erb": "erb",
+    ".proto": "protobuf", ".graphql": "graphql", ".graphqls": "graphql", ".gql": "graphql", ".bicep": "bicep", ".bzl": "starlark",
 }
-BASENAMES = {"Dockerfile": "dockerfile", "pyproject.toml": "pyproject", "package.json": "npm-manifest", "pom.xml": "maven-manifest", "go.mod": "go-manifest", "MLproject": "yaml"}
+BASENAMES = {"Dockerfile": "dockerfile", "pyproject.toml": "pyproject", "package.json": "npm-manifest", "pom.xml": "maven-manifest", "go.mod": "go-manifest", "MLproject": "yaml",
+             "build.gradle": "gradle", "build.gradle.kts": "gradle", "settings.gradle": "gradle", "settings.gradle.kts": "gradle", "Gemfile": "ruby", "Rakefile": "ruby",
+             "Package.swift": "swift", "BUILD": "starlark", "BUILD.bazel": "starlark", "WORKSPACE": "starlark", "MODULE.bazel": "starlark"}
 
 
 def detect_language(path: str) -> str | None:

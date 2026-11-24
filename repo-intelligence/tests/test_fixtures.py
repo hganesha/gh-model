@@ -5,6 +5,7 @@ import functools
 import pytest
 
 from conftest import REPO_ID
+from repo_intel.compile.capabilities import CLASSIFIED_ECOSYSTEMS
 from repo_intel.compile.contracts import entity_id
 from repo_intel.compile.fixtures import FIXTURES_DIR, list_fixtures, load_golden, materialize
 from repo_intel.compile.ontology import EntityKind, check_relation
@@ -43,8 +44,8 @@ def compiled(tmp_path_factory):
     return run
 
 
-def test_there_are_fifteen_fixtures():
-    assert len(FIXTURES) == 15 and [f[:3] for f in FIXTURES] == [f"F{i:02d}" for i in range(1, 16)]
+def test_there_are_eighteen_fixtures():
+    assert len(FIXTURES) == 18 and [f[:3] for f in FIXTURES] == [f"F{i:02d}" for i in range(1, 19)]
 
 
 @pytest.mark.parametrize("name", FIXTURES)
@@ -151,14 +152,14 @@ def test_dependency_capability_coverage_on_fixture_bases(compiled):
         declared = {
             e["id"]: (e["natural_key"]["ecosystem"], e["name"])
             for e in base["entities"].values()
-            if e["kind"] == "ExternalDependency" and e["natural_key"]["ecosystem"] in ("npm", "pypi")
+            if e["kind"] == "ExternalDependency" and e["natural_key"]["ecosystem"] in CLASSIFIED_ECOSYSTEMS
         }
         classified = {e["subject"] for e in base["assertions"] if e["predicate"] == "PROVIDES"}
         coverage = next(c for c in base["coverage"] if c["domain"] == "dependency_capability")
         assert (coverage["numerator"], coverage["denominator"]) == (len(classified), len(declared))
         all_declared.update(declared.values())
         all_classified.update(declared[subject] for subject in classified)
-    assert (len(all_classified), len(all_declared)) == (24, 29)
+    assert (len(all_classified), len(all_declared)) == (41, 51)
 
 
 def test_configuration_values_never_enter_the_graph(compiled):

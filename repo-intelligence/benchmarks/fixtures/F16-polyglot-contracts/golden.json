@@ -1,0 +1,572 @@
+{
+ "fixture": "F16-polyglot-contracts",
+ "description": "Five services in Go, Kotlin, C#, Ruby and Swift implementing protobuf, GraphQL and AsyncAPI contracts. Exercises the language front ends, contract matching across protocols, and topics shared across languages. 'since' names the milestone whose compiler must produce the item.",
+ "entities": [
+  {
+   "kind": "Interface",
+   "natural_key": {
+    "path": "proto/orders/v1/orders.proto",
+    "title": "shop.orders.v1.Orders"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "Interface",
+   "natural_key": {
+    "path": "schema/catalog.graphql",
+    "title": "catalog"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "Interface",
+   "natural_key": {
+    "path": "asyncapi.yaml",
+    "title": "Shop events"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "DataSchema",
+   "natural_key": {
+    "kind": "protobuf",
+    "name": "shop.orders.v1.Order"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "DataSchema",
+   "natural_key": {
+    "kind": "protobuf",
+    "name": "shop.orders.v1.Order.Line"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "DataSchema",
+   "natural_key": {
+    "kind": "graphql",
+    "name": "Product"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "Package",
+   "natural_key": {
+    "ecosystem": "go",
+    "name": "example.com/shop/orders",
+    "manifest_dir": "services/orders"
+   },
+   "since": "M1"
+  },
+  {
+   "kind": "Package",
+   "natural_key": {
+    "ecosystem": "maven",
+    "name": "catalog",
+    "manifest_dir": "services/catalog"
+   },
+   "since": "M1"
+  },
+  {
+   "kind": "Package",
+   "natural_key": {
+    "ecosystem": "nuget",
+    "name": "Billing.Api",
+    "manifest_dir": "services/billing"
+   },
+   "since": "M1"
+  },
+  {
+   "kind": "Package",
+   "natural_key": {
+    "ecosystem": "rubygems",
+    "name": "storefront",
+    "manifest_dir": "services/storefront"
+   },
+   "since": "M1"
+  },
+  {
+   "kind": "Package",
+   "natural_key": {
+    "ecosystem": "swiftpm",
+    "name": "Edge",
+    "manifest_dir": "services/edge"
+   },
+   "since": "M1"
+  },
+  {
+   "kind": "Endpoint",
+   "natural_key": {
+    "component_root": "services/orders",
+    "protocol": "grpc",
+    "method": "RPC",
+    "route": "/Orders/GetOrder"
+   },
+   "since": "M0",
+   "attributes": {
+    "framework": "grpc-go"
+   }
+  },
+  {
+   "kind": "Endpoint",
+   "natural_key": {
+    "component_root": "services/catalog",
+    "protocol": "http",
+    "method": "GET",
+    "route": "/api/products/{id}"
+   },
+   "since": "M0",
+   "attributes": {
+    "framework": "spring"
+   }
+  },
+  {
+   "kind": "Endpoint",
+   "natural_key": {
+    "component_root": "services/catalog",
+    "protocol": "graphql",
+    "method": "QUERY",
+    "route": "products"
+   },
+   "since": "M0",
+   "attributes": {
+    "framework": "spring-graphql"
+   }
+  },
+  {
+   "kind": "Endpoint",
+   "natural_key": {
+    "component_root": "services/catalog",
+    "protocol": "graphql",
+    "method": "QUERY",
+    "route": "product"
+   },
+   "since": "M0",
+   "attributes": {
+    "framework": "spring-graphql"
+   }
+  },
+  {
+   "kind": "Endpoint",
+   "natural_key": {
+    "component_root": "services/billing",
+    "protocol": "http",
+    "method": "POST",
+    "route": "/api/invoices"
+   },
+   "since": "M0",
+   "attributes": {
+    "framework": "aspnetcore-minimal"
+   }
+  },
+  {
+   "kind": "Endpoint",
+   "natural_key": {
+    "component_root": "services/billing",
+    "protocol": "http",
+    "method": "GET",
+    "route": "/api/invoices/{id}"
+   },
+   "since": "M0",
+   "attributes": {
+    "framework": "aspnetcore-minimal"
+   }
+  },
+  {
+   "kind": "Endpoint",
+   "natural_key": {
+    "component_root": "services/storefront",
+    "protocol": "http",
+    "method": "GET",
+    "route": "/health"
+   },
+   "since": "M0",
+   "attributes": {
+    "framework": "rails"
+   }
+  },
+  {
+   "kind": "Endpoint",
+   "natural_key": {
+    "component_root": "services/storefront",
+    "protocol": "http",
+    "method": "POST",
+    "route": "/carts"
+   },
+   "since": "M0",
+   "attributes": {
+    "framework": "rails"
+   }
+  },
+  {
+   "kind": "Endpoint",
+   "natural_key": {
+    "component_root": "services/storefront",
+    "protocol": "http",
+    "method": "GET",
+    "route": "/carts/:id"
+   },
+   "since": "M0",
+   "attributes": {
+    "framework": "rails"
+   }
+  },
+  {
+   "kind": "Endpoint",
+   "natural_key": {
+    "component_root": "services/edge",
+    "protocol": "http",
+    "method": "GET",
+    "route": "/api/ping"
+   },
+   "since": "M0",
+   "attributes": {
+    "framework": "vapor"
+   }
+  },
+  {
+   "kind": "Table",
+   "natural_key": {
+    "datastore": "default",
+    "name": "products"
+   },
+   "since": "M0",
+   "attributes": {
+    "orm": "jpa"
+   }
+  },
+  {
+   "kind": "Table",
+   "natural_key": {
+    "datastore": "default",
+    "name": "invoices"
+   },
+   "since": "M0",
+   "attributes": {
+    "orm": "efcore"
+   }
+  },
+  {
+   "kind": "Table",
+   "natural_key": {
+    "datastore": "default",
+    "name": "carts"
+   },
+   "since": "M0",
+   "attributes": {
+    "orm": "activerecord"
+   }
+  },
+  {
+   "kind": "EventTopic",
+   "natural_key": {
+    "name": "order-events"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "EventTopic",
+   "natural_key": {
+    "name": "invoices"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "ExternalDependency",
+   "natural_key": {
+    "ecosystem": "nuget",
+    "name": "Microsoft.AspNetCore.App"
+   },
+   "since": "M1"
+  },
+  {
+   "kind": "ExternalDependency",
+   "natural_key": {
+    "ecosystem": "swiftpm",
+    "name": "vapor"
+   },
+   "since": "M1"
+  },
+  {
+   "kind": "Component",
+   "natural_key": {
+    "root": "services/orders"
+   },
+   "since": "M2",
+   "attributes": {
+    "component_kind": "service"
+   }
+  },
+  {
+   "kind": "Component",
+   "natural_key": {
+    "root": "services/catalog"
+   },
+   "since": "M2",
+   "attributes": {
+    "component_kind": "service"
+   }
+  },
+  {
+   "kind": "Component",
+   "natural_key": {
+    "root": "services/billing"
+   },
+   "since": "M2",
+   "attributes": {
+    "component_kind": "service"
+   }
+  },
+  {
+   "kind": "Component",
+   "natural_key": {
+    "root": "services/storefront"
+   },
+   "since": "M2",
+   "attributes": {
+    "component_kind": "service"
+   }
+  },
+  {
+   "kind": "Component",
+   "natural_key": {
+    "root": "services/edge"
+   },
+   "since": "M2",
+   "attributes": {
+    "component_kind": "service"
+   }
+  }
+ ],
+ "edges": [
+  {
+   "subject": {
+    "kind": "Interface",
+    "natural_key": {
+     "path": "proto/orders/v1/orders.proto",
+     "title": "shop.orders.v1.Orders"
+    }
+   },
+   "predicate": "CONTAINS",
+   "object": {
+    "kind": "Endpoint",
+    "natural_key": {
+     "component_root": "services/orders",
+     "protocol": "grpc",
+     "method": "RPC",
+     "route": "/Orders/GetOrder"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Interface",
+    "natural_key": {
+     "path": "schema/catalog.graphql",
+     "title": "catalog"
+    }
+   },
+   "predicate": "CONTAINS",
+   "object": {
+    "kind": "Endpoint",
+    "natural_key": {
+     "component_root": "services/catalog",
+     "protocol": "graphql",
+     "method": "QUERY",
+     "route": "products"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Interface",
+    "natural_key": {
+     "path": "asyncapi.yaml",
+     "title": "Shop events"
+    }
+   },
+   "predicate": "CONTAINS",
+   "object": {
+    "kind": "EventTopic",
+    "natural_key": {
+     "name": "order-events"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Package",
+    "natural_key": {
+     "ecosystem": "go",
+     "name": "example.com/shop/orders",
+     "manifest_dir": "services/orders"
+    }
+   },
+   "predicate": "PUBLISHES_TO",
+   "object": {
+    "kind": "EventTopic",
+    "natural_key": {
+     "name": "order-events"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Package",
+    "natural_key": {
+     "ecosystem": "maven",
+     "name": "catalog",
+     "manifest_dir": "services/catalog"
+    }
+   },
+   "predicate": "SUBSCRIBES_TO",
+   "object": {
+    "kind": "EventTopic",
+    "natural_key": {
+     "name": "order-events"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Package",
+    "natural_key": {
+     "ecosystem": "nuget",
+     "name": "Billing.Api",
+     "manifest_dir": "services/billing"
+    }
+   },
+   "predicate": "PUBLISHES_TO",
+   "object": {
+    "kind": "EventTopic",
+    "natural_key": {
+     "name": "invoices"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Component",
+    "natural_key": {
+     "root": "services/catalog"
+    }
+   },
+   "predicate": "EXPOSES",
+   "object": {
+    "kind": "Endpoint",
+    "natural_key": {
+     "component_root": "services/catalog",
+     "protocol": "graphql",
+     "method": "QUERY",
+     "route": "product"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Component",
+    "natural_key": {
+     "root": "services/edge"
+    }
+   },
+   "predicate": "EXPOSES",
+   "object": {
+    "kind": "Endpoint",
+    "natural_key": {
+     "component_root": "services/edge",
+     "protocol": "http",
+     "method": "GET",
+     "route": "/api/ping"
+    }
+   },
+   "since": "M2"
+  }
+ ],
+ "absent_entities": [],
+ "exclusions": [],
+ "forbidden_kinds": [
+  "Symbol"
+ ],
+ "expected_unknowns": [],
+ "expected_conflicts": [
+  {
+   "since": "M2",
+   "detail": "base: RPC /Orders/CreateOrder is declared in proto/orders/v1/orders.proto and no implementation was found (resolved by 01)"
+  },
+  {
+   "since": "M2",
+   "detail": "base and 01: MUTATION addProduct is declared in schema/catalog.graphql and no implementation was found (resolved by 02)"
+  }
+ ],
+ "commits": [
+  {
+   "dir": "01-implement-create-order",
+   "expect": "the declared CreateOrder RPC gets its Go implementation: contract_match goes from 3/5 to 4/5",
+   "added_entities": [
+    {
+     "kind": "Endpoint",
+     "natural_key": {
+      "component_root": "services/orders",
+      "protocol": "grpc",
+      "method": "RPC",
+      "route": "/Orders/CreateOrder"
+     },
+     "since": "M0",
+     "attributes": {
+      "framework": "grpc-go"
+     }
+    }
+   ],
+   "removed_entities": []
+  },
+  {
+   "dir": "02-add-mutation",
+   "expect": "the addProduct mutation the schema declares is implemented: contract_match 5/5",
+   "added_entities": [
+    {
+     "kind": "Endpoint",
+     "natural_key": {
+      "component_root": "services/catalog",
+      "protocol": "graphql",
+      "method": "MUTATION",
+      "route": "addProduct"
+     },
+     "since": "M0",
+     "attributes": {
+      "framework": "spring-graphql"
+     }
+    }
+   ],
+   "removed_entities": []
+  },
+  {
+   "dir": "03-cart-checkout",
+   "expect": "a Rails member route under resources :carts",
+   "added_entities": [
+    {
+     "kind": "Endpoint",
+     "natural_key": {
+      "component_root": "services/storefront",
+      "protocol": "http",
+      "method": "POST",
+      "route": "/carts/:id/checkout"
+     },
+     "since": "M0",
+     "attributes": {
+      "framework": "rails"
+     }
+    }
+   ],
+   "removed_entities": []
+  }
+ ],
+ "decision_cases": []
+}

@@ -1,0 +1,11 @@
+{
+  "name": "billing-worker",
+  "private": true,
+  "scripts": {
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@azure/service-bus": "^7.9.0",
+    "@google-cloud/pubsub": "^4.0.0"
+  }
+}

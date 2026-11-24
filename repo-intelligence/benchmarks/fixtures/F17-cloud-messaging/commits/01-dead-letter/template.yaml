@@ -1,0 +1,31 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: Order intake
+
+Resources:
+  OrdersQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: orders-queue
+  OrdersDeadLetter:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: orders-dlq
+  OrderNotifications:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: order-notifications
+  ProcessOrders:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: orders.app.handler
+      Runtime: python3.12
+      CodeUri: functions/
+      Environment:
+        Variables:
+          STAGE: !Ref AWS::StackName
+      Events:
+        Intake:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt OrdersQueue.Arn
