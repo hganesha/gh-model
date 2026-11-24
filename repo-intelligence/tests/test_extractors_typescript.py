@@ -322,3 +322,56 @@ mailer.send({ to: "a@b.c" });
     # No broker client imported: a `send` or `subscribe` call is not a topic use.
     plain, _ = run(TS, "svc/src/mail.ts", 'mailer.send({ topic: "hello" });\nstore.subscribe(listener);\n')
     assert not of_kind(plain, "topic_use")
+
+
+# ---- GI-009: Prisma client call sites, unsafe raw SQL, test cases
+
+PRISMA_USE = b'''import { PrismaClient } from "@prisma/client";
+import { db } from "../lib/db";
+
+const prisma = new PrismaClient();
+
+export async function bulk(sql: string) {
+  await prisma.$transaction(async (tx) => {
+    await tx.orderItem.createMany({ data: [] });
+  });
+  await db.customer.findUnique({ where: { id: 1 } });
+  await prisma.$queryRaw`SELECT 1`;
+  return prisma.$executeRawUnsafe(sql);
+}
+
+class Repo {
+  constructor(private prisma: PrismaClient) {}
+  async all() {
+    return this.prisma.order.findMany();
+  }
+}
+
+const cache = new Map();
+cache.order.findMany();
+'''
+
+
+def test_prisma_client_calls_become_orm_uses_and_unsafe_raw_sql_is_dynamic():
+    from repo_intel.extractors.typescript_source import TypeScriptSource
+    out = TypeScriptSource().extract("api/src/repo.ts", PRISMA_USE, "ab" * 32).observations
+    uses = [(o.payload["function"], o.payload["function_kind"], o.payload["model"], o.payload["access"]) for o in out if o.kind == "orm_use"]
+    assert uses == [("bulk", "function", "orderItem", "write"), ("bulk", "function", "customer", "read"), ("Repo.all", "method", "order", "read")]
+    assert all(o.payload["orm"] == "prisma" for o in out if o.kind == "orm_use")
+    assert [o.payload for o in out if o.kind == "dynamic_sql"] == [{"function": "bulk", "function_kind": "function"}], "tagged $queryRaw is parameterised, not dynamic"
+
+
+def test_inline_express_callbacks_are_named_after_their_route():
+    from repo_intel.extractors.typescript_source import TypeScriptSource
+    src = b'import express from "express";\nimport { PrismaClient } from "@prisma/client";\nconst prisma = new PrismaClient();\nconst app = express();\napp.get("/orders", async (_req, res) => { res.json(await prisma.order.findMany()); });\nprisma.order.count();\n'
+    out = TypeScriptSource().extract("api/src/server.ts", src, "ab" * 32).observations
+    assert [(o.payload["function"], o.payload["function_kind"]) for o in out if o.kind == "orm_use"] == [("GET /orders", "route_handler"), ("<module>", "module")]
+
+
+def test_typescript_test_cases_with_describe_chains_and_framework():
+    from repo_intel.extractors.typescript_source import TypeScriptSource, is_test_file
+    src = b'import { describe, it } from "vitest";\ndescribe("cart", () => {\n  it("adds", () => {});\n  describe("empty", () => { it.only("is zero", () => {}); });\n});\ntest("loose", () => {});\nit(name, () => {});\n'
+    out = TypeScriptSource().extract("web/src/cart.test.ts", src, "ab" * 32).observations
+    assert [o.payload for o in out if o.kind == "test"] == [{"name": "cart > adds", "framework": "vitest"}, {"name": "cart > empty > is zero", "framework": "vitest"}, {"name": "loose", "framework": "vitest"}]
+    assert not [o for o in TypeScriptSource().extract("web/src/cart.ts", src, "ab" * 32).observations if o.kind == "test"], "only test files"
+    assert is_test_file("a/b.spec.tsx") and is_test_file("a/__tests__/x.js") and not is_test_file("a/testing.ts")

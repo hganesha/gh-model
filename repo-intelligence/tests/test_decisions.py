@@ -226,7 +226,8 @@ def test_component_kinds_by_rules_in_a_monorepo(tmp_path):
     assert kinds == {"": ("tooling", "supported"), "apps/api": ("service", "supported"), "apps/web": ("frontend_app", "supported"), "apps/worker": ("worker", "supported"), "packages/shared": ("library", "supported"), "packages/ui": ("library", "supported")}
     assert g["edges"][("Component", "@acme/api", "EXPOSES", "GET /orders")]["epistemic_status"] == "supported"
     owner = g["edges"][("Component", "@acme/api", "WRITES_TO", "orders")]
-    assert (owner["resolution"], owner["epistemic_status"], owner["qualifiers"]) == ("candidate", "inferred", {"basis": "schema_owner"})
+    # The Prisma call sites in the route handlers link exactly (GI-009), so no schema-owner lead is needed.
+    assert (owner["resolution"], owner["epistemic_status"], owner["qualifiers"]) == ("exact", "supported", {"via": "symbol"})
     assert g["edges"][("Component", "@acme/web", "CONSUMES", "GET /orders")]["resolution"] == "candidate"
 
 

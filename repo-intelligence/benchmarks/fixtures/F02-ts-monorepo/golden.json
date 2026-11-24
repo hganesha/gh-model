@@ -576,6 +576,36 @@
         }
       ],
       "removed_entities": []
+    },
+    {
+      "dir": "06-api-modules-and-tests",
+      "expect": "Prisma calls through an imported client link to the orders table; $queryRawUnsafe is dynamic SQL and stays unknown; vitest cases become Tests (GI-009)",
+      "added_entities": [
+        {
+          "kind": "Symbol",
+          "natural_key": {
+            "package": "@acme/api",
+            "qualified_name": "src/orders#listOrders"
+          },
+          "since": "M2"
+        },
+        {
+          "kind": "Test",
+          "natural_key": {
+            "path": "apps/api/src/orders.test.ts",
+            "name": "orders > lists newest first"
+          },
+          "since": "M2"
+        },
+        {
+          "kind": "Artifact",
+          "natural_key": {
+            "path": "apps/api/src/orders.test.ts"
+          },
+          "since": "M0"
+        }
+      ],
+      "removed_entities": []
     }
   ]
 }

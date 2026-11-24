@@ -273,3 +273,84 @@ def test_f01_routers_are_served_under_their_prefixes(graphs):
     assert g["edges"][("load_customer", "READS_FROM", "customers")]
     coverage = g["coverage"][("route_to_handler", ".")]
     assert coverage["detail"]["routers"]["composed"] == 2 and coverage["numerator"] == coverage["denominator"] == 4
+
+
+# ---- GI-009: TypeScript linking
+
+
+def _ts(path, source):
+    from repo_intel.extractors.typescript_source import TypeScriptSource
+    out = TypeScriptSource().extract(path, source.encode(), "cd" * 32)
+    return {"path": path, "observations": [o.model_dump(mode="json") for o in out.observations]}
+
+
+def test_workspace_imports_bind_to_the_sibling_package_entry_points():
+    files = [
+        _summary("apps/web/package.json", ("package_declaration", {"ecosystem": "npm", "name": "web", "manifest_dir": "apps/web"}),
+                 *[("dependency_declaration", {"ecosystem": "npm", "name": n, "specifier": "workspace:*", "scope": "runtime"}) for n in ("@acme/ui", "@acme/shared", "@acme/legacy")]),
+        _summary("apps/web/src/page.tsx", *[("import", {"specifier": s, "names": n, "form": "import"}) for s, n in [
+            ("@acme/ui", ["Button"]), ("@acme/ui/button", ["Button"]), ("@acme/ui/internal", ["x"]), ("@acme/shared/types", ["Order"]), ("@acme/legacy", ["y"])]]),
+    ]
+    workspace = [
+        {"ecosystem": "npm", "name": "@acme/ui", "manifest_dir": "packages/ui", "entries": {".": "packages/ui/src/index.ts", "./button": "packages/ui/src/button.tsx"}, "exports_strict": True},
+        {"ecosystem": "npm", "name": "@acme/shared", "manifest_dir": "packages/shared", "entries": {".": "packages/shared/src/index.ts"}, "exports_strict": False},
+        {"ecosystem": "npm", "name": "@acme/legacy", "manifest_dir": "packages/legacy"},
+    ]
+    linker = _Linker({"name": "apps/web", "paths": []}, files, workspace)
+    linker.resolve_imports()
+    assert linker.imports == {"internal": 0, "workspace": 4, "external": 0, "stdlib": 0, "unresolved": 1}
+    assert linker.unresolved_imports == ["apps/web/src/page.tsx: @acme/ui/internal (not exported by @acme/ui)"]
+    bound = linker.external_bindings["apps/web/src/page.tsx"]
+    assert bound["Button"] == ("@acme/ui", "packages/ui/src/button.tsx", "Button")
+    assert bound["Order"] == ("@acme/shared", "packages/shared/types", "Order"), "no exports map: any subpath is importable"
+    assert "y" not in bound, "a sibling without entry points is a workspace import with nothing to bind"
+
+
+def test_tsconfig_extends_aliases_reach_into_sibling_packages():
+    configs = [{"config": "apps/web/tsconfig.json", "dir": "apps/web", "root": "", "paths": {"@acme/shared": ["packages/shared/src/index.ts"], "@/*": ["apps/web/src/*"]}, "evidence": []}]
+    files = [
+        _summary("apps/web/package.json", ("package_declaration", {"ecosystem": "npm", "name": "web", "manifest_dir": "apps/web"})),
+        _summary("apps/web/src/lib/util.ts", ("symbol", {"name": "fmt", "symbol_kind": "function"})),
+        _summary("apps/web/src/page.tsx", *[("import", {"specifier": s, "names": n, "form": "import"}) for s, n in [("@acme/shared", ["Order"]), ("@/lib/util", ["fmt"])]]),
+    ]
+    workspace = [{"ecosystem": "npm", "name": "@acme/shared", "manifest_dir": "packages/shared", "entries": {".": "packages/shared/src/index.ts"}}]
+    linker = _Linker({"name": "apps/web", "paths": [], "ts_configs": configs}, files, workspace)
+    linker.resolve_imports()
+    assert linker.imports == {"internal": 1, "workspace": 1, "external": 0, "stdlib": 0, "unresolved": 0}, "an alias needs no package.json declaration"
+    assert linker.lookup("apps/web/src/page.tsx", "fmt") == ("apps/web/src/lib/util.ts", "fmt")
+    assert linker.external_bindings["apps/web/src/page.tsx"]["Order"] == ("@acme/shared", "packages/shared/src/index.ts", "Order")
+
+
+def test_prisma_call_sites_link_to_prisma_tables_and_tests_link_to_symbols():
+    files = [
+        _summary("api/package.json", ("package_declaration", {"ecosystem": "npm", "name": "api", "manifest_dir": "api"})),
+        _summary("api/prisma/schema.prisma", ("entity", {"kind": "Table", "natural_key": {"datastore": "default", "name": "order_items"}, "name": "order_items", "attributes": {"orm": "prisma", "model": "OrderItem"}})),
+        _ts("api/src/db.ts", 'import { PrismaClient } from "@prisma/client";\nexport const prisma = new PrismaClient();\n'),
+        _ts("api/src/items.ts", 'import { prisma } from "./db";\nexport async function items() { return prisma.orderItem.findMany(); }\nexport async function ghosts() { return prisma.ghost.findMany(); }\nexport async function raw(q: string) { return prisma.$queryRawUnsafe(q); }\n'),
+        _ts("api/src/items.spec.ts", 'import { test } from "@jest/globals";\nimport { items } from "./items";\ntest("items", async () => { await items(); });\n'),
+    ]
+    linker = _Linker({"name": "api", "paths": []}, files, [])
+    linker.resolve_imports()
+    assert linker.link_data_access() == {"linked": 1, "unresolved_model": 1, "dynamic_sql": 1}
+    rel = [(o["payload"]["subject"]["name"], o["payload"]["predicate"], o["payload"]["object"]["name"]) for o in linker.out if o["kind"] == "relation"]
+    assert rel == [("items", "READS_FROM", "order_items")]
+    assert sorted(u["reason"] for u in linker.unknowns) == ["dynamic_sql: the statement is built at runtime", "model ghost does not resolve to a table in this unit"]
+    linker.link_tests()
+    tested = [o for o in linker.out if o["kind"] == "relation" and o["payload"]["predicate"] == "TESTED_BY"]
+    assert [(t["payload"]["subject"]["name"], t["payload"]["object"]["name"], t["resolution"]) for t in tested] == [("items", "items", "candidate")]
+    test_entity = next(o for o in linker.out if o["kind"] == "entity" and o["payload"]["kind"] == "Test")
+    assert test_entity["payload"]["attributes"] == {"framework": "jest"}
+
+
+def test_f02_api_to_database_chain_and_dynamic_sql_unknown(graphs):
+    """Acceptance test 2 on the TypeScript monorepo: route, handler, ORM call and table, with spans."""
+    g = graphs("F02-ts-monorepo")[6]
+    for route, predicate in [("GET /orders", "READS_FROM"), ("POST /orders", "WRITES_TO"), ("DELETE /orders/:id", "WRITES_TO")]:
+        impl = g["edges"][(route, "IMPLEMENTS", route)]
+        data = g["edges"][(route, predicate, "orders")]
+        assert impl["resolution"] == data["resolution"] == "exact" and len(data["evidence_ids"]) == 2
+    assert g["edges"][("listOrders", "READS_FROM", "orders")]["evidence_class"] == "E3"
+    assert ("searchOrders", "READS_FROM", "dynamic_sql: the statement is built at runtime") in g["unknowns"]
+    assert g["edges"][("listOrders", "TESTED_BY", "orders > lists newest first")]["resolution"] == "candidate"
+    imports = g["coverage"][("import_resolution", "apps/web")]["detail"]
+    assert imports["workspace_bound"] == ["apps/web/app/page.tsx: @acme/shared -> packages/shared/src/index.ts", "apps/web/app/page.tsx: @acme/ui -> packages/design/src/index.ts"]

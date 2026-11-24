@@ -37,6 +37,7 @@ AI_SDKS = {"anthropic": "anthropic", "openai": "openai", "google.generativeai": 
            "@anthropic-ai/sdk": "anthropic", "@google/generative-ai": "google", "@mistralai/mistralai": "mistral", "cohere-ai": "cohere"}
 TS_EXT = (".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs")
 _TEST_PY = re.compile(r"(^|/)(test_[^/]*|[^/]*_test)\.py$")
+_TEST_TS = re.compile(r"(\.(test|spec)\.[cm]?[jt]sx?$)|(^|/)__tests__/")
 
 
 def _of(summary: Mapping[str, Any], kind: str) -> list[dict[str, Any]]:
@@ -64,6 +65,10 @@ def _local_ts_configs(summaries: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 root = posixpath.normpath(posixpath.join(p["dir"], p["base_url"])) if p.get("base_url") is not None else p["dir"]
                 out.append({"config": s["path"], "dir": p["dir"], "root": "" if root == "." else root, "paths": p["paths"], "evidence": [o["evidence"]]})
     return sorted(out, key=lambda c: (c["dir"], c["config"]))
+
+
+def _lower_first(name: str) -> str:
+    return name[:1].lower() + name[1:]
 
 
 def _join_route(prefix: str, route: str) -> str:
@@ -103,6 +108,7 @@ class _Linker:
         self.workspace_bound: list[str] = []
         self.imports = {"internal": 0, "workspace": 0, "external": 0, "stdlib": 0, "unresolved": 0}
         self.unresolved_imports: list[str] = []
+        self.inline_linked: set[tuple[str, str]] = set()
 
     # -- helpers
 
@@ -456,16 +462,26 @@ class _Linker:
 
     # -- data access
 
-    def _table_for(self, path: str, model: str) -> dict[str, Any] | None:
+    def _table_for(self, path: str, model: str, orm: str | None = None) -> dict[str, Any] | None:
+        if orm == "prisma":  # a client delegate (`order`, `orderItem`) names its model, lower-camel
+            tables = [t for p in sorted(self.files) for t in _entities(self.files[p], "Table") if t["payload"]["attributes"].get("orm") == "prisma"]
+            hits = [t for t in tables if _lower_first(t["payload"]["attributes"].get("model") or "") == model]
+            return hits[0] if len(hits) == 1 else None
         found = self.lookup(path, model)
         if found is None:
             return None
         target, name = found
         return next((t for t in _entities(self.files[target], "Table") if t["payload"]["attributes"].get("model") == name), None)
 
-    def _function_ref(self, path: str, function: str, evidence: dict[str, Any]) -> dict[str, Any]:
-        if function not in self.symbols[path]:  # a method: declare it on demand
-            self.emit("entity", path, {**self.symbol_ref(path, function), "attributes": {"symbol_kind": "method", "path": path}}, [evidence], EvidenceClass.E2)
+    def _function_ref(self, path: str, function: str, evidence: dict[str, Any], kind: str = "method") -> dict[str, Any]:
+        if function not in self.symbols[path]:  # a method or an inline callback: declare it on demand
+            self.emit("entity", path, {**self.symbol_ref(path, function), "attributes": {"symbol_kind": kind, "path": path}}, [evidence], EvidenceClass.E2)
+            if kind == "route_handler":  # an inline route callback implements the route it is named after
+                endpoint = next((e for e in _entities(self.files[path], "Endpoint") if e["payload"]["name"] == function), None)
+                if endpoint is not None and (path, function) not in self.inline_linked:
+                    self.inline_linked.add((path, function))
+                    e = endpoint["payload"]
+                    self.relate(path, self.symbol_ref(path, function), Predicate.IMPLEMENTS, ref(EntityKind.ENDPOINT, e["natural_key"], e["name"]), [endpoint["evidence"], evidence])
         return self.symbol_ref(path, function)
 
     def link_data_access(self) -> dict[str, int]:
@@ -474,8 +490,8 @@ class _Linker:
         for path in sorted(self.files):
             for o in _of(self.files[path], "orm_use"):
                 p = o["payload"]
-                table = self._table_for(path, p["model"])
-                subject = self._function_ref(path, p["function"], o["evidence"])
+                table = self._table_for(path, p["model"], p.get("orm"))
+                subject = self._function_ref(path, p["function"], o["evidence"], p.get("function_kind", "method"))
                 predicate = Predicate.WRITES_TO if p["access"] == "write" else Predicate.READS_FROM
                 if table is None:
                     counts["unresolved_model"] += 1
@@ -486,7 +502,7 @@ class _Linker:
                 self.relate(path, subject, predicate, ref(EntityKind.TABLE, t["natural_key"], t["name"]), [o["evidence"], table["evidence"]], {"via": "orm"})
             for o in _of(self.files[path], "dynamic_sql"):
                 counts["dynamic_sql"] += 1
-                subject = self._function_ref(path, o["payload"]["function"], o["evidence"])
+                subject = self._function_ref(path, o["payload"]["function"], o["evidence"], o["payload"].get("function_kind", "method"))
                 self.unknowns.append({"path": path, "subject": subject, "predicate": str(Predicate.READS_FROM), "status": "unknown", "reason": "dynamic_sql: the statement is built at runtime", "coverage_ref": scope})
         return counts
 
@@ -545,12 +561,14 @@ class _Linker:
     # -- tests
 
     def link_tests(self) -> None:
-        for path in sorted(p for p in self.files if _TEST_PY.search(p)):
+        """Test cases in pytest files and in TypeScript/JavaScript test files (`*.test.ts`,
+        `*.spec.tsx`, `__tests__/`), linked as candidates to the symbols their file imports."""
+        for path in sorted(p for p in self.files if _TEST_PY.search(p) or _TEST_TS.search(p)):
             tests = _of(self.files[path], "test")
-            targets = sorted({found for found in self.bindings[path].values() if found[1] in self.symbols[found[0]]})
+            targets = sorted({found for found in self.bindings[path].values() if found[0] in self.symbols and found[1] in self.symbols[found[0]]})
             for t in tests:
                 test = ref(EntityKind.TEST, {"path": path, "name": t["payload"]["name"]}, t["payload"]["name"])
-                self.emit("entity", path, {**test, "attributes": {"framework": "pytest"}}, [t["evidence"]], EvidenceClass.E2)
+                self.emit("entity", path, {**test, "attributes": {"framework": t["payload"].get("framework", "pytest")}}, [t["evidence"]], EvidenceClass.E2)
                 for target in targets:  # the test file imports it; whether this test calls it is not established
                     self.relate(path, self.symbol_ref(*target), Predicate.TESTED_BY, test, [t["evidence"], self.symbols[target[0]][target[1]]["evidence"]], {"basis": "test_file_import"}, evidence_class=EvidenceClass.E4, resolution="candidate")
 
@@ -628,7 +646,7 @@ def _unit_link(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, Any]:
     return {"unit": unit["name"], "observations": linker.out, "unknowns": linker.unknowns, "coverage": coverage, "exports": linker.exports()}
 
 
-UNIT_LINK = Step("unit.link", "0.7.0", _unit_link)
+UNIT_LINK = Step("unit.link", "0.8.0", _unit_link)
 
 
 # ---------------------------------------------------------------- repo-level
