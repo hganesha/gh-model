@@ -229,6 +229,24 @@
         }
       },
       "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Symbol",
+        "natural_key": {
+          "package": "orders-api",
+          "qualified_name": "app.main.create_customer"
+        }
+      },
+      "predicate": "CALLS",
+      "object": {
+        "kind": "Symbol",
+        "natural_key": {
+          "package": "orders-api",
+          "qualified_name": "app.models.Customer"
+        }
+      },
+      "since": "M2"
     }
   ],
   "absent_entities": [
@@ -306,6 +324,56 @@
           "since": "M0"
         }
       ]
+    },
+    {
+      "dir": "04-split-routers",
+      "expect": "router routes are served under the include_router and mount prefixes (GI-008): new Endpoints at the composed paths, method-level symbols",
+      "added_entities": [
+        {
+          "kind": "Endpoint",
+          "natural_key": {
+            "component_root": "",
+            "protocol": "http",
+            "method": "GET",
+            "route": "/api/v1/orders/{customer_id}/total"
+          },
+          "since": "M2"
+        },
+        {
+          "kind": "Endpoint",
+          "natural_key": {
+            "component_root": "",
+            "protocol": "http",
+            "method": "GET",
+            "route": "/admin/stats"
+          },
+          "since": "M2"
+        },
+        {
+          "kind": "Symbol",
+          "natural_key": {
+            "package": "orders-api",
+            "qualified_name": "app.services.OrderService.total"
+          },
+          "since": "M2"
+        },
+        {
+          "kind": "Symbol",
+          "natural_key": {
+            "package": "orders-api",
+            "qualified_name": "app.routers.orders.customer_total"
+          },
+          "since": "M2"
+        },
+        {
+          "kind": "Artifact",
+          "natural_key": {
+            "path": "app/routers/orders.py"
+          },
+          "since": "M0"
+        }
+      ],
+      "removed_entities": []
     }
   ],
   "forbidden_kinds": [],

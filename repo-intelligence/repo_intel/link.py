@@ -66,6 +66,12 @@ def _local_ts_configs(summaries: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return sorted(out, key=lambda c: (c["dir"], c["config"]))
 
 
+def _join_route(prefix: str, route: str) -> str:
+    """FastAPI concatenates prefixes: "/api" + "/orders" = "/api/orders"; "/api" + "" = "/api"."""
+    joined = (prefix.rstrip("/") + route) if route else (prefix or "/")
+    return re.sub(r"/{2,}", "/", joined) or "/"
+
+
 def _aliases(payload: Mapping[str, Any]) -> dict[str, str]:
     """original imported name -> local name, for `import x as y` forms."""
     raw = payload.get("aliases") or {}
@@ -90,6 +96,7 @@ class _Linker:
         self.unknowns: list[dict[str, Any]] = []
         self.symbols: dict[str, dict[str, dict[str, Any]]] = {p: {o["payload"]["name"]: o for o in _of(s, "symbol")} for p, s in self.files.items()}
         self.bindings: dict[str, dict[str, tuple[str, str]]] = {p: {} for p in self.files}  # local name -> (file, original name)
+        self.modules: dict[str, dict[str, str]] = {p: {} for p in self.files}  # local (dotted) module name -> file
         self.ts_configs = unit.get("ts_configs") or _local_ts_configs(summaries)
         self.packages = {(p["ecosystem"], p["name"]): p for p in workspace}
         self.external_bindings: dict[str, dict[str, tuple[str, str, str]]] = {p: {} for p in self.files}  # local name -> (package, file, name)
@@ -148,6 +155,12 @@ class _Linker:
         module, level, names = p.get("module") or "", int(p.get("level") or 0), list(p.get("names") or [])
         aliases = _aliases(p)
         target = self._py_target(path, module, level)
+        if not names and target is not None:  # `import a.b` / `import a.b as c`: a module binding
+            self.modules[path][p.get("alias") or module] = target
+        for name in names:  # `from pkg import mod`: the name may be a submodule
+            sub = self._py_target(path, f"{module}.{name}" if module else name, level) if name != "*" else None
+            if sub is not None:
+                self.modules[path][aliases.get(name, name)] = sub
         if target is None and level and not module:  # `from . import x`: each name may itself be a module
             hits = {n: self._py_target(path, n, level) for n in names}
             if names and all(hits.values()):
@@ -298,24 +311,147 @@ class _Linker:
 
     # -- routes
 
-    def link_routes(self) -> dict[str, int]:
+    def resolve_object(self, path: str, dotted: str) -> tuple[str, str] | None:
+        """(file, name) of the module-level object `dotted` names in `path`: defined
+        here, imported by name, or reached through an imported module."""
+        if "." not in dotted:
+            if dotted in self.bindings[path]:
+                return self.bindings[path][dotted]
+            return path, dotted
+        parts = dotted.split(".")
+        for i in range(len(parts) - 1, 0, -1):
+            head = ".".join(parts[:i])
+            if head in self.modules[path]:
+                return self.modules[path][head], ".".join(parts[i:])
+        return None
+
+    def link_routers(self) -> dict[str, Any]:
+        """FastAPI routers and sub-applications: compose `include_router(prefix=)` and
+        `mount` prefixes across files, and emit each router route's Endpoint at its
+        served path. Returns the endpoints per route_handler for `link_routes`."""
+        decls = {(path, o["payload"]["name"]): o for path in self.files for o in _of(self.files[path], "router_decl")}
+        parents: dict[tuple[str, str], list[tuple[tuple[str, str], str | None, dict[str, Any], str]]] = {}
+        for path in sorted(self.files):
+            for o in _of(self.files[path], "router_include"):
+                p = o["payload"]
+                owner, target = self.resolve_object(path, p["owner"]), self.resolve_object(path, p["target"])
+                if owner in decls and target in decls:
+                    parents.setdefault(target, []).append((owner, p["prefix"], o["evidence"], p["via"]))
+        self.router_counts = {"composed": 0, "unmounted": 0, "dynamic_prefix": 0, "unknown_router": 0}
+
+        def prefixes(node: tuple[str, str], seen: frozenset) -> list[tuple[str | None, list[dict[str, Any]]]]:
+            """Every full prefix under which `node` is served, with the include calls on the way."""
+            if node not in parents or node in seen:
+                return [("", [])]
+            out = []
+            for owner, prefix, ev, _ in sorted(parents[node], key=lambda x: (x[0], x[1] or "")):
+                # An APIRouter's own prefix applies to what is included into it, too.
+                own = decls[owner]["payload"].get("prefix", "")
+                for above, chain in prefixes(owner, seen | {node}):
+                    out.append((None if above is None or prefix is None or own is None else above + own + prefix, chain + [ev]))
+            return out
+
+        found: dict[str, dict[int, list[dict[str, Any]]]] = {}
+        for path in sorted(self.files):
+            for i, o in enumerate(_of(self.files[path], "route_handler")):
+                p = o["payload"]
+                if p.get("framework", "fastapi") != "fastapi" or "router" not in p:
+                    continue
+                node = self.resolve_object(path, p["router"])
+                decl = decls.get(node) if node else None
+                if decl is None:
+                    self.router_counts["unknown_router"] += 1
+                    if node is None or node[0] == path:
+                        continue  # an object of this file that is no FastAPI app or router
+                    places = [("", [])]  # a router imported from a file this unit does not hold
+                else:
+                    places = prefixes(node, frozenset())
+                local = decl is not None and decl["payload"]["factory"] == "FastAPI" and node[0] == path
+                mounted = node in parents
+                for prefix, chain in places:
+                    if prefix is None:
+                        self.router_counts["dynamic_prefix"] += 1
+                        continue
+                    route = _join_route(prefix, p["route"])
+                    if local and not chain:
+                        continue  # the extractor already emitted this one: an app route at its own path
+                    key = {"component_root": "@unit", "protocol": "http", "method": p["method"], "route": route}
+                    endpoint = ref(EntityKind.ENDPOINT, key, f"{p['method']} {route}")
+                    attributes = {"framework": "fastapi", "handler": p.get("handler")}
+                    if decl is not None and decl["payload"]["factory"] == "APIRouter" and not mounted:
+                        attributes["mounted"] = False
+                        self.router_counts["unmounted"] += 1
+                    elif chain:
+                        self.router_counts["composed"] += 1
+                    self.emit("entity", path, {**endpoint, "attributes": attributes}, [o["evidence"], *chain], EvidenceClass.E3 if chain else EvidenceClass.E2)
+                    found.setdefault(path, {}).setdefault(i, []).append(endpoint)
+                    if local and chain:  # a sub-application mounted under a prefix: its own path is an alias
+                        own = ref(EntityKind.ENDPOINT, {**key, "route": p["route"]}, f"{p['method']} {p['route']}", declare=False)
+                        self.relate(path, own, Predicate.ALIAS_OF, endpoint, [o["evidence"], *chain], {"basis": "mounted_sub_application", "prefix": prefix})
+        return found
+
+    def link_routes(self, composed: dict[str, dict[int, list[dict[str, Any]]]] | None = None) -> dict[str, int]:
         counts = {"symbol": 0, "inline": 0, "unresolved": 0}
+        composed = composed or {}
         for path in sorted(self.files):
             endpoints = {(e["payload"]["natural_key"]["method"], e["payload"]["natural_key"]["route"]): e for e in _entities(self.files[path], "Endpoint")}
-            for o in _of(self.files[path], "route_handler"):
+            for i, o in enumerate(_of(self.files[path], "route_handler")):
                 p = o["payload"]
                 handler = p.get("handler")
-                endpoint = endpoints.get((p["method"], p["route"]))
+                targets = composed.get(path, {}).get(i) or ([ref(EntityKind.ENDPOINT, endpoints[(p["method"], p["route"])]["payload"]["natural_key"], endpoints[(p["method"], p["route"])]["payload"]["name"])] if (p["method"], p["route"]) in endpoints else [])
                 if handler is None:
                     counts["inline"] += 1
                     continue
                 found = self.lookup(path, handler)
-                if endpoint is None or found is None or found[1] not in self.symbols[found[0]]:
+                if not targets or found is None or found[1] not in self.symbols[found[0]]:
                     counts["unresolved"] += 1
                     continue
                 counts["symbol"] += 1
-                e = endpoint["payload"]
-                self.relate(path, self.symbol_ref(*found), Predicate.IMPLEMENTS, ref(EntityKind.ENDPOINT, e["natural_key"], e["name"]), [o["evidence"], self.symbols[found[0]][found[1]]["evidence"]])
+                for endpoint in targets:
+                    self.relate(path, self.symbol_ref(*found), Predicate.IMPLEMENTS, endpoint, [o["evidence"], self.symbols[found[0]][found[1]]["evidence"]])
+        return counts
+
+    # -- call graph (Python)
+
+    def link_calls(self) -> dict[str, int]:
+        """CALLS between symbols of this unit, where the callee resolves exactly: a local
+        function or class, an imported name, `module.f`, `Class.method`, `self.method`."""
+        counts = {"resolved": 0, "unresolved": 0, "not_a_symbol": 0}
+        for path in sorted(p for p in self.files if p.endswith(".py")):
+            for o in _of(self.files[path], "call"):
+                caller, callee = o["payload"]["caller"], o["payload"]["callee"]
+                if caller not in self.symbols[path]:
+                    continue
+                parts = callee.split(".")
+                target: tuple[str, str] | None = None
+                if parts[0] in ("self", "cls") and "." in caller and len(parts) == 2:
+                    target = (path, f"{caller.split('.')[0]}.{parts[1]}")
+                elif len(parts) > 1 and parts[0] in self.modules[path] and parts[0] not in self.symbols[path]:
+                    target = self.resolve_object(path, callee)
+                elif parts[0] in self.symbols[path] or parts[0] in self.bindings[path]:
+                    base = self.lookup(path, parts[0])
+                    target = (base[0], ".".join([base[1], *parts[1:]])) if base else None
+                else:
+                    target = self.resolve_object(path, callee) if len(parts) > 1 else None
+                    if target is not None and target[1] not in self.symbols.get(target[0], {}):
+                        head, _, rest = target[1].partition(".")  # module.name re-exported from a package
+                        found = self.lookup(target[0], head) if target[0] in self.files else None
+                        target = (found[0], ".".join(filter(None, [found[1], rest]))) if found else target
+                    elif target is None:
+                        continue  # not a name this unit binds: a library or builtin call
+                if target is None or target[0] not in self.symbols:
+                    counts["unresolved"] += 1
+                    continue
+                if target[1] not in self.symbols[target[0]]:
+                    # An object imported by name that is no function or class (`Session =
+                    # sessionmaker()`) is not a symbol; anything else that does not resolve is unresolved.
+                    by_name = len(parts) == 1 and parts[0] in self.bindings[path]
+                    counts["not_a_symbol" if by_name else "unresolved"] += 1
+                    continue
+                if (target[0], target[1]) == (path, caller):
+                    continue  # recursion adds nothing
+                counts["resolved"] += 1
+                self.relate(path, self.symbol_ref(path, caller), Predicate.CALLS, self.symbol_ref(*target), [o["evidence"], self.symbols[target[0]][target[1]]["evidence"]])
         return counts
 
     # -- data access
@@ -468,7 +604,8 @@ def _unit_link(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, Any]:
     linker = _Linker(unit, inputs["summaries"], inputs["workspace_packages"])
     linker.declare_symbols()
     linker.resolve_imports()
-    routes = linker.link_routes()
+    routes = linker.link_routes(linker.link_routers())
+    calls = linker.link_calls()
     data = linker.link_data_access()
     topics = linker.link_topics()
     linker.link_tests()
@@ -481,15 +618,17 @@ def _unit_link(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, Any]:
     total_data = sum(data.values())
     coverage = [
         CoverageEntry(domain="import_resolution", scope=unit["name"], numerator=total_imports - imp["unresolved"], denominator=total_imports, detail={**imp, "unresolved_imports": sorted(linker.unresolved_imports)[:50], **({"workspace_bound": sorted(linker.workspace_bound)[:50]} if linker.workspace_bound else {})}).row(),
-        CoverageEntry(domain="route_to_handler", scope=unit["name"], numerator=routes["symbol"] + routes["inline"], denominator=total_routes, detail=routes).row(),
+        CoverageEntry(domain="route_to_handler", scope=unit["name"], numerator=routes["symbol"] + routes["inline"], denominator=total_routes, detail={**routes, **({"routers": linker.router_counts} if any(linker.router_counts.values()) else {})}).row(),
         CoverageEntry(domain="data_access", scope=unit["name"], numerator=data["linked"], denominator=total_data, detail=data).row(),
     ]
+    if calls["resolved"] + calls["unresolved"]:  # reported only where a unit has calls to its own names
+        coverage.append(CoverageEntry(domain="call_graph", scope=unit["name"], numerator=calls["resolved"], denominator=calls["resolved"] + calls["unresolved"], detail=calls).row())
     if sum(topics.values()):  # reported only where a unit uses a message broker
         coverage.append(CoverageEntry(domain="event_topics", scope=unit["name"], numerator=topics["literal"] + topics["constant"], denominator=sum(topics.values()), detail=topics).row())
     return {"unit": unit["name"], "observations": linker.out, "unknowns": linker.unknowns, "coverage": coverage, "exports": linker.exports()}
 
 
-UNIT_LINK = Step("unit.link", "0.6.0", _unit_link)
+UNIT_LINK = Step("unit.link", "0.7.0", _unit_link)
 
 
 # ---------------------------------------------------------------- repo-level

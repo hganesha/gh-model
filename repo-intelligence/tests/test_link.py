@@ -199,3 +199,77 @@ def test_typescript_topic_through_an_imported_object_constant():
     topics = [o["payload"]["name"] for o in linker.out if o["kind"] == "entity" and o["payload"]["kind"] == "EventTopic"]
     assert topics == ["orders.shipped"]
     assert [u["reason"] for u in linker.unknowns] == ["topic Topics.MISSING does not resolve to a string constant in this unit"]
+
+
+# ---- GI-008: FastAPI router prefixes, call graph, method symbols
+
+
+def _py(path, source):
+    from repo_intel.extractors.python_source import PythonSource
+    out = PythonSource().extract(path, source.encode(), "cd" * 32)
+    return {"path": path, "observations": [o.model_dump(mode="json") for o in out.observations]}
+
+
+def test_router_prefixes_compose_across_files_and_levels():
+    files = [
+        _summary("svc/pyproject.toml", ("package_declaration", {"ecosystem": "pypi", "name": "svc", "manifest_dir": "svc"})),
+        _py("svc/app/__init__.py", ""),
+        _py("svc/app/main.py", 'from fastapi import FastAPI\nfrom .api import v1\nfrom .api.v1 import loose\napp = FastAPI()\napp.include_router(v1.api, prefix="/api")\napp.include_router(loose.router, prefix=PREFIX)\n'),
+        _py("svc/app/api/__init__.py", ""),
+        _py("svc/app/api/v1.py", 'from fastapi import APIRouter\nfrom .items import router as items_router\napi = APIRouter(prefix="/v1")\napi.include_router(items_router)\napi.include_router(items_router, prefix="/legacy")\n'),
+        _py("svc/app/api/items.py", 'from fastapi import APIRouter\nrouter = APIRouter(prefix="/items")\n\n@router.get("/{item_id}")\ndef get_item(item_id: int):\n    return {}\n'),
+        _py("svc/app/api/v1/loose.py", ""),
+        _py("svc/app/orphan.py", 'from fastapi import APIRouter\nrouter = APIRouter()\n\n@router.post("/ping")\ndef ping():\n    return {}\n'),
+    ]
+    linker = _Linker({"name": "svc", "paths": []}, files, [])
+    linker.resolve_imports()
+    found = linker.link_routers()
+    routes = sorted(o["payload"]["natural_key"]["route"] for o in linker.out if o["kind"] == "entity")
+    assert routes == ["/api/v1/items/{item_id}", "/api/v1/legacy/items/{item_id}", "/ping"]
+    assert not any(r.startswith("/items") for r in routes), "a router's own path is not served"
+    orphan = next(o for o in linker.out if o["kind"] == "entity" and o["payload"]["natural_key"]["route"] == "/ping")
+    assert orphan["payload"]["attributes"]["mounted"] is False and orphan["evidence_class"] == "E2"
+    composed = next(o for o in linker.out if o["kind"] == "entity" and o["payload"]["natural_key"]["route"] == "/api/v1/items/{item_id}")
+    assert composed["evidence_class"] == "E3" and len(composed["evidence"]) == 3, "route plus each include on the way"
+    assert linker.router_counts == {"composed": 2, "unmounted": 1, "dynamic_prefix": 0, "unknown_router": 0}
+    counts = linker.link_routes(found)
+    assert counts == {"symbol": 2, "inline": 0, "unresolved": 0}
+    implemented = sorted(o["payload"]["object"]["name"] for o in linker.out if o["kind"] == "relation" and o["payload"]["predicate"] == "IMPLEMENTS")
+    assert implemented == ["GET /api/v1/items/{item_id}", "GET /api/v1/legacy/items/{item_id}", "POST /ping"]
+
+
+def test_python_call_graph_resolves_exact_targets_only():
+    files = [
+        _summary("svc/pyproject.toml", ("package_declaration", {"ecosystem": "pypi", "name": "svc", "manifest_dir": "svc"})),
+        _py("svc/app/__init__.py", ""),
+        _py("svc/app/util.py", "def fmt(x):\n    return x\n\nVALUE = make()\n"),
+        _py("svc/app/models.py", "class Order:\n    def save(self):\n        return self._write() or self.inherited()\n\n    def _write(self):\n        return 1\n"),
+        _py("svc/app/svc.py", "import json\nfrom . import util\nfrom .models import Order as O\nfrom .util import VALUE\n\ndef run(x):\n    util.fmt(x)\n    json.dumps(x)\n    VALUE()\n    o = O()\n    O.save(o)\n    run(x)\n    return util.missing(x)\n"),
+    ]
+    linker = _Linker({"name": "svc", "paths": []}, files, [])
+    linker.resolve_imports()
+    counts = linker.link_calls()
+    edges = sorted((o["payload"]["subject"]["natural_key"]["qualified_name"], o["payload"]["object"]["natural_key"]["qualified_name"]) for o in linker.out if o["kind"] == "relation")
+    assert edges == [
+        ("app.models.Order.save", "app.models.Order._write"),
+        ("app.svc.run", "app.models.Order"),
+        ("app.svc.run", "app.models.Order.save"),
+        ("app.svc.run", "app.util.fmt"),
+    ]
+    assert counts == {"resolved": 4, "unresolved": 2, "not_a_symbol": 1}, "util.missing and self.inherited are unresolved; VALUE is not a symbol"
+    assert all(o["evidence_class"] == "E3" and o["resolution"] == "exact" for o in linker.out)
+
+
+def test_f01_routers_are_served_under_their_prefixes(graphs):
+    g = graphs("F01-python-api")[4]
+    routes = {e["natural_key"]["route"] for e in g["entities"].values() if e["kind"] == "Endpoint"}
+    assert routes == {"/customers", "/api/v1/orders/{customer_id}/total", "/admin/stats", "/stats"}
+    assert not any(r.startswith("/orders") for r in routes)
+    a = g["edges"][("customer_total", "IMPLEMENTS", "GET /api/v1/orders/{customer_id}/total")]
+    assert (a["resolution"], a["evidence_class"]) == ("exact", "E3")
+    assert g["edges"][("GET /stats", "ALIAS_OF", "GET /admin/stats")]["qualifiers"] == {"basis": "mounted_sub_application", "prefix": "/admin"}
+    for caller, callee in [("customer_total", "load_customer"), ("customer_total", "OrderService"), ("OrderService.total", "OrderService._sum"), ("create_customer", "Customer")]:
+        assert g["edges"][(caller, "CALLS", callee)]["resolution"] == "exact"
+    assert g["edges"][("load_customer", "READS_FROM", "customers")]
+    coverage = g["coverage"][("route_to_handler", ".")]
+    assert coverage["detail"]["routers"]["composed"] == 2 and coverage["numerator"] == coverage["denominator"] == 4
