@@ -78,7 +78,7 @@ function Connections({ view, draft, update, busy, setStatus }: {
     try {
       if (poll) {
         const result = await api<{ status: string }>(`settings/connections/${id}/device/poll`, { body: {} });
-        setStatus({ ok: result.status === "complete", text: result.status === "complete" ? "GitHub authorization saved to the OS keychain." : `Authorization is ${result.status}.` });
+        setStatus({ ok: result.status === "complete", text: result.status === "complete" ? `GitHub authorization saved to ${view.credential_store === "vault" ? "Key Vault" : "the OS keychain"}.` : `Authorization is ${result.status}.` });
         if (result.status !== "pending") {
           setDevices((prev) => {
             const next = { ...prev };

@@ -188,7 +188,8 @@ export function ConnectDialog({ target, onClose, onSnapshot }: { target: Connect
     page ? `settings/connections/${connection}/repositories?page=${page}` : null,
   );
   const plain = configuration.data?.settings.connections.find((c) => c.id === connection)?.mode.startsWith("git_") ?? false;
-  const cliAvailable = configuration.data?.github_cli !== false;
+  // Offer `gh` only once settings say it is installed, so it never flashes up on the hosted server.
+  const cliAvailable = configuration.data !== undefined && configuration.data.github_cli !== false;
   const firstConnection = configuration.data?.settings.connections[0]?.id;
   // Where `gh` is not installed (the hosted server), start from the first configured connection instead.
   useEffect(() => {
