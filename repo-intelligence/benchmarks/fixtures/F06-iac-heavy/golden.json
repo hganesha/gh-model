@@ -198,6 +198,24 @@
         }
       },
       "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "DeploymentUnit",
+        "natural_key": {
+          "kind": "compose.Service",
+          "namespace": "compose",
+          "name": "api"
+        }
+      },
+      "predicate": "BUILT_BY",
+      "object": {
+        "kind": "BuildTarget",
+        "natural_key": {
+          "path": "Dockerfile"
+        }
+      },
+      "since": "M1"
     }
   ],
   "absent_entities": [

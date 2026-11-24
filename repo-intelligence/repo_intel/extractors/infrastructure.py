@@ -4,6 +4,16 @@ Everything here is read from declarative text. Nothing is executed and no
 configuration VALUE is copied into a payload: environment variables are
 recorded by name only, Terraform resource arguments are not recorded at all.
 Image references and base images are names, not secrets, and are kept.
+
+Builds: a compose service with `build:` is BUILT_BY the Dockerfile it names;
+a workflow's `docker build` / `docker/build-push-action` steps are recorded on
+the Pipeline as `image_builds` (image repository, Dockerfile, context), which
+repo-level linking matches against the images deployment units run.
+
+Aliases: an environment variable whose whole value is another variable's name
+(`DATABASE_URL: ${DB_URL}` in compose, `DB: ${{ secrets.PROD_DB }}` in a
+workflow) is ALIAS_OF that variable. Only the two names are kept; a default
+after `:-` is a value and is dropped.
 """
 
 from __future__ import annotations
@@ -64,6 +74,25 @@ def yaml_key_span(data: bytes, key: str, value: Any = None, start: int = 0, end:
     return search_span(data, rf"""^[ \t-]*({k}[ \t]*["']?{re.escape(str(value))}["']?)[ \t]*(?:#.*)?\r?$""", start, end, 1)
 
 
+_COMPOSE_VAR = re.compile(r"^\$\{([A-Za-z_][A-Za-z0-9_]*)(?:[:?]?[-+?][^}]*)?\}$|^\$([A-Za-z_][A-Za-z0-9_]*)$")
+_ACTIONS_VAR = re.compile(r"^\$\{\{\s*(secrets|vars|env)\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}$")
+
+
+def image_repository(image: str) -> str:
+    """registry/name of an image reference, without tag or digest: what two declarations share."""
+    name = image.split("@", 1)[0]
+    head, _, tail = name.rpartition("/")
+    return f"{head}/{tail.split(':', 1)[0]}" if head else tail.split(":", 1)[0]
+
+
+def _alias(blob: str, at: Span, name: str, target: str, basis: str) -> list:
+    if not (_ENV_NAME.match(name) and target != name):
+        return []
+    key = ref(K.CONFIG_KEY, {"name": name}, name)
+    other = ref(K.CONFIG_KEY, {"name": target}, target)
+    return [entity(blob, at, K.CONFIG_KEY, {"name": target}, target, {}, E1), relation(blob, at, key, Predicate.ALIAS_OF, other, {"basis": basis}, E1)]
+
+
 def _strs(values: Any) -> list[str]:
     return [v for v in values if isinstance(v, str)] if isinstance(values, list) else []
 
@@ -105,9 +134,65 @@ class Dockerfile:
 # --------------------------------------------------------------------------- GitHub Actions
 
 
+_DOCKER_BUILD = re.compile(r"\bdocker\s+(?:image\s+)?(?:buildx\s+)?build\b([^&|;\n]*)")
+
+
+def _docker_build_args(args: str) -> dict[str, str] | None:
+    """-t/--tag image, -f/--file Dockerfile and the context of one `docker build` command."""
+    tokens, out, i = args.split(), {}, 0
+    positional = []
+    while i < len(tokens):
+        t = tokens[i]
+        if t in ("-t", "--tag", "-f", "--file") and i + 1 < len(tokens):
+            out.setdefault("image" if t in ("-t", "--tag") else "dockerfile", tokens[i + 1])
+            i += 2
+            continue
+        for flag, key in (("--tag=", "image"), ("--file=", "dockerfile")):
+            if t.startswith(flag):
+                out.setdefault(key, t[len(flag):])
+        if t.startswith("-"):
+            i += 2 if t in ("--build-arg", "--target", "--platform", "--label", "--cache-from", "--secret") else 1
+            continue
+        positional.append(t)
+        i += 1
+    if "image" not in out:
+        return None
+    out["context"] = positional[-1] if positional else "."
+    return out
+
+
+def _image_builds(jobs: dict) -> list[dict[str, str]]:
+    """The images a workflow builds: repository (no tag), Dockerfile and context, as declared."""
+    found = []
+    for job in jobs.values():
+        for step in (job.get("steps") if isinstance(job, dict) and isinstance(job.get("steps"), list) else []):
+            if not isinstance(step, dict):
+                continue
+            if isinstance(step.get("run"), str):
+                for m in _DOCKER_BUILD.finditer(step["run"]):
+                    args = _docker_build_args(m.group(1))
+                    if args:
+                        found.append(args)
+            uses, with_ = step.get("uses"), step.get("with")
+            if isinstance(uses, str) and uses.startswith("docker/build-push-action") and isinstance(with_, dict) and isinstance(with_.get("tags"), str):
+                for tag in re.split(r"[\s,]+", with_["tags"].strip()):
+                    if tag:
+                        found.append({"image": tag, "dockerfile": with_.get("file") if isinstance(with_.get("file"), str) else None, "context": with_.get("context") if isinstance(with_.get("context"), str) else "."})
+    builds = []
+    for b in found:
+        if "${{" in b["image"].split(":", 1)[0]:  # the repository itself is computed: nothing to match on
+            continue
+        context = posixpath.normpath(b["context"]) if "${{" not in b["context"] and "://" not in b["context"] else None
+        dockerfile = b.get("dockerfile") or (posixpath.join(context, "Dockerfile") if context is not None else None)
+        row = {"image": image_repository(b["image"]), "context": context, "dockerfile": posixpath.normpath(dockerfile) if dockerfile and "${{" not in dockerfile else None}
+        if row not in builds:
+            builds.append(row)
+    return sorted(builds, key=lambda r: (r["image"], r["dockerfile"] or ""))
+
+
 class GithubWorkflow:
     id = "infra.github_actions"
-    version = "1.0.0"
+    version = "1.1.0"
 
     def matches(self, path: str) -> bool:
         return is_workflow(path)
@@ -126,7 +211,19 @@ class GithubWorkflow:
         triggers = [on] if isinstance(on, str) else _strs(on) if isinstance(on, list) else [k for k in on if isinstance(k, str)] if isinstance(on, dict) else []
         jobs = doc.get("jobs") if isinstance(doc.get("jobs"), dict) else {}
         at = (yaml_key_span(data, "name", declared) if isinstance(declared, str) else None) or yaml_key_span(data, "on") or whole_file(data)
-        out = [entity(blob, at, K.PIPELINE, {"path": path, "name": name}, name, {"triggers": sorted(set(triggers)), "jobs": sorted(str(j) for j in jobs)}, E1)]
+        builds = _image_builds(jobs)
+        attributes: dict[str, Any] = {"triggers": sorted(set(triggers)), "jobs": sorted(str(j) for j in jobs)}
+        if builds:
+            attributes["image_builds"] = builds
+        out = [entity(blob, at, K.PIPELINE, {"path": path, "name": name}, name, attributes, E1)]
+        for scope in [doc] + [j for j in jobs.values() if isinstance(j, dict)] + [s for j in jobs.values() if isinstance(j, dict) for s in (j.get("steps") if isinstance(j.get("steps"), list) else []) if isinstance(s, dict)]:
+            env = scope.get("env")
+            for var, value in sorted(env.items(), key=lambda kv: str(kv[0])) if isinstance(env, dict) else []:
+                m = _ACTIONS_VAR.match(value.strip()) if isinstance(var, str) and isinstance(value, str) else None
+                if m and _ENV_NAME.match(var):
+                    var_at = yaml_key_span(data, var) or at
+                    out.append(entity(blob, var_at, K.CONFIG_KEY, {"name": var}, var, {}, E1))
+                    out += _alias(blob, var_at, var, m.group(2), {"secrets": "github_secret", "vars": "github_variable", "env": "workflow_env"}[m.group(1)])
         seen: set[str] = set()
         for job in jobs.values():
             env = job.get("environment") if isinstance(job, dict) else None
@@ -232,7 +329,7 @@ class Kubernetes:
 
 class Compose:
     id = "infra.compose"
-    version = "1.0.0"
+    version = "1.1.0"
 
     def matches(self, path: str) -> bool:
         return is_compose(path)
@@ -263,8 +360,29 @@ class Compose:
             names = [k for k in env if isinstance(k, str)] if isinstance(env, dict) else [e.split("=", 1)[0].strip() for e in _strs(env)]
             # Mapping form `K: v` or list form `- K=v` / `- K`; the span covers the name only.
             name_span = lambda n, a, b: search_span(data, rf"""^[ \t]*(?:-[ \t]*)?["']?({re.escape(n)})["']?[ \t]*(?:[:=]|\r?$)""", a, b, 1)
-            out += _config_refs(blob, data, ref(K.DEPLOYMENT_UNIT, key, service), names, at.end_byte, None, at, name_span)
+            unit = ref(K.DEPLOYMENT_UNIT, key, service)
+            out += _config_refs(blob, data, unit, names, at.end_byte, None, at, name_span)
+            pairs = env.items() if isinstance(env, dict) else [tuple(e.split("=", 1)) for e in _strs(env) if "=" in e]
+            for var, value in pairs:
+                m = _COMPOSE_VAR.match(value.strip()) if isinstance(var, str) and isinstance(value, str) else None
+                if m:
+                    out += _alias(blob, name_span(var.strip(), at.end_byte, None) or at, var.strip(), m.group(1) or m.group(2), "compose_interpolation")
+            dockerfile = _compose_dockerfile(path, body.get("build"))
+            if dockerfile:
+                build_at = yaml_key_span(data, "build", None, at.end_byte) or at
+                out.append(relation(blob, build_at, unit, Predicate.BUILT_BY, ref(K.BUILD_TARGET, {"path": dockerfile}, dockerfile, declare=False), {"basis": "compose_build"}, E1))
         return Extraction(out)
+
+
+def _compose_dockerfile(path: str, build: Any) -> str | None:
+    """Repository path of the Dockerfile a compose `build:` names (context relative to the compose file)."""
+    context, dockerfile = (build, None) if isinstance(build, str) else (build.get("context", "."), build.get("dockerfile")) if isinstance(build, dict) else (None, None)
+    if not isinstance(context, str) or "://" in context or context.startswith("git@") or "$" in context:
+        return None
+    if dockerfile is not None and (not isinstance(dockerfile, str) or "$" in dockerfile):
+        return None
+    joined = posixpath.normpath(posixpath.join(posixpath.dirname(path), context, dockerfile or "Dockerfile"))
+    return None if joined.startswith("..") else joined
 
 
 # --------------------------------------------------------------------------- Terraform

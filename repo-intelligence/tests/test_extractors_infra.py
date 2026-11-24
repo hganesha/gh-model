@@ -2,7 +2,7 @@
 
 from repo_intel.extractors import EXTRACTORS
 from repo_intel.extractors.contracts_data import OpenAPI, SqlDdl, migration_identity, split_statements
-from repo_intel.extractors.infrastructure import Compose, Dockerfile, GithubWorkflow, Kubernetes, Terraform
+from repo_intel.extractors.infrastructure import Compose, Dockerfile, GithubWorkflow, Kubernetes, Terraform, image_repository
 from repo_intel.hashing import sha256_hex
 from repo_intel.ontology import EntityKind, Predicate, check_relation
 
@@ -118,6 +118,67 @@ def test_workflow_trigger_forms_and_default_name():
     (p,) = entities(run(w, "sub/.github/workflows/x.yml", b'name: X\n"on": push\njobs: {}\n'))
     assert p.payload["attributes"]["triggers"] == ["push"]
     assert not w.matches(".github/dependabot.yml") and not w.matches("workflows/ci.yml")
+
+
+BUILDS = b"""name: release
+on: push
+env:
+  REGISTRY_TOKEN: ${{ secrets.REGISTRY_TOKEN }}
+jobs:
+  images:
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+      LOG_LEVEL: info
+    steps:
+      - run: docker build -t registry.example.com/api:${{ github.sha }} -f services/api/Dockerfile services/api && docker push registry.example.com/api
+      - run: docker build --tag=ghcr.io/acme/${{ matrix.name }}:latest .
+      - uses: docker/build-push-action@v6
+        with:
+          context: ./worker
+          tags: ghcr.io/acme/worker:1.2, ghcr.io/acme/worker:latest
+        env:
+          SENTRY_DSN: ${{ vars.SENTRY_DSN_PROD }}
+"""
+
+
+def test_workflow_image_builds_are_declared_not_run():
+    """GI-011: the images a workflow builds, with their Dockerfile and context; nothing is executed."""
+    r = run(GithubWorkflow(), ".github/workflows/release.yml", BUILDS)
+    (pipeline,) = entities(r, "Pipeline")
+    assert pipeline.payload["attributes"]["image_builds"] == [
+        {"image": "ghcr.io/acme/worker", "context": "worker", "dockerfile": "worker/Dockerfile"},
+        {"image": "registry.example.com/api", "context": "services/api", "dockerfile": "services/api/Dockerfile"},
+    ]  # the computed repository ghcr.io/acme/${{ matrix.name }} is skipped
+    assert image_repository("registry.example.com:5000/team/api:1.4@sha256:abc") == "registry.example.com:5000/team/api"
+    assert image_repository("postgres:17") == "postgres"
+
+
+def test_env_aliases_keep_names_never_values():
+    """GI-016: a variable whose whole value names another variable is ALIAS_OF it."""
+    r = run(GithubWorkflow(), ".github/workflows/release.yml", BUILDS)
+    aliases = sorted((a["name"], b["name"], q) for a, p, b, q in ((o.payload["subject"]["natural_key"], o.payload["predicate"], o.payload["object"]["natural_key"], o.payload["qualifiers"]) for o in r.observations if o.kind == "relation") if p == "ALIAS_OF")
+    assert aliases == [("DATABASE_URL", "PROD_DATABASE_URL", {"basis": "github_secret"}), ("SENTRY_DSN", "SENTRY_DSN_PROD", {"basis": "github_variable"})]
+    assert {"name": "LOG_LEVEL"} not in keys(r, "ConfigKey") and "info" not in [k["name"] for k in keys(r, "ConfigKey")]
+    assert_relations_fit_ontology(r)
+    compose = b"""services:
+  api:
+    build: {context: ./svc, dockerfile: Dockerfile.prod}
+    environment:
+      DATABASE_URL: ${DB_URL:-postgresql://u:fallbackpw@db/x}
+      SAME: ${SAME}
+  worker:
+    build: https://github.com/acme/worker.git
+    environment:
+      - QUEUE=$QUEUE_URL
+"""
+    r = run(Compose(), "deploy/docker-compose.yml", compose)
+    rel = relations(r)
+    assert ({"name": "DATABASE_URL"}, "ALIAS_OF", {"name": "DB_URL"}) in rel and ({"name": "QUEUE"}, "ALIAS_OF", {"name": "QUEUE_URL"}) in rel
+    assert not [x for x in rel if x[1] == "ALIAS_OF" and x[0] == {"name": "SAME"}]
+    assert [x[2] for x in rel if x[1] == "BUILT_BY"] == [{"path": "deploy/svc/Dockerfile.prod"}]  # a remote context is not a path here
+    assert "fallbackpw" not in repr(r)
+    assert_relations_fit_ontology(r)
 
 
 # --------------------------------------------------------------------------- Kubernetes
@@ -242,7 +303,8 @@ def test_compose_services_and_env_names_only():
     assert keys(r, "ConfigKey") == [{"name": n} for n in ("DATABASE_URL", "DEBUG", "QUEUE_URL", "PASSTHROUGH")]
     assert [text_of(c, COMPOSE) for c in entities(r, "ConfigKey")] == ["DATABASE_URL", "DEBUG", "QUEUE_URL", "PASSTHROUGH"]
     assert (units[1].payload["natural_key"], "REFERENCES_CONFIG", {"name": "QUEUE_URL"}) in relations(r)
-    assert len(relations(r)) == 4
+    assert (units[0].payload["natural_key"], "BUILT_BY", {"path": "Dockerfile"}) in relations(r)
+    assert len(relations(r)) == 5
     dump = repr(r)
     assert SECRET not in dump and "hunter2" not in dump and "guestpw" not in dump and "amqp" not in dump
     assert_relations_fit_ontology(r)
