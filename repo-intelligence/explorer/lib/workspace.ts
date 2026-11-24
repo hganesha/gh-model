@@ -121,6 +121,10 @@ export interface SettingsView {
   extractors: { id: string; version: string; tier: string }[];
   author: string | null;
   updated_at: string | null;
+  /** False where `gh` is not installed (the hosted container): the GitHub CLI connection cannot work there. */
+  github_cli?: boolean;
+  /** Where device sign-in keeps its token: Azure Key Vault when hosted, else the OS keychain. */
+  credential_store?: "vault" | "keychain";
 }
 
 export function placementLabel(placement: Placement): string {

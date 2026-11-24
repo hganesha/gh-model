@@ -15,6 +15,7 @@ import os
 import re
 import subprocess
 from dataclasses import asdict, dataclass
+from collections.abc import Callable
 from pathlib import Path
 
 _SLUG = re.compile(r"^(?:https?://github\.com/|git@github\.com:)?([A-Za-z0-9][A-Za-z0-9-]{0,38})/([A-Za-z0-9._-]{1,100}?)(?:\.git)?/?$")
@@ -23,7 +24,7 @@ _SHA = re.compile(r"^[0-9a-f]{40}$")
 
 
 class GitHubError(RuntimeError):
-    pass
+    oauth_error: str | None = None  # the OAuth `error` code a refusal carried, when there was one
 
 
 @dataclass(frozen=True)
@@ -87,6 +88,31 @@ def resolve_ref(info: RepoInfo, ref: str | None) -> str:
     return resolve_commit(info, ref)[0]
 
 
+def partial_fetch(git: Callable[[list[str], int, bytes | None], object], mirror: Path, url: str, sha: str) -> None:
+    """Fetch one commit as a partial clone: its trees first, then only the blobs a snapshot reads.
+
+    Vendored, generated and binary files, and whatever the repository's own policy excludes,
+    are never downloaded. `git(args, timeout, stdin)` runs Git with the connection's credentials.
+    """
+    from .snapshot import missing_objects, wanted_blobs
+
+    for key, value in (
+        ("core.repositoryformatversion", "1"), ("extensions.partialClone", "origin"), ("remote.origin.url", url),
+        ("remote.origin.promisor", "true"), ("remote.origin.partialclonefilter", "blob:none"),
+    ):
+        git(["-C", str(mirror), "config", key, value], 60, None)
+    if missing_objects(mirror, [sha]):
+        git(["-C", str(mirror), "fetch", "-q", "--depth", "1", "--no-tags", "--no-recurse-submodules", "--filter=blob:none", "origin", sha], 900, None)
+    def fetch_blobs(oids: list[str]) -> None:
+        if missing := missing_objects(mirror, oids):
+            git(["-C", str(mirror), "fetch", "-q", "--no-tags", "--no-write-fetch-head", "--no-recurse-submodules", "--filter=blob:none", "--stdin", "origin"], 900, ("\n".join(missing) + "\n").encode())
+
+    fetch_blobs(wanted_blobs(mirror, sha)[0])  # the policy first: it decides what else is read
+    fetch_blobs(wanted_blobs(mirror, sha)[1])
+    if missing_objects(mirror, sum(wanted_blobs(mirror, sha), [])):
+        raise GitHubError("the host did not send every file of the commit")
+
+
 def fetch_commit(info: RepoInfo, sha: str, mirrors_root: Path) -> Path:
     """Fetch exactly one commit into the repository's bare mirror; return the mirror path."""
     if not _SHA.match(sha):
@@ -98,10 +124,10 @@ def fetch_commit(info: RepoInfo, sha: str, mirrors_root: Path) -> Path:
         if not mirror.exists():
             mirror.parent.mkdir(parents=True, exist_ok=True)
             subprocess.run([*base, "init", "-q", "--bare", str(mirror)], check=True, capture_output=True, env=env, timeout=60)
-        have = subprocess.run([*base, "-C", str(mirror), "cat-file", "-e", f"{sha}^{{commit}}"], capture_output=True, env=env, timeout=60)
-        if have.returncode != 0:
-            url = f"https://github.com/{info.owner}/{info.name}.git"
-            subprocess.run([*base, "-C", str(mirror), "fetch", "-q", "--depth", "1", "--no-tags", "--no-recurse-submodules", url, sha], check=True, capture_output=True, env=env, timeout=900)
+        partial_fetch(
+            lambda args, timeout, stdin: subprocess.run([*base, *args], input=stdin, check=True, capture_output=True, env=env, timeout=timeout),
+            mirror, f"https://github.com/{info.owner}/{info.name}.git", sha,
+        )
     except subprocess.TimeoutExpired as exc:
         raise GitHubError("fetching the repository took too long") from exc
     except subprocess.CalledProcessError as exc:

@@ -5,6 +5,8 @@ const config: NextConfig = {
   reactStrictMode: true,
   // A self-contained server for the container image (see Dockerfile); `next dev` is unaffected.
   output: "standalone",
+  // The replay tests build a production server next to a running `next dev`; they must not share a folder.
+  distDir: process.env.RKP_NEXT_DIST_DIR || ".next",
   poweredByHeader: false,
   // The explorer lives inside a larger repository; keep file tracing rooted here.
   outputFileTracingRoot: path.resolve(__dirname),

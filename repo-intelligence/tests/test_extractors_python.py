@@ -65,19 +65,60 @@ def test_fastapi_routes():
     r = run(FASTAPI)
     assert r.parsed
     found = entities(r, "Endpoint")
+    # Only the app route is final here; the router route's path depends on where it is included.
     assert [e.payload["natural_key"] for e in found] == [
         {"component_root": "@unit", "protocol": "http", "method": "GET", "route": "/customers"},
-        {"component_root": "@unit", "protocol": "http", "method": "POST", "route": "/v1/orders/{order_id}"},
     ]
     assert found[0].payload["name"] == "GET /customers"
     assert found[0].payload["attributes"] == {"framework": "fastapi", "handler": "list_customers"}
     assert text(FASTAPI, found[0]) == '@app.get("/customers")'
-    assert text(FASTAPI, found[1]) == '@router.post("/orders/{order_id}")'
     assert found[0].evidence.span.start_line == found[0].evidence.span.end_line == 8
-    assert [h.payload for h in of_kind(r, "route_handler")] == [
-        {"method": "GET", "route": "/customers", "handler": "list_customers"},
-        {"method": "POST", "route": "/v1/orders/{order_id}", "handler": "create_order"},
+    handlers = of_kind(r, "route_handler")
+    assert [h.payload for h in handlers] == [
+        {"method": "GET", "route": "/customers", "handler": "list_customers", "router": "app"},
+        {"method": "POST", "route": "/v1/orders/{order_id}", "handler": "create_order", "router": "router"},
     ]
+    assert text(FASTAPI, handlers[1]) == '@router.post("/orders/{order_id}")'
+    assert [d.payload for d in of_kind(r, "router_decl")] == [{"name": "app", "factory": "FastAPI", "prefix": ""}, {"name": "router", "factory": "APIRouter", "prefix": "/v1"}]
+
+
+def test_router_includes_and_mounts():
+    src = 'from fastapi import FastAPI\nfrom . import routes\napp = FastAPI()\napp.include_router(routes.router, prefix="/api")\napp.include_router(routes.other)\napp.include_router(routes.x, prefix=PREFIX)\napp.mount("/admin", routes.admin)\napp.mount(path="/s", app=sub)\n'
+    got = [o.payload for o in of_kind(run(src), "router_include")]
+    assert got == [
+        {"owner": "app", "target": "routes.router", "prefix": "/api", "via": "include_router"},
+        {"owner": "app", "target": "routes.other", "prefix": "", "via": "include_router"},
+        {"owner": "app", "target": "routes.x", "prefix": None, "via": "include_router"},
+        {"owner": "app", "target": "routes.admin", "prefix": "/admin", "via": "mount"},
+        {"owner": "app", "target": "sub", "prefix": "/s", "via": "mount"},
+    ]
+
+
+def test_method_symbols_and_calls():
+    src = """from .db import Session
+from . import helpers
+
+
+def top(x):
+    helpers.fmt(x)
+    print(x)
+    return Order(x).save()
+
+
+class Order:
+    def save(self):
+        return self._write()
+
+    @staticmethod
+    def _write():
+        with Session() as s:
+            s.commit()
+"""
+    r = run(src)
+    assert [(o.payload["name"], o.payload["symbol_kind"]) for o in of_kind(r, "symbol")] == [("top", "function"), ("Order", "class"), ("Order.save", "method"), ("Order._write", "method")]
+    calls = [(o.payload["caller"], o.payload["callee"]) for o in of_kind(r, "call")]
+    assert calls == [("top", "helpers.fmt"), ("top", "Order"), ("Order.save", "self._write"), ("Order._write", "Session"), ("Order._write", "s.commit")]
+    assert ("top", "print") not in calls, "builtins are not recorded"
 
 
 def test_dynamic_route_path_yields_diagnostic_not_entity():
@@ -90,6 +131,7 @@ def test_dynamic_route_path_yields_diagnostic_not_entity():
 def test_api_route_methods():
     r = run('import fastapi\napp = fastapi.FastAPI()\n@app.api_route("/a", methods=["GET", "put"])\ndef a(): ...\n')
     assert [e.payload["name"] for e in entities(r, "Endpoint")] == ["GET /a", "PUT /a"]
+    assert [h.payload["router"] for h in of_kind(r, "route_handler")] == ["app", "app"]
 
 
 def test_non_fastapi_files_ignored():
@@ -221,7 +263,7 @@ def test_config_keys_names_only():
 def test_symbols_and_imports():
     source = "import os.path as p\nfrom . import sibling\nfrom ..pkg.mod import a as b, c\n\n\ndef top():\n    def inner(): ...\n\n\n@decorated\nclass Thing:\n    def method(self): ...\n"
     r = run(source)
-    assert [s.payload for s in of_kind(r, "symbol")] == [{"name": "top", "symbol_kind": "function"}, {"name": "Thing", "symbol_kind": "class"}]
+    assert [s.payload for s in of_kind(r, "symbol")] == [{"name": "top", "symbol_kind": "function"}, {"name": "Thing", "symbol_kind": "class"}, {"name": "Thing.method", "symbol_kind": "method"}]
     assert [i.payload for i in of_kind(r, "import")] == [
         {"module": "os.path", "names": [], "level": 0, "alias": "p"},
         {"module": "", "names": ["sibling"], "level": 1},
@@ -392,7 +434,8 @@ def test_linker_payload_keys():
     r = run(FASTAPI)
     assert all(set(s.payload) == {"name", "symbol_kind"} for s in of_kind(r, "symbol"))
     assert all(set(i.payload) == {"module", "names", "level"} for i in of_kind(r, "import"))
-    assert all(set(h.payload) == {"method", "route", "handler"} for h in of_kind(r, "route_handler"))
+    assert all(set(h.payload) == {"method", "route", "handler", "router"} for h in of_kind(r, "route_handler"))
+    assert all(set(c.payload) == {"caller", "callee"} for c in of_kind(r, "call"))
 
 
 SQLMODEL = """import uuid

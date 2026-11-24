@@ -1,0 +1,6 @@
+{
+ "method": "POST",
+ "path": "/v1/business-maps/run-placement",
+ "status": 403,
+ "body": "{\"code\":\"forbidden\",\"message\":\"You are signed in read-only; ask an administrator to give you the RKP admin role.\",\"retryable\":false,\"details\":{}}"
+}

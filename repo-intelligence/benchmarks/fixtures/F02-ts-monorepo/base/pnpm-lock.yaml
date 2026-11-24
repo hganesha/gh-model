@@ -1,0 +1,66 @@
+lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+
+importers:
+
+  .:
+    devDependencies:
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+
+  apps/api:
+    dependencies:
+      '@acme/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
+      '@prisma/client':
+        specifier: 6.9.0
+        version: 6.9.0(prisma@6.9.0)
+      express:
+        specifier: 5.1.0
+        version: 5.1.0
+
+  apps/web:
+    dependencies:
+      '@acme/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
+      '@acme/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
+      next:
+        specifier: 16.4.2
+        version: 16.4.2(react@19.2.6)
+      react:
+        specifier: 19.2.6
+        version: 19.2.6
+
+  apps/worker:
+    dependencies:
+      '@acme/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
+      bullmq:
+        specifier: 5.56.0
+        version: 5.56.0
+
+  packages/shared: {}
+
+  packages/ui:
+    devDependencies:
+      react:
+        specifier: ^19
+        version: 19.2.6
+
+packages:
+
+  express@5.1.0:
+    resolution: {integrity: sha512-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==}
+    engines: {node: '>= 18'}
+
+  react@19.2.6:
+    resolution: {integrity: sha512-BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB==}

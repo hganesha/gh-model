@@ -98,6 +98,37 @@
         }
       ],
       "removed_entities": []
+    },
+    {
+      "dir": "04-add-rust-crate",
+      "expect": "Cargo.toml is inventoried: a Package and its dependencies, no component (GI-007)",
+      "added_entities": [
+        {
+          "kind": "Package",
+          "natural_key": {
+            "ecosystem": "cargo",
+            "name": "fmt-tool",
+            "manifest_dir": "tools/fmt"
+          },
+          "since": "M1"
+        },
+        {
+          "kind": "ExternalDependency",
+          "natural_key": {
+            "ecosystem": "cargo",
+            "name": "serde"
+          },
+          "since": "M1"
+        },
+        {
+          "kind": "Artifact",
+          "natural_key": {
+            "path": "tools/fmt/Cargo.lock"
+          },
+          "since": "M0"
+        }
+      ],
+      "removed_entities": []
     }
   ]
 }

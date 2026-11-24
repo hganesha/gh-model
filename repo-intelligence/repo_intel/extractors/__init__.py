@@ -2,8 +2,12 @@
 
 Extractors are discovered from the modules in this package: each module that
 defines `EXTRACTORS = [...]` contributes its instances. The step version is
-derived from every extractor's id and version, so changing one extractor
-changes the toolchain hash and invalidates exactly the cached extractions.
+Each extractor has its own version: its declared version plus a digest of its
+code (`extractor_versions()`). A file's cache key includes the versions of only
+the extractors that apply to it, carried in the step config, so changing one
+extractor re-extracts only the files it matches. The reported `file.extract`
+version still folds in every extractor, so the toolchain hash moves with any of
+them.
 
 A failing extractor yields a diagnostic and a coverage gap, never a failed
 compile.
@@ -18,7 +22,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from .. import secrets
-from ..buildgraph import Ref, Step, StepInputs, StepRunner
+from ..buildgraph import Ref, Step, StepInputs, StepRunner, code_digest
 from ..contracts import FileSummary
 from ..hashing import digest, sha256_hex
 from ..ontology import EvidenceClass
@@ -51,6 +55,25 @@ def _discover() -> list[Extractor]:
 
 
 EXTRACTORS: list[Extractor] = _discover()
+_EXTRACTOR_VERSIONS: dict[tuple[str, str, type], str] = {}
+
+
+def extractor_version(extractor: Extractor) -> str:
+    """Declared version plus a digest of the extractor's code."""
+    key = (extractor.id, extractor.version, type(extractor))
+    if key not in _EXTRACTOR_VERSIONS:
+        _EXTRACTOR_VERSIONS[key] = f"{extractor.version}+{code_digest(type(extractor))[:12]}"
+    return _EXTRACTOR_VERSIONS[key]
+
+
+def extractor_versions() -> dict[str, str]:
+    """Every extractor's version, by id. Recorded in the toolchain manifest for delta attribution."""
+    return {e.id: extractor_version(e) for e in EXTRACTORS}
+
+
+def applicable_extractors(path: str, disabled: set[str] | None = None) -> dict[str, str]:
+    """The extractors that run on `path`, with their versions."""
+    return {e.id: extractor_version(e) for e in EXTRACTORS if not (disabled and e.id in disabled) and e.matches(path)}
 
 
 def _file_extract(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, Any]:
@@ -64,8 +87,10 @@ def _file_extract(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, An
         diagnostics.append(diagnostic("inventory", "warning", "oversize: inventoried, not parsed"))
     else:
         data = secrets.mask_for_extraction(data, config.get("secret_findings", []))
-        disabled = set(config.get("disabled_extractors", ()))
-        for extractor in (e for e in EXTRACTORS if e.id not in disabled and e.matches(path)):
+        wanted: dict[str, str] = config.get("extractors", {})
+        for extractor in (e for e in EXTRACTORS if e.id in wanted):
+            if extractor_version(extractor) != wanted[extractor.id]:
+                raise RuntimeError(f"extractor skew: {extractor.id} is {extractor_version(extractor)}, the cache key expects {wanted[extractor.id]}")
             try:
                 result = extractor.extract(path, data, blob)
             except Exception as exc:  # an extractor bug must not fail the compile
@@ -77,18 +102,16 @@ def _file_extract(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, An
     return FileSummary(path=path, blob_sha256=blob, language=detect_language(path), parsed=parsed, observations=observations, diagnostics=diagnostics, interface_hash=digest(interface), body_hash="sha256:" + blob).row()
 
 
-FILE_EXTRACT = Step("file.extract", digest([[e.id, e.version] for e in EXTRACTORS]).split(":")[1][:16], _file_extract)
+# The extractor list is versioned per extractor, through the config, not through this step's code.
+FILE_EXTRACT = Step("file.extract", "1.0.0", _file_extract, toolchain_extra=extractor_versions, version_skip=frozenset({"EXTRACTORS"}))
 
 
 def extract_file(runner: StepRunner, entry: dict[str, Any], disabled: set[str] | None = None) -> Ref:
     path = entry["path"]
-    config: dict[str, Any] = {"parse": entry["parse"]}
+    config: dict[str, Any] = {"parse": entry["parse"], "extractors": applicable_extractors(path, disabled) if entry["parse"] else {}}
     if entry["parse"] and entry.get("secret_findings"):
         config["secret_findings"] = entry["secret_findings"]
-    excluded = sorted(e.id for e in EXTRACTORS if disabled and e.id in disabled and e.matches(path))
-    if excluded:
-        config["disabled_extractors"] = excluded
     return runner.run(FILE_EXTRACT, {"path": path, "blob": Ref("sha256:" + entry["blob_sha256"], "bytes")}, config)
 
 
-__all__ = ["EXTRACTORS", "FILE_EXTRACT", "MANIFEST_BASENAMES", "detect_language", "extract_file"]
+__all__ = ["EXTRACTORS", "FILE_EXTRACT", "MANIFEST_BASENAMES", "applicable_extractors", "detect_language", "extract_file", "extractor_version", "extractor_versions"]

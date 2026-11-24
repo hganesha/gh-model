@@ -1,9 +1,13 @@
-"""Compiler steps: `unit.plan`, `unit.compile`, `repo.compile` (spec §3.3, §5).
+"""Compiler steps: `unit.plan`, `unit.compile`, `repo.requests`, `repo.compile` (spec §3.3, §5).
 
 `unit.compile` is generic: it materializes the "entity" and "relation"
-observations that extractors emit (see `extractors/base.py`). Cross-file
-linking (`unit.link`), `features.build` and `decision.evaluate` slot in between
-extraction and unit compilation as they arrive.
+observations that extractors emit (see `extractors/base.py`), then what the
+unit's decisions settled (DM02, DM03, DM05, DM08).
+
+Every step here is pure. Decisions are not: a model may be called, so they run
+in the pipeline through the decision ledger, between `repo.requests` (which
+lists the repository-level decisions needed: DM01, and DM04/DM07 links with
+several candidates) and `repo.compile` (which takes their results as input).
 """
 
 from __future__ import annotations
@@ -15,12 +19,12 @@ from typing import Any
 
 from .buildgraph import Step, StepInputs
 from .capabilities import CapabilityCatalogue, match_package
-from .contracts import Assertion, Conflict, CoverageEntry, DecisionResult, Entity, Evidence, Unknown, decision_id
+from .contracts import Assertion, Conflict, CoverageEntry, Entity, Evidence, Unknown
 from .decisions import dependency as dm_dependency
-from .decisions.component import TOPOLOGY_SPEC, topology_rules
 from .hashing import digest
-from .link import match_call, normalize_route
-from .ontology import AssertionKind, EntityKind, EpistemicStatus, EvidenceClass, Predicate
+from .link import link_repo, match_call, normalize_route
+from .ontology import AssertionKind, EntityKind, EpistemicStatus, EvidenceClass, Predicate, functional_violations
+from .planning import plan_units
 
 ROOT_UNIT = "@root"
 GLOBAL_UNIT = "@global"
@@ -34,28 +38,11 @@ def unit_name(manifest_dir: str) -> str:
 
 
 def _unit_plan(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, Any]:
-    paths: list[str] = inputs["paths"]
-    packages = sorted(
-        ({k: obs["payload"][k] for k in ("ecosystem", "name", "manifest_dir")} for s in inputs["manifest_summaries"] for obs in s["observations"] if obs["kind"] == "package_declaration"),
-        key=lambda p: (p["manifest_dir"], p["ecosystem"], p["name"]),
-    )
-    roots = sorted({p["manifest_dir"] for p in packages})
-
-    def owner(path: str) -> str:
-        best: str | None = None
-        for root in roots:
-            if root == "" or path == root or path.startswith(root + "/"):
-                if best is None or len(root) > len(best):
-                    best = root
-        return ROOT_UNIT if best is None else unit_name(best)
-
-    members: dict[str, list[str]] = {unit_name(r): [] for r in roots}
-    for path in sorted(paths):
-        members.setdefault(owner(path), []).append(path)
-    return {"units": [{"name": name, "paths": members[name]} for name in sorted(members)], "packages": packages}
+    """See `planning.py`: units, workspace siblings, lockfile versions, tsconfig aliases."""
+    return plan_units(inputs["paths"], inputs["manifest_summaries"])
 
 
-UNIT_PLAN = Step("unit.plan", "0.2.0", _unit_plan)
+UNIT_PLAN = Step("unit.plan", "0.3.0", _unit_plan)
 
 
 # --------------------------------------------------------------- unit.compile
@@ -203,32 +190,61 @@ def _unit_compile(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, An
             continue
         evs = [shard.cite(e) for e in o["evidence"]]
         shard.assertion(Assertion.make(subject, Predicate(p["predicate"]), obj, qualifiers=p.get("qualifiers", {}), assertion_kind=AssertionKind.DERIVED_RELATION, epistemic_status=_status(o["evidence_class"]), evidence_class=o["evidence_class"], evidence_ids=evs, resolution=o["resolution"]))
+
+    # 5. DM05: ORM uses the linker could not resolve, settled by a table decision.
+    settled: set[tuple[str, str, str]] = set()
+    for req in inputs["decisions"].get("data", []):
+        d, u = req["decision"], req["unknown"]
+        if d["abstained"]:
+            continue
+        chosen = next(c for c in req["candidates"] if c["id"] == d["selected_label"])
+        subject = resolve(u["subject"], u["path"], req["use_evidence"]["id"])
+        table = resolve(chosen["table"], chosen["path"], chosen["evidence"]["id"])
+        if subject is None or table is None:
+            continue
+        cls = EvidenceClass.E4 if d["decision_method"] == "rules" else EvidenceClass.E5
+        evs = [shard.cite(req["use_evidence"]), shard.cite(chosen["evidence"])]
+        shard.assertion(Assertion.make(subject, Predicate(u["predicate"]), table, qualifiers={"via": "orm", "basis": "table_decision"}, assertion_kind=AssertionKind.DERIVED_RELATION if cls == EvidenceClass.E4 else AssertionKind.INFERRED_RELATION, epistemic_status=EpistemicStatus.INFERRED, evidence_class=cls, evidence_ids=evs, resolution="candidate", decision_ref=d["decision_id"]))
+        settled.add((digest(u["subject"]), u["predicate"], u["reason"]))
     for u in link["unknowns"]:
+        if (digest(u["subject"]), u["predicate"], u["reason"]) in settled:
+            continue
         key = _bind_unit(u["subject"]["natural_key"], unit_root)
         subject = Entity.make(repo, EntityKind(u["subject"]["kind"]), key, u["subject"]["name"]).id
         if subject in shard.entities:
             row = Unknown.make(subject, u["predicate"], u["status"], u["reason"], u["coverage_ref"]).row()
             shard.unknowns[row["id"]] = row
 
-    # 5. The component this unit forms, from the component-kind decision (DM03).
+    # 6. DM02: the package's primary language.
+    stack: dict[str, Any] | None = inputs["decisions"].get("stack")
+    scope = f"decisions:{unit['name']}"
+    if stack and packages:
+        pkg_id = packages[0][0]
+        p = shard.entities[pkg_id]
+        shard.entity(Entity.make(repo, EntityKind.PACKAGE, p["natural_key"], p["name"], attributes={"primary_language": stack["selected_label"] or "unknown", "primary_language_status": decision_status(stack), "primary_language_decision_ref": stack["decision_id"]}))
+        if stack["abstained"]:
+            row = Unknown.make(pkg_id, "primary_language", "unknown", f"decision abstained: {stack['abstain_reason']}", scope).row()
+            shard.unknowns[row["id"]] = row
+
+    # 7. The component this unit forms, from the component-kind decision (DM03).
     decision: dict[str, Any] | None = inputs["decisions"].get("component")
     if decision and packages:
         pkg_id, pkg_ev = packages[0]
-        scope = f"decisions:{unit['name']}"
         if decision["abstain_reason"] == "language_inventory_only":
             row = Unknown.make(pkg_id, "component_boundary", "unknown", "language is inventory-only: no component is derived", scope).row()
             shard.unknowns[row["id"]] = row
         else:
             kind = decision["selected_label"] or "unknown"
-            modelled = decision["decision_method"] != "rules"
-            cls = EvidenceClass.E5 if modelled else EvidenceClass.E3
             cited = sorted({pkg_ev, *(e for e in decision["evidence_ids"] if e in shard.evidence)})
             feats = inputs["component_features"]
-            comp = shard.entity(Entity.make(repo, EntityKind.COMPONENT, {"root": unit_root}, shard.entities[pkg_id]["name"], attributes={
-                "component_kind": kind, "kind_status": "unknown" if decision["abstained"] else ("inferred" if modelled else "supported"),
+            attributes = {
+                "component_kind": kind, "kind_status": decision_status(decision),
                 "decision_ref": decision["decision_id"], "ecosystem": feats["ecosystem"],
                 "frameworks": sorted(n for names in feats["named_dependencies"].values() for n in names),
-            }, evidence_ids=cited))
+            }
+            if stack:
+                attributes["primary_language"] = stack["selected_label"] or "unknown"
+            comp = shard.entity(Entity.make(repo, EntityKind.COMPONENT, {"root": unit_root}, shard.entities[pkg_id]["name"], attributes=attributes, evidence_ids=cited))
             if decision["abstained"]:
                 row = Unknown.make(comp, "component_kind", "unknown", f"decision abstained: {decision['abstain_reason']}", scope).row()
                 shard.unknowns[row["id"]] = row
@@ -255,10 +271,31 @@ def _unit_compile(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, An
                 if e["kind"] == EntityKind.TABLE and e["attributes"].get("orm") and e["id"] not in touched and e["evidence_ids"]:
                     for predicate in (Predicate.READS_FROM, Predicate.WRITES_TO):
                         lift(predicate, e["id"], e["evidence_ids"][:1], EvidenceClass.E4, "candidate", {"basis": "schema_owner"})
+
+            # 8. DM08 behaviour hypotheses: model-written, untrusted, never more than inferred.
+            behavior: dict[str, Any] | None = inputs["decisions"].get("behavior")
+            for h in (behavior or {}).get("hypotheses", []):
+                evs = [e for e in h["evidence_ids"] if e in shard.evidence]
+                if not evs:
+                    continue
+                feature = shard.entity(Entity.make(repo, EntityKind.FEATURE, {"component": unit_root, "statement": digest(h["statement"])}, h["statement"][:80], attributes={"statement": h["statement"], "trust_label": "untrusted_generated", "decision_ref": behavior["decision_id"]}, evidence_ids=evs))
+                shard.assertion(Assertion.make(comp, Predicate.IMPLEMENTS, feature, qualifiers={"basis": "behavior_candidate"}, assertion_kind=AssertionKind.HYPOTHESIS, epistemic_status=EpistemicStatus.INFERRED, evidence_class=EvidenceClass.E5, evidence_ids=evs, resolution="candidate", decision_ref=behavior["decision_id"]))
     return shard.rows()
 
 
-UNIT_COMPILE = Step("unit.compile", "0.6.0", _unit_compile)
+def decision_status(decision: Mapping[str, Any]) -> str:
+    """How a decided label is presented: rules and verifier-confirmed answers are supported,
+    other model answers inferred, an owner's label is the owner's (spec §7.3, §8.6)."""
+    if decision["abstained"]:
+        return "unknown"
+    if decision["decision_method"] == "owner_override":
+        return "owner_override"
+    if decision["decision_method"] == "rules" or decision.get("verification_ref"):
+        return "supported"
+    return "inferred"
+
+
+UNIT_COMPILE = Step("unit.compile", "0.7.0", _unit_compile)
 
 
 # --------------------------------------------------------------- repo.compile
@@ -325,11 +362,123 @@ def _dependency_capabilities(
     return decisions, coverage
 
 
+def _norm_name(text: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+
+
+def _repo_view(shards: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    """What repo-level linking needs, read once from the unit shards."""
+    endpoints = []  # (entity row, its first evidence row, owning unit)
+    package_of: dict[str, str] = {}
+    for name in sorted(shards):
+        s = shards[name]
+        ev_by_id = {e["id"]: e for e in s["evidence"]}
+        for e in s["entities"]:
+            if e["kind"] == EntityKind.ENDPOINT and e["evidence_ids"]:
+                endpoints.append((e, ev_by_id[e["evidence_ids"][0]], name))
+            if e["kind"] == EntityKind.PACKAGE and (e["natural_key"]["manifest_dir"] or ".") == name:
+                package_of.setdefault(name, e["id"])
+    endpoints.sort(key=lambda x: x[0]["id"])
+    components = sorted((e for s in shards.values() for e in s["entities"] if e["kind"] == EntityKind.COMPONENT), key=lambda e: e["id"])
+    names_of = {c["id"]: {_norm_name(c["name"]), _norm_name(c["name"].split("/")[-1]), _norm_name(posixpath.basename(c["natural_key"]["root"]))} - {""} for c in components}
+    return {"endpoints": endpoints, "package_of": package_of, "components": components, "component_of": {(e["natural_key"]["root"] or "."): e["id"] for e in components}, "names_of": names_of}
+
+
+def _http_hits(call: Mapping[str, Any], endpoints: list) -> list:
+    hits = [(e, ev) for e, ev, _ in endpoints if match_call(call["call_path"], e["natural_key"]["route"])]
+    # The call's method is not known; a plain fetch is a GET, so prefer GET when one matches.
+    return [h for h in hits if h[0]["natural_key"]["method"] == "GET"] or hits
+
+
+def _deploy_hits(du: Mapping[str, Any], names_of: Mapping[str, set[str]]) -> list[str]:
+    images = list(du["attributes"].get("images") or []) + ([du["attributes"]["image"]] if du["attributes"].get("image") else [])
+    wanted = {_norm_name(du["natural_key"]["name"])} | {_norm_name(i.split("@")[0].rsplit(":", 1)[0].split("/")[-1]) for i in images if isinstance(i, str)}
+    return [cid for cid, names in sorted(names_of.items()) if names & wanted]
+
+
+def topology_features(shards: dict[str, dict[str, Any]]) -> tuple[dict[str, Any], list[str]]:
+    pkgs = sorted((e for s in shards.values() for e in s["entities"] if e["kind"] == EntityKind.PACKAGE), key=lambda e: e["id"])
+    features = {"packages": len(pkgs), "ecosystems": sorted({p["natural_key"]["ecosystem"] for p in pkgs}), "workspace_root": any(p["attributes"].get("is_workspace_root") for p in pkgs)}
+    return features, sorted({ev for p in pkgs for ev in p["evidence_ids"]})
+
+
+def _repo_requests(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, Any]:
+    """The repository-level decisions this compile needs: DM01 topology, and the DM04 and DM07
+    links that matched more than one candidate. Each is evaluated through the ledger by the
+    pipeline, then handed to `repo.compile` (which stays pure)."""
+    repo: str = inputs["repository_id"]
+    shards: dict[str, dict[str, Any]] = inputs["shards"]
+    links: dict[str, dict[str, Any]] = inputs["links"]
+    view = _repo_view(shards)
+    requests = []
+    features, evidence = topology_features(shards)
+    requests.append({"key": "topology", "spec": "dm.repository-topology", "scope": Entity.make(repo, EntityKind.REPOSITORY, {}, repo).id, "features": features, "evidence_ids": evidence})
+    for name in sorted(links):
+        for call in links[name]["exports"]["http_calls"]:
+            hits = _http_hits(call, view["endpoints"])
+            if view["package_of"].get(name) is None or len(hits) < 2:
+                continue
+            requests.append({
+                "key": f"http:{name}:{call['evidence']['id']}", "spec": "dm.http-consumer-target", "scope": view["package_of"][name],
+                "features": {"call_path": call["call_path"], "caller_unit": name, "candidates": [{"id": e["id"], "method": e["natural_key"]["method"], "route": e["natural_key"]["route"]} for e, _ in hits]},
+                "evidence_ids": sorted({call["evidence"]["id"], *(ev["id"] for _, ev in hits)}),
+            })
+    for name in sorted(shards):
+        for du in (e for e in shards[name]["entities"] if e["kind"] == EntityKind.DEPLOYMENT_UNIT and e["evidence_ids"]):
+            hits = _deploy_hits(du, view["names_of"])
+            if len(hits) < 2:
+                continue
+            by_id = {c["id"]: c for c in view["components"]}
+            requests.append({
+                "key": f"deploy:{du['id']}", "spec": "dm.deployment-component", "scope": du["id"],
+                "features": {"deployment_unit": du["natural_key"]["name"], "candidates": [{"id": cid, "name": by_id[cid]["name"], "root": by_id[cid]["natural_key"]["root"], "kind": by_id[cid]["attributes"].get("component_kind")} for cid in hits]},
+                "evidence_ids": du["evidence_ids"][:1],
+            })
+    return {"requests": requests}
+
+
+REPO_REQUESTS = Step("repo.requests", "0.1.0", _repo_requests)
+
+PRECEDENCE = {"E1": 1, "E2": 2, "E3": 2, "E4": 3, "E5": 4}  # declared, parsed or resolved, heuristic, model
+KIND_ORDER = {"observed_fact": 0, "derived_relation": 1, "inferred_relation": 2, "hypothesis": 3}
+
+
+def preferred(assertions: list[dict[str, Any]], override_object: str | None = None) -> tuple[str, str]:
+    """Which participant default projections show, and why (spec §8.6): an owner override, then
+    a declaration, then a deterministic parse, then a heuristic, then a model."""
+    if override_object is not None:
+        chosen = next((a for a in assertions if a["object"] == override_object), None)
+        if chosen is not None:
+            return chosen["id"], "owner_override"
+    best = min(assertions, key=lambda a: (PRECEDENCE[a["evidence_class"]], KIND_ORDER[a["assertion_kind"]], a["resolution"] != "exact", a["id"]))
+    return best["id"], f"evidence_class:{best['evidence_class']}"
+
+
+def _decision_conflicts(decisions: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """`label_disagreement`: rules against a model, or the compiler against an owner override;
+    and a rules conflict that targeted re-extraction did not settle."""
+    out = []
+    for d in decisions:
+        if not d["evidence_ids"]:
+            continue
+        if d["disagreements"]:
+            sides = sorted({f"{x['method']}:{x['label']}" for x in d["disagreements"]})
+            chosen = f"{d['decision_method']}:{d['selected_label']}" if not d["abstained"] else None
+            row = Conflict.make("label_disagreement", [d["scope_entity"]], d["evidence_ids"], f"{d['spec']}: {', '.join(sides)} against {chosen or 'an abstention'}")
+            out.append(row.model_copy(update={"preferred": chosen}).row())
+        elif d["rule_outcome"] == "conflict" and d["abstained"]:
+            out.append(Conflict.make("label_disagreement", [d["scope_entity"]], d["evidence_ids"], f"{d['spec']}: evidence supports {', '.join(d['alternatives'])}; the rules could not settle it").row())
+    return out
+
+
 def _repo_compile(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, Any]:
     repo: str = inputs["repository_id"]
     shards: dict[str, dict[str, Any]] = inputs["shards"]
     exclusions: list[dict[str, Any]] = inputs["exclusions"]
     unparsed_oversize: list[str] = inputs["oversize_paths"]
+    decided: dict[str, dict[str, Any]] = inputs["decisions"]  # request key -> DecisionResult row
+    unit_decisions: list[dict[str, Any]] = inputs["unit_decisions"]
+    overrides: dict[str, Any] = inputs["overrides"]
 
     g = _Shard(GLOBAL_UNIT)
     repo_id = g.entity(Entity.make(repo, EntityKind.REPOSITORY, {}, repo))
@@ -353,19 +502,8 @@ def _repo_compile(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, An
     # Repo-level linking: things that cross unit boundaries.
     links: dict[str, dict[str, Any]] = inputs["links"]
     conflicts: list[dict[str, Any]] = []
-    endpoints = []  # (entity row, its first evidence row, owning unit)
-    package_of: dict[str, str] = {}
-    for name in sorted(shards):
-        s = shards[name]
-        ev_by_id = {e["id"]: e for e in s["evidence"]}
-        for e in s["entities"]:
-            if e["kind"] == EntityKind.ENDPOINT and e["evidence_ids"]:
-                endpoints.append((e, ev_by_id[e["evidence_ids"][0]], name))
-            if e["kind"] == EntityKind.PACKAGE and (e["natural_key"]["manifest_dir"] or ".") == name:
-                package_of.setdefault(name, e["id"])
-    endpoints.sort(key=lambda x: x[0]["id"])
-    components = sorted((e for s in shards.values() for e in s["entities"] if e["kind"] == EntityKind.COMPONENT), key=lambda e: e["id"])
-    component_of = {(e["natural_key"]["root"] or "."): e["id"] for e in components}
+    view = _repo_view(shards)
+    endpoints, package_of, component_of = view["endpoints"], view["package_of"], view["component_of"]
 
     declared = matched = 0
     workspace_exports: dict[str, list[dict]] = {"operations": [], "unresolved_calls": []}
@@ -390,58 +528,59 @@ def _repo_compile(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, An
             caller = package_of.get(name)
             if caller is None:
                 continue
-            hits = [(e, ev) for e, ev, _ in endpoints if match_call(call["call_path"], e["natural_key"]["route"])]
-            # The call's method is not known; a plain fetch is a GET, so prefer GET when one matches.
-            hits = [h for h in hits if h[0]["natural_key"]["method"] == "GET"] or hits
+            hits = _http_hits(call, endpoints)
             if not hits:
                 workspace_exports["unresolved_calls"].append({
                     "caller": component_of.get(name, caller), "path": call["call_path"],
                     "evidence_ids": [g.cite(call["evidence"])],
                 })
+            # DM04: several endpoints fit the call. A decision may pick one; if it abstains, every
+            # match stays a candidate lead.
+            d = decided.get(f"http:{name}:{call['evidence']['id']}") if len(hits) > 1 else None
+            if d and not d["abstained"]:
+                hits = [h for h in hits if h[0]["id"] == d["selected_label"]]
+            modelled = bool(d and not d["abstained"])
+            cls = EvidenceClass.E5 if modelled else EvidenceClass.E4
+            kind = AssertionKind.INFERRED_RELATION if modelled else AssertionKind.DERIVED_RELATION
             for e, ev in hits:  # a path match is a lead, not proof: candidate, inferred
-                g.assertion(Assertion.make(caller, Predicate.CONSUMES, e["id"], qualifiers={"via": "http"}, assertion_kind=AssertionKind.DERIVED_RELATION, epistemic_status=EpistemicStatus.INFERRED, evidence_class=EvidenceClass.E4, evidence_ids=[g.cite(call["evidence"]), g.cite(ev)], resolution="candidate"))
-                if name in component_of:
-                                    g.assertion(Assertion.make(component_of[name], Predicate.CONSUMES, e["id"], qualifiers={"via": "http"}, assertion_kind=AssertionKind.DERIVED_RELATION, epistemic_status=EpistemicStatus.INFERRED, evidence_class=EvidenceClass.E4, evidence_ids=[g.cite(call["evidence"]), g.cite(ev)], resolution="candidate"))
+                callers = [caller] + ([component_of[name]] if name in component_of else [])
+                for subject in callers:
+                    g.assertion(Assertion.make(subject, Predicate.CONSUMES, e["id"], qualifiers={"via": "http"}, assertion_kind=kind, epistemic_status=EpistemicStatus.INFERRED, evidence_class=cls, evidence_ids=[g.cite(call["evidence"]), g.cite(ev)], resolution="candidate", decision_ref=d["decision_id"] if modelled else None))
         coverage += links[name]["coverage"]
     coverage.append(CoverageEntry(domain="contract_match", scope="@repo", numerator=matched, denominator=declared).row())
 
     # DM07: which component does a declared deployment unit run? Matched by name; a lead, not proof.
-    def norm(text: str) -> str:
-        return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
-
-    names_of = {c["id"]: {norm(c["name"]), norm(c["name"].split("/")[-1]), norm(posixpath.basename(c["natural_key"]["root"]))} - {""} for c in components}
     deploy_refs = deploy_resolved = 0
     for name in sorted(shards):
         s = shards[name]
         ev_by_id = {e["id"]: e for e in s["evidence"]}
         for du in (e for e in s["entities"] if e["kind"] == EntityKind.DEPLOYMENT_UNIT and e["evidence_ids"]):
-            images = list(du["attributes"].get("images") or []) + ([du["attributes"]["image"]] if du["attributes"].get("image") else [])
-            wanted = {norm(du["natural_key"]["name"])} | {norm(i.split("@")[0].rsplit(":", 1)[0].split("/")[-1]) for i in images if isinstance(i, str)}
-            hits = [cid for cid, names in sorted(names_of.items()) if names & wanted]
+            hits = _deploy_hits(du, view["names_of"])
             deploy_refs += 1
             du_ev = g.cite(ev_by_id[du["evidence_ids"][0]])
+            d = decided.get(f"deploy:{du['id']}") if len(hits) > 1 else None
             if len(hits) == 1:
                 deploy_resolved += 1
                 g.assertion(Assertion.make(hits[0], Predicate.DEPLOYED_AS, du["id"], qualifiers={"basis": "name_match"}, assertion_kind=AssertionKind.DERIVED_RELATION, epistemic_status=EpistemicStatus.INFERRED, evidence_class=EvidenceClass.E4, evidence_ids=[du_ev], resolution="candidate"))
+            elif d and not d["abstained"]:
+                deploy_resolved += 1
+                g.assertion(Assertion.make(d["selected_label"], Predicate.DEPLOYED_AS, du["id"], qualifiers={"basis": "deployment_decision"}, assertion_kind=AssertionKind.INFERRED_RELATION, epistemic_status=EpistemicStatus.INFERRED, evidence_class=EvidenceClass.E5, evidence_ids=[du_ev], resolution="candidate", decision_ref=d["decision_id"]))
             elif len(hits) > 1:
-                row = Unknown.make(du["id"], "DEPLOYED_AS", "unknown", f"{len(hits)} components match this deployment unit by name", "deployment_refs:@repo").row()
+                reason = f"{len(hits)} components match this deployment unit by name" + (f"; decision abstained: {d['abstain_reason']}" if d else "")
+                row = Unknown.make(du["id"], "DEPLOYED_AS", "unknown", reason, "deployment_refs:@repo").row()
                 g.unknowns[row["id"]] = row
     coverage.append(CoverageEntry(domain="deployment_refs", scope="@repo", numerator=deploy_resolved, denominator=deploy_refs).row())
+    coverage += link_repo(shards, g)  # GI-016: CONFIGURED_BY, image BUILT_BY and ALIAS_OF
 
     dependency_decisions, dependency_coverage = _dependency_capabilities(
         repo, shards, g, inputs["capability_catalogue"],
     )
     coverage.append(dependency_coverage.row())
 
-    # DM01: repository topology, by rules over the declared packages.
-    pkgs = [e for s in shards.values() for e in s["entities"] if e["kind"] == EntityKind.PACKAGE]
-    topo_features = {"packages": len(pkgs), "ecosystems": sorted({p["natural_key"]["ecosystem"] for p in pkgs}), "workspace_root": any(p["attributes"].get("is_workspace_root") for p in pkgs)}
-    verdict = topology_rules(topo_features)
-    fsh = digest(topo_features)
-    spec_name = f"{TOPOLOGY_SPEC.id}@{TOPOLOGY_SPEC.version}"
-    topology = DecisionResult(decision_id=decision_id(spec_name, fsh, ""), spec=spec_name, scope_entity=repo_id, feature_set_hash=fsh, rule_outcome=verdict.outcome, selected_label=verdict.label, abstained=verdict.label is None, abstain_reason=None if verdict.label else (verdict.reason or verdict.outcome), decision_method="rules").row()
-    g.entity(Entity.make(repo, EntityKind.REPOSITORY, {}, repo, attributes={"topology": verdict.label or "unknown", "topology_decision_ref": topology["decision_id"]}))
-    if verdict.label is None:
+    # DM01: repository topology, decided through the ledger.
+    topology = decided["topology"]
+    g.entity(Entity.make(repo, EntityKind.REPOSITORY, {}, repo, attributes={"topology": topology["selected_label"] or "unknown", "topology_status": decision_status(topology), "topology_decision_ref": topology["decision_id"]}))
+    if topology["abstained"]:
         row = Unknown.make(repo_id, "topology", "unknown", topology["abstain_reason"], "decisions:@repo").row()
         g.unknowns[row["id"]] = row
 
@@ -450,18 +589,44 @@ def _repo_compile(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, An
     if loose:
         row = Unknown.make(repo_id, "component_boundary", "unknown", f"{loose} source files belong to no package; no component is derived for them", "decisions:@repo").row()
         g.unknowns[row["id"]] = row
-    conflicts.sort(key=lambda c: c["id"])
+
+    # Conflicts: single-valued predicates with two objects, and decisions that disagree.
+    every = [a for s in shards.values() for a in s["assertions"]] + list(g.assertions.values())
+    for (predicate, subject), rows in functional_violations(every).items():
+        choice, basis = preferred(rows, _preference(overrides, predicate, subject))
+        evidence = sorted({e for a in rows for e in a["evidence_ids"]})
+        row = Conflict.make("functional_violation", [subject], evidence, f"{predicate} is single-valued and has {len({a['object'] for a in rows})} objects; preferred by {basis}", [a["id"] for a in rows])
+        conflicts.append(row.model_copy(update={"preferred": choice}).row())
+    all_decisions = [*unit_decisions, *decided.values()]
+    conflicts += _decision_conflicts(all_decisions)
+    conflicts = sorted({c["id"]: c for c in conflicts}.values(), key=lambda c: c["id"])
+
+    # Decision coverage (spec §9.2): decisions resolved over decisions planned, per scope.
+    by_scope: dict[str, list[dict[str, Any]]] = {"@repo": list(decided.values())}
+    for d in unit_decisions:
+        by_scope.setdefault(d["@unit"], []).append(d)
+    for scope in sorted(by_scope):
+        rows = by_scope[scope]
+        reasons: dict[str, int] = {}
+        for d in rows:
+            if d["abstained"]:
+                reasons[d["abstain_reason"]] = reasons.get(d["abstain_reason"], 0) + 1
+        coverage.append(CoverageEntry(domain="decisions", scope=scope, numerator=sum(1 for d in rows if not d["abstained"]), denominator=len(rows), detail={"abstained_by_reason": dict(sorted(reasons.items()))}).row())
 
     files_total = sum(c["denominator"] for c in coverage if c["domain"] == "parse")
-    reasons: dict[str, int] = {}
+    reasons = {}
     for x in exclusions:
         reasons[x["reason"]] = reasons.get(x["reason"], 0) + 1
     coverage.append(CoverageEntry(domain="inventory", scope="@repo", numerator=files_total, denominator=files_total + len(exclusions), detail={"excluded_by_reason": dict(sorted(reasons.items())), "oversize_not_parsed": sorted(unparsed_oversize)}).row())
-    return {"global_shard": g.rows(), "coverage": coverage, "conflicts": conflicts, "decisions": [topology, *dependency_decisions], "workspace_exports": workspace_exports}
+    return {"global_shard": g.rows(), "coverage": coverage, "conflicts": conflicts, "decisions": dependency_decisions, "workspace_exports": workspace_exports}
 
 
-REPO_COMPILE = Step("repo.compile", "0.5.0", _repo_compile)
+def _preference(overrides: Mapping[str, Any], predicate: str, subject: str) -> str | None:
+    return next((p["object"] for p in overrides.get("preferences", []) if p["predicate"] == predicate and p["subject"] == subject), None)
+
+
+REPO_COMPILE = Step("repo.compile", "0.6.0", _repo_compile)
 
 from .link import UNIT_LINK  # noqa: E402
 
-STEPS = [UNIT_PLAN, UNIT_LINK, UNIT_COMPILE, REPO_COMPILE]
+STEPS = [UNIT_PLAN, UNIT_LINK, UNIT_COMPILE, REPO_REQUESTS, REPO_COMPILE]

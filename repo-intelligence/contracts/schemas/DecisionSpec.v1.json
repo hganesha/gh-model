@@ -129,6 +129,15 @@
       "title": "Abstain Required If Missing",
       "type": "array"
     },
+    "candidate_source": {
+      "default": "labels",
+      "enum": [
+        "labels",
+        "entities"
+      ],
+      "title": "Candidate Source",
+      "type": "string"
+    },
     "feature_sources": {
       "items": {
         "type": "string"
@@ -154,6 +163,7 @@
     },
     "max_attempts": {
       "default": 2,
+      "minimum": 1,
       "title": "Max Attempts",
       "type": "integer"
     },

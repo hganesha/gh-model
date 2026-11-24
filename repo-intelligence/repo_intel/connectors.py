@@ -68,13 +68,62 @@ def request_json(url: str, headers: dict[str, str] | None = None, form: dict[str
                 raise ConnectorError("Repository host response was too large.")
             return json.loads(raw), response.headers
     except HTTPError as exc:
-        raise ConnectorError(f"Repository host returned HTTP {exc.code}.") from None
+        error = ConnectorError(f"Repository host returned HTTP {exc.code}.")
+        try:  # OAuth endpoints explain a refusal with an error code in the body
+            code = json.loads(exc.read(64 * 1024)).get("error")
+            error.oauth_error = code if isinstance(code, str) else None
+        except (ValueError, AttributeError, OSError):
+            pass
+        raise error from None
     except (URLError, ValueError, TimeoutError):
         raise ConnectorError("Repository host could not be reached or returned invalid data.") from None
 
 
+VAULT_SECRET = re.compile(r"^[0-9a-zA-Z-]{1,127}$")
+VAULT_SCOPE = "https://vault.azure.net/.default"
+
+
 class SecretReferences:
-    """OS keychain for local credentials, mounted secret-manager values for hosted use."""
+    """Where credentials live: the OS keychain locally (`keychain:`), files mounted by a
+    secret manager (`managed:`), or Azure Key Vault (`vault:`) when hosted, reached with
+    the app's managed identity. Keychain and Key Vault can also store device sign-in tokens."""
+
+    def __init__(self, vault_url: str | None = None, credential: Any = None, client: Any = None) -> None:
+        self.vault_url = (os.environ.get("RKP_KEY_VAULT_URL", "") if vault_url is None else vault_url).rstrip("/")
+        self._credential = credential
+        self._client = client
+        self._auth: Callable[[], dict[str, str]] | None = None
+
+    @property
+    def writable(self) -> str:
+        """The store device sign-in writes to: Key Vault when hosted, else the OS keychain."""
+        return "vault" if self.vault_url else "keychain"
+
+    def device_reference(self, connection_id: str) -> str:
+        name = re.sub(r"[^0-9a-zA-Z-]", "-", f"github-device-{connection_id}")[:100]
+        return f"{self.writable}:{name}"
+
+    def _vault(self, name: str, method: str, body: dict | None = None) -> Any:
+        if not self.vault_url:
+            raise ConnectorError("No Key Vault is configured for this server (RKP_KEY_VAULT_URL).")
+        if not VAULT_SECRET.fullmatch(name):
+            raise ConnectorError("Key Vault secret names may contain only letters, digits and '-'.")
+        if self._auth is None:
+            from .decisions.gateway import azure_credential, bearer
+            self._auth = bearer(self._credential or azure_credential("managed-identity"), VAULT_SCOPE)
+        if self._client is None:
+            import httpx
+            self._client = httpx.Client(timeout=15)
+        try:
+            headers = self._auth()
+        except Exception:
+            raise ConnectorError("The server's identity could not sign in to Key Vault.") from None
+        response = self._client.request(method, f"{self.vault_url}/secrets/{name}", params={"api-version": "7.4"}, headers=headers, json=body)
+        if response.status_code == 404 and method == "GET":
+            return None
+        if response.status_code >= 400:
+            raise ConnectorError(f"Key Vault refused the request (HTTP {response.status_code}).")
+        return response.json()
 
     def get(self, reference: str | None) -> str:
         from .settings import REF
@@ -87,9 +136,13 @@ class SecretReferences:
                 if not root or key in (".", ".."):
                     raise ValueError
                 value = (Path(root) / key).read_text(encoding="utf-8").strip()
+            elif kind == "vault":
+                value = ((self._vault(key, "GET") or {}).get("value") or "").strip()
             else:
                 import keyring
                 value = keyring.get_password(KEYCHAIN_SERVICE, key)
+        except ConnectorError:
+            raise
         except Exception:
             raise ConnectorError("Credential reference could not be read.") from None
         if not value:
@@ -97,11 +150,15 @@ class SecretReferences:
         return value
 
     def put_device_token(self, reference: str, value: str) -> None:
-        if not reference.startswith("keychain:"):
-            raise ConnectorError("Device sign-in requires a writable OS keychain reference.")
+        kind, _, key = reference.partition(":")
+        if kind == "vault":
+            self._vault(key, "PUT", {"value": value, "contentType": "github-oauth-token"})
+            return
+        if kind != "keychain":
+            raise ConnectorError("Device sign-in needs a writable store: an OS keychain or Key Vault reference.")
         try:
             import keyring
-            keyring.set_password(KEYCHAIN_SERVICE, reference.split(":", 1)[1], value)
+            keyring.set_password(KEYCHAIN_SERVICE, key, value)
         except Exception:
             raise ConnectorError("The operating-system keychain could not store the credential.") from None
 
@@ -222,7 +279,7 @@ class AuthenticatedGit:
     def __init__(self, config: Connection, credential: Callable[[], str]):
         self.config, self.credential = config, credential
 
-    def run(self, args: list[str], *, timeout: int = 60, authenticate: bool = True) -> str:
+    def run(self, args: list[str], *, timeout: int = 60, authenticate: bool = True, stdin: bytes | None = None) -> str:
         env = {
             "PATH": os.environ.get("PATH", ""), "HOME": os.environ.get("HOME", ""),
             "GIT_TERMINAL_PROMPT": "0", "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": os.devnull,
@@ -247,7 +304,8 @@ class AuthenticatedGit:
                     RKP_GIT_PASSWORD=self.credential(),
                 )
             try:
-                return subprocess.run(["git", *flags, *args], env=env, capture_output=True, check=True, text=True, timeout=timeout).stdout
+                done = subprocess.run(["git", *flags, *args], env=env, input=stdin, capture_output=True, check=True, timeout=timeout)
+                return done.stdout.decode("utf-8", "replace")
             except (subprocess.SubprocessError, OSError):
                 raise ConnectorError("Git could not read this ref with the configured connection.") from None
 
@@ -262,9 +320,12 @@ class AuthenticatedGit:
         self.run(["init", "-q", "--bare", f"--object-format=sha{256 if len(sha) == 64 else 1}", str(mirror)], authenticate=False)
         # Recheck access through ls-remote/REST at resolve time, even when the object is cached.
         try:
-            self.run(["-C", str(mirror), "cat-file", "-e", f"{sha}^{{commit}}"], authenticate=False)
-        except ConnectorError:
-            self.run(["-C", str(mirror), "fetch", "-q", "--depth", "1", "--no-tags", "--no-recurse-submodules", url, sha], timeout=900)
+            github.partial_fetch(
+                lambda args, timeout, stdin: self.run(args, timeout=timeout, stdin=stdin, authenticate=args[2] != "config"),
+                mirror, url, sha,
+            )
+        except github.GitHubError as exc:
+            raise ConnectorError(str(exc)) from None
         return mirror
 
 
@@ -373,15 +434,31 @@ def build(config: Connection | None, secrets: SecretReferences, apps: Installati
         return GitHubCli()
     credential = (
         (lambda: apps.get(config)) if config.mode == "github_app" else
-        (lambda: secrets.get(config.credential_ref or f"keychain:github-device-{config.id}"))
+        (lambda: secrets.get(config.credential_ref or secrets.device_reference(config.id)))
     )
     return PlainGit(config, credential) if config.mode.startswith("git_") else HostedConnector(config, credential)
 
 
+# GitHub answers a refused device-code request with HTTP 400 and an OAuth error code; say what to fix.
+DEVICE_ERRORS = {
+    "device_flow_disabled": "Device sign-in is not enabled for this GitHub OAuth App. Tick “Enable Device Flow” in the app's settings on GitHub, then try again.",
+    "incorrect_client_credentials": "GitHub does not recognise this OAuth client ID. Copy the Client ID from the OAuth App's page on GitHub.",
+    "unauthorized_client": "This GitHub app cannot use device sign-in. Use an OAuth App with “Enable Device Flow” ticked.",
+}
+
+
 def begin_device(config: Connection) -> dict[str, Any]:
-    data, _ = request_json(
-        "https://github.com/login/device/code", form={"client_id": config.client_id, "scope": "repo"},
-    )
+    try:
+        data, _ = request_json(
+            "https://github.com/login/device/code", form={"client_id": config.client_id, "scope": "repo"},
+        )
+    except ConnectorError as exc:
+        if exc.oauth_error in DEVICE_ERRORS:
+            raise ConnectorError(DEVICE_ERRORS[exc.oauth_error]) from None
+        raise
+    if not isinstance(data, dict) or "device_code" not in data:
+        code = data.get("error") if isinstance(data, dict) else None
+        raise ConnectorError(DEVICE_ERRORS.get(code, "GitHub refused device sign-in."))
     now = time.monotonic()
     interval = max(5, int(data["interval"]))
     return {
@@ -402,7 +479,7 @@ def finish_device(config: Connection, state: dict[str, Any], secrets: SecretRefe
         form={"client_id": config.client_id, "device_code": state["device_code"], "grant_type": "urn:ietf:params:oauth:grant-type:device_code"},
     )
     if "access_token" in data:
-        secrets.put_device_token(config.credential_ref or f"keychain:github-device-{config.id}", data["access_token"])
+        secrets.put_device_token(config.credential_ref or secrets.device_reference(config.id), data["access_token"])
         return "complete"
     if data.get("error") == "slow_down":
         state["interval"] += 5

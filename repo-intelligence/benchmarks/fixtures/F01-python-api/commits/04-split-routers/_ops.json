@@ -1,0 +1,1 @@
+{"message": "Split order routes into an APIRouter included under /api/v1; mount an admin sub-application"}

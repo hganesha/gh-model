@@ -14,42 +14,17 @@ from typing import Any
 import psycopg
 from psycopg.types.json import Jsonb
 
-from . import business_map, registry, settings
-from .business_graph import DDL as LINEAGE_DDL, TABLES as LINEAGE_TABLES
+from . import migrations
 from .contracts import Manifest
 from .store import ObjectStore
 
-DDL = """
-CREATE TABLE IF NOT EXISTS snapshots (
-  tenant_id text NOT NULL, rkp_hash text NOT NULL, repository_id text NOT NULL, commit_sha text NOT NULL,
-  status text NOT NULL, manifest jsonb NOT NULL, PRIMARY KEY (tenant_id, rkp_hash));
-CREATE INDEX IF NOT EXISTS snapshots_commit ON snapshots (tenant_id, repository_id, commit_sha);
-CREATE TABLE IF NOT EXISTS snapshot_shards (
-  tenant_id text NOT NULL, rkp_hash text NOT NULL, unit text NOT NULL, shard_digest text NOT NULL,
-  PRIMARY KEY (tenant_id, rkp_hash, unit));
-CREATE TABLE IF NOT EXISTS shards (tenant_id text NOT NULL, shard_digest text NOT NULL, PRIMARY KEY (tenant_id, shard_digest));
-CREATE TABLE IF NOT EXISTS entities (
-  tenant_id text NOT NULL, shard_digest text NOT NULL, entity_id text NOT NULL, kind text NOT NULL, name text NOT NULL,
-  row jsonb NOT NULL, PRIMARY KEY (tenant_id, shard_digest, entity_id));
-CREATE TABLE IF NOT EXISTS assertions (
-  tenant_id text NOT NULL, shard_digest text NOT NULL, assertion_id text NOT NULL, subject_id text NOT NULL,
-  predicate text NOT NULL, object_id text NOT NULL, row jsonb NOT NULL, PRIMARY KEY (tenant_id, shard_digest, assertion_id));
-CREATE INDEX IF NOT EXISTS assertions_subject ON assertions (tenant_id, subject_id, predicate);
-CREATE INDEX IF NOT EXISTS assertions_object ON assertions (tenant_id, object_id, predicate);
-CREATE TABLE IF NOT EXISTS evidence (
-  tenant_id text NOT NULL, shard_digest text NOT NULL, evidence_id text NOT NULL, blob_sha256 text NOT NULL,
-  row jsonb NOT NULL, PRIMARY KEY (tenant_id, shard_digest, evidence_id));
-"""
-
 TABLES = ["snapshots", "snapshot_shards", "shards", "entities", "assertions", "evidence"]
+APP_ROLE = migrations.APP_ROLE
+_TENANT_SETTING = migrations.TENANT_SETTING
 
 
-APP_ROLE = "rkp_app"
-_TENANT_SETTING = "rkp.tenant_id"
-
-
-def ensure_schema(conn: psycopg.Connection) -> None:
-    """Create tables, row-level security and the application role. Run as the owner.
+def ensure_schema(conn: psycopg.Connection) -> list[int]:
+    """Apply pending migrations, row-level security and grants. Run as the owner.
 
     Every table carries tenant_id and a policy that compares it with the
     session setting `rkp.tenant_id`. The application role is not a superuser
@@ -57,16 +32,9 @@ def ensure_schema(conn: psycopg.Connection) -> None:
     setting absent it sees nothing. This is the backstop behind the tenant
     filters in the queries below (spec §11).
     """
-    conn.execute(DDL + business_map.DDL + registry.DDL + settings.DDL + LINEAGE_DDL)
-    conn.execute(f"DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '{APP_ROLE}') THEN CREATE ROLE {APP_ROLE} LOGIN; END IF; END $$")
-    tables = dict.fromkeys(TABLES, "SELECT, INSERT") | business_map.TABLES | registry.TABLES | settings.TABLES | LINEAGE_TABLES
-    for t, grants in tables.items():
-        conn.execute(f"ALTER TABLE {t} ENABLE ROW LEVEL SECURITY")
-        conn.execute(f"ALTER TABLE {t} FORCE ROW LEVEL SECURITY")
-        conn.execute(f"DROP POLICY IF EXISTS tenant_isolation ON {t}")
-        conn.execute(f"CREATE POLICY tenant_isolation ON {t} USING (tenant_id = (SELECT current_setting('{_TENANT_SETTING}', true))) WITH CHECK (tenant_id = (SELECT current_setting('{_TENANT_SETTING}', true)))")
-        conn.execute(f"GRANT {grants} ON {t} TO {APP_ROLE}")
+    ran = migrations.migrate(conn)
     conn.commit()
+    return ran
 
 
 def connect(conninfo: str, tenant_id: str) -> psycopg.Connection:
@@ -94,22 +62,28 @@ def project_snapshot(conn: psycopg.Connection, store: ObjectStore, manifest: Man
                 cur.executemany("INSERT INTO evidence VALUES (%s,%s,%s,%s,%s)", [(t, ref.digest, v["id"], v["blob_sha256"], Jsonb(v)) for v in shard["evidence"]])
 
 
-def dump(conn: psycopg.Connection) -> dict[str, list[tuple]]:
-    """Whole projection in a stable order; used to check rebuild equivalence."""
-    return {t: sorted(conn.execute(f"SELECT * FROM {t}").fetchall(), key=repr) for t in TABLES}
+def dump(conn: psycopg.Connection, tenant_id: str | None = None) -> dict[str, list[tuple]]:
+    """Whole projection in a stable order; used to check rebuild equivalence.
+    `published_at` is bookkeeping (when the row was written) and is left out."""
+    where = " WHERE tenant_id = %s" if tenant_id else ""
+    cols = {"snapshots": "tenant_id, rkp_hash, repository_id, commit_sha, status, manifest, retraction"}
+    return {t: sorted(conn.execute(f"SELECT {cols.get(t, '*')} FROM {t}{where}", (tenant_id,) if tenant_id else ()).fetchall(), key=repr) for t in TABLES}
 
 
 def truncate_all(conn: psycopg.Connection) -> None:
-    conn.execute("TRUNCATE " + ", ".join([*TABLES, *business_map.TABLES, *registry.TABLES, *settings.TABLES, *LINEAGE_TABLES]))
+    """Empty every tenant table (tests and local resets). Run as the owner."""
+    conn.execute("TRUNCATE " + ", ".join(migrations.GRANTS))
     conn.commit()
 
 
 def get_snapshot(conn: psycopg.Connection, tenant_id: str, *, rkp_hash: str | None = None, repository_id: str | None = None, commit_sha: str | None = None, toolchain_hash: str | None = None) -> dict[str, Any] | None:
+    """The manifest of one snapshot, with `status` as it is now (a published
+    manifest says `complete`; quarantine and retraction change the row)."""
     if rkp_hash:
-        row = conn.execute("SELECT manifest FROM snapshots WHERE tenant_id=%s AND rkp_hash=%s", (tenant_id, rkp_hash)).fetchone()
+        row = conn.execute("SELECT manifest || jsonb_build_object('status', status) FROM snapshots WHERE tenant_id=%s AND rkp_hash=%s", (tenant_id, rkp_hash)).fetchone()
     else:
         row = conn.execute(
-            """SELECT s.manifest FROM snapshots s
+            """SELECT s.manifest || jsonb_build_object('status', s.status) FROM snapshots s
                LEFT JOIN repository_registry r USING (tenant_id, repository_id)
                LEFT JOIN LATERAL (
                  SELECT max((snap->>'compiled_at')::double precision) AS published
@@ -206,3 +180,58 @@ def entity_detail(conn: psycopg.Connection, tenant_id: str, rkp_hash: str, entit
     ids = sorted({a["subject"] for a in found} | {a["object"] for a in found})
     names = {r[0]: {"id": r[0], "kind": r[1], "name": r[2]} for r in conn.execute(f"SELECT DISTINCT entity_id, kind, name FROM entities WHERE tenant_id=%(t)s AND {_IN_SNAPSHOT} AND entity_id = ANY(%(i)s)", {**p, "i": ids})}
     return {"entity": entity, "assertions": found, "neighbours": names, "truncated": len(found) >= limit}
+
+
+# -- lifecycle: status, retraction, retention and deletion (GI-019, GI-021)
+
+
+def retraction(conn: psycopg.Connection, tenant_id: str, rkp_hash: str) -> dict[str, Any] | None:
+    row = conn.execute("SELECT retraction FROM snapshots WHERE tenant_id=%s AND rkp_hash=%s AND status='retracted'", (tenant_id, rkp_hash)).fetchone()
+    return (row[0] or {}) if row else None
+
+
+def set_status(conn: psycopg.Connection, tenant_id: str, rkp_hash: str, status: str) -> bool:
+    """Quarantine or restore a published snapshot. Retraction is final and goes through `retract`."""
+    if status not in ("complete", "quarantined"):
+        raise ValueError(status)
+    with conn.transaction():
+        return conn.execute("UPDATE snapshots SET status=%s WHERE tenant_id=%s AND rkp_hash=%s AND status IN ('complete','quarantined') RETURNING 1", (status, tenant_id, rkp_hash)).fetchone() is not None
+
+
+def retract(conn: psycopg.Connection, tenant_id: str, rkp_hash: str, record: dict[str, Any]) -> bool:
+    with conn.transaction():
+        return bool(conn.execute("SELECT rkp_retract_snapshot(%s, %s)", (rkp_hash, Jsonb(record))).fetchone()[0])
+
+
+def drop_snapshots(conn: psycopg.Connection, rkp_hashes: list[str]) -> int:
+    """Remove snapshots from the projection, with any shard rows no other snapshot uses."""
+    if not rkp_hashes:
+        return 0
+    with conn.transaction():
+        return conn.execute("SELECT rkp_drop_snapshots(%s)", (sorted(rkp_hashes),)).fetchone()[0]
+
+
+def purge_repository(conn: psycopg.Connection, repository_id: str, lineage_ids: list[str]) -> dict[str, Any]:
+    with conn.transaction():
+        return conn.execute("SELECT rkp_purge_repository(%s, %s)", (repository_id, sorted(lineage_ids))).fetchone()[0]
+
+
+def purge_tenant(conn: psycopg.Connection) -> int:
+    with conn.transaction():
+        return conn.execute("SELECT rkp_purge_tenant()").fetchone()[0]
+
+
+def snapshot_rows(conn: psycopg.Connection, tenant_id: str, repository_id: str | None = None) -> list[dict[str, Any]]:
+    q = "SELECT rkp_hash, repository_id, commit_sha, status, extract(epoch FROM published_at) FROM snapshots WHERE tenant_id=%s"
+    p: list[Any] = [tenant_id]
+    if repository_id is not None:
+        q += " AND repository_id=%s"; p.append(repository_id)
+    return [{"rkp_hash": h, "repository_id": r, "commit_sha": c, "status": st, "published_at": float(at)} for h, r, c, st, at in conn.execute(q + " ORDER BY published_at, rkp_hash", p)]
+
+
+def audit(conn: psycopg.Connection, tenant_id: str, actor: str, action: str, subject_hash: str, details: dict[str, Any]) -> None:
+    """Record an action. `details` must hold hashes and counts only, never content."""
+    import uuid
+    with conn.transaction():
+        conn.execute("INSERT INTO audit_events (tenant_id, event_id, actor, action, subject_hash, details) VALUES (%s,%s,%s,%s,%s,%s)",
+                     (tenant_id, uuid.uuid4().hex, actor, action, subject_hash, Jsonb(details)))

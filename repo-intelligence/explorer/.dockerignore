@@ -4,3 +4,5 @@ test-results
 playwright-report
 e2e
 *.tsbuildinfo
+.playwright-auth
+.next-replay

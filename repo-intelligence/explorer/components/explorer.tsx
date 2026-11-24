@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { snapshotPath, useApi } from "@/lib/api";
 import { relativeTime, shortSha } from "@/lib/format";
 import type { EntityRef, Job, RepositoriesResponse, Repository, SnapshotRef, Summary, ViewId } from "@/lib/types";
+import { Account } from "./account";
 import { ConnectDialog, type ConnectTarget } from "./connect-dialog";
 import { DecisionsView } from "./decisions-view";
 import { EntityDrawer } from "./entity-drawer";
@@ -365,6 +366,7 @@ export function Explorer() {
             <span>Search</span>
             <kbd>⌘K</kbd>
           </button>
+          <Account />
         </header>
 
         <main id="main" tabIndex={-1}>

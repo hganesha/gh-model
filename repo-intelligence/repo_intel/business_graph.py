@@ -12,12 +12,6 @@ from .contracts import Manifest
 from .pipeline import load_shards
 from .store import ObjectStore
 
-TABLES = {"business_lineage": "SELECT, INSERT"}
-DDL = """
-CREATE TABLE IF NOT EXISTS business_lineage (
-  tenant_id text NOT NULL, rkp_hash text NOT NULL, entity_id text NOT NULL, lineage_id text NOT NULL,
-  PRIMARY KEY (tenant_id, rkp_hash, entity_id));
-"""
 SUBJECT_KINDS = {"Component", "Endpoint", "Table"}
 
 
@@ -34,28 +28,8 @@ def graph(store: ObjectStore, manifest: Manifest) -> tuple[dict, dict]:
 
 
 def identities(conn: psycopg.Connection, tenant: str, rkp_hash: str) -> dict[str, str]:
-    return dict(conn.execute("SELECT entity_id,lineage_id FROM business_lineage WHERE tenant_id=%s AND rkp_hash=%s", (tenant, rkp_hash)))
-
-
-def record_lineage(conn: psycopg.Connection, tenant: str, store: ObjectStore, published: Manifest, previous: Manifest | None) -> None:
-    current, _ = graph(store, published)
-    current = {key: value for key, value in current.items() if value["kind"] in SUBJECT_KINDS}
-    if not current or previous is None or previous.rkp_hash == published.rkp_hash:
-        return
-    baseline, _ = graph(store, previous)
-    old_aliases = identities(conn, tenant, previous.rkp_hash)
-    removed = {k: v for k, v in baseline.items() if k not in current and v["kind"] in SUBJECT_KINDS}
-    added = {k: v for k, v in current.items() if k not in baseline}
-    from .delta import match_moves
-    moves = match_moves(removed, added)
-    inherited = {key: old_aliases[key] for key in current if key in old_aliases}
-    inherited.update({new: old_aliases.get(old, old) for old, (new, _) in moves.items()})
-    if inherited:
-        with conn.cursor() as cur:
-            cur.executemany(
-                "INSERT INTO business_lineage VALUES (%s,%s,%s,%s) ON CONFLICT DO NOTHING",
-                [(tenant, published.rkp_hash, key, value) for key, value in sorted(inherited.items())],
-            )
+    from .lineage import identities as lineage_identities
+    return lineage_identities(conn, tenant, rkp_hash)
 
 
 def latest(repositories: list[dict]) -> list[tuple[dict, dict]]:

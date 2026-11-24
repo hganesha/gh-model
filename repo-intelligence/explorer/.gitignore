@@ -5,3 +5,5 @@ next-env.d.ts
 .env*
 /playwright-report/
 /test-results/
+/.playwright-auth/
+/.next-replay/

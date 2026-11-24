@@ -12,7 +12,7 @@ from typing import Any
 
 from ..buildgraph import Step, StepInputs
 from ..contracts import DecisionSpec
-from .runner import RuleResult
+from .runner import RuleResult, verifier
 
 SUPPORTED_ECOSYSTEMS = {"pypi", "npm"}
 
@@ -29,6 +29,19 @@ SPEC = DecisionSpec.model_validate({
     "abstain_required_if_missing": ["package", "ecosystem"],
     "verification": "vfy.component-kind-v1",
 })
+
+
+@verifier("vfy.component-kind-v1")
+def verify_kind(f: Mapping[str, Any], label: str) -> str:
+    """Deterministic checks of a component kind against the features it was decided from."""
+    e = f.get("evidence", {})
+    if label == "frontend_app" and not e.get("depends_on_web_frontend_framework"):
+        return "rejected"  # nothing a browser could load
+    if label == "tooling" and e.get("http_endpoints_declared_in_code", 0) > 0:
+        return "rejected"  # it serves requests: shipped, not tooling
+    if label == "service" and e.get("http_endpoints_declared_in_code", 0) > 0:
+        return "confirmed"
+    return "unchecked"
 
 CRITERIA = {
     "@instructions": "The features describe one package in a source repository. What kind of software component is it?",
@@ -98,8 +111,45 @@ def _features(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, Any]:
 FEATURES_BUILD = Step("features.build", "0.3.0", _features)
 
 
+def _imports(summaries: list[dict[str, Any]], ecosystem: str, names: list[str]) -> list[str]:
+    """Non-test source files that import any of `names` (a package's top-level module)."""
+    wanted = {n.lower().replace("-", "_") if ecosystem == "pypi" else n for n in names}
+    found = set()
+    for s in summaries:
+        if "test" in s["path"].lower():
+            continue
+        for o in s["observations"]:
+            if o["kind"] != "import":
+                continue
+            p = o["payload"]
+            if ecosystem == "pypi":
+                top = (p.get("module") or "").split(".")[0].lower() if not p.get("level") else ""
+                hit = top in wanted
+            else:
+                spec = p.get("specifier") or ""
+                hit = any(spec == n or spec.startswith(n + "/") for n in wanted)
+            if hit:
+                found.add(s["path"])
+    return sorted(found)
+
+
+def _reextract(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, Any]:
+    """Targeted extraction after a rules conflict (spec §7.1): which of the conflicting
+    libraries is actually imported by the package's own (non-test) source."""
+    names: dict[str, list[str]] = inputs["named_dependencies"]
+    eco: str = inputs["ecosystem"]
+    summaries = inputs["summaries"]
+    return {
+        "source_files_importing_frontend_framework": len(_imports(summaries, eco, names["web_frontend_frameworks"])),
+        "source_files_importing_message_consumer": len(_imports(summaries, eco, names["message_consumer_libraries"])),
+    }
+
+
+FEATURES_REEXTRACT = Step("features.reextract", "0.1.0", _reextract)
+
+
 def rules(f: Mapping[str, Any]) -> RuleResult:
-    """component-kind-rules-v2. Each branch needs positive evidence; otherwise it is ambiguous."""
+    """component-kind-rules-v3. Each branch needs positive evidence; otherwise it is ambiguous."""
     e = f["evidence"]
     if f["ecosystem"] not in SUPPORTED_ECOSYSTEMS:
         return RuleResult("insufficient_evidence", reason="language_inventory_only")
@@ -107,6 +157,11 @@ def rules(f: Mapping[str, Any]) -> RuleResult:
         return RuleResult("resolved", "tooling")
     serves = e["http_endpoints_declared_in_code"] > 0 or (e["depends_on_http_server_framework"] and e["has_container_build_with_start_command"])
     if e["depends_on_web_frontend_framework"] and e["depends_on_message_queue_or_job_consumer_library"]:
+        t = f.get("targeted")
+        if t:  # the targeted re-extraction settles it only when exactly one side is used in source
+            front, consumer = t["source_files_importing_frontend_framework"] > 0, t["source_files_importing_message_consumer"] > 0
+            if front != consumer:
+                return RuleResult("resolved", "frontend_app" if front else "worker")
         return RuleResult("conflict", candidates=("frontend_app", "worker"), reason="frontend and message-consumer evidence in one package")
     if e["depends_on_web_frontend_framework"]:
         return RuleResult("resolved", "frontend_app")
@@ -136,10 +191,83 @@ def topology_rules(f: Mapping[str, Any]) -> RuleResult:
 
 
 TOPOLOGY_SPEC = DecisionSpec.model_validate({
-    "id": "dm.repository-topology", "version": "1.0.0", "scope": "repository",
+    "id": "dm.repository-topology", "version": "1.1.0", "scope": "repository",
     "input_schema": "TopologyFeatures.v1", "output_schema": "TopologyDecision.v1",
     "labels": ["single", "multi-package", "monorepo", "hybrid", "unknown"],
     "feature_sources": ["repo.inventory", "repo.dependencies.extract"],
-    "strategy": [{"kind": "rules", "ruleset": "topology-rules-v1"}],
+    "strategy": [
+        {"kind": "rules", "ruleset": "topology-rules-v1"},
+        {"kind": "decision_model", "when": "ambiguous", "model_ref": "decision-default", "criteria_ref": "criteria/topology-v1", "accept_threshold": 0.80, "min_margin": 0.25, "permutations": 2},
+    ],
     "verification": "vfy.topology-v1",
 })
+
+TOPOLOGY_CRITERIA = {
+    "@instructions": "The features count the packages a repository's manifests declare. How is the repository organised?",
+    "single": "One package.",
+    "multi-package": "Several independent packages in one ecosystem, with no workspace tying them together.",
+    "monorepo": "Several packages managed together by a workspace declaration.",
+    "hybrid": "Packages in more than one language ecosystem.",
+}
+
+
+@verifier("vfy.topology-v1")
+def verify_topology(f: Mapping[str, Any], label: str) -> str:
+    """Manifest and workspace consistency: the label must fit the package count."""
+    n = f.get("packages", 0)
+    if label == "single":
+        return "confirmed" if n == 1 else "rejected"
+    if label in ("multi-package", "monorepo", "hybrid") and n < 2:
+        return "rejected"
+    if label == "hybrid":
+        return "confirmed" if len(f.get("ecosystems", [])) > 1 else "rejected"
+    if label == "monorepo" and f.get("workspace_root"):
+        return "confirmed"
+    return "unchecked"
+
+
+# ------------------------------------------------------------------ DM02 primary stack
+
+LANGUAGE_FAMILY = {"pypi": ("python",), "npm": ("typescript", "javascript"), "maven": ("java",), "go": ("go",)}
+
+STACK_SPEC = DecisionSpec.model_validate({
+    "id": "dm.primary-stack", "version": "1.0.0", "scope": "package",
+    "input_schema": "PrimaryStackFeatures.v1", "output_schema": "PrimaryStackDecision.v1",
+    "labels": ["python", "typescript", "javascript", "java", "go", "unknown"],
+    "feature_sources": ["repo.inventory", "repo.dependencies.extract"],
+    "strategy": [
+        {"kind": "rules", "ruleset": "primary-stack-rules-v1"},
+        {"kind": "decision_model", "when": "ambiguous", "model_ref": "decision-default", "criteria_ref": "criteria/primary-stack-v1", "accept_threshold": 0.80, "min_margin": 0.25, "permutations": 2},
+    ],
+    "abstain_required_if_missing": ["ecosystem", "source_files_by_language"],
+    "verification": "vfy.primary-stack-v1",
+})
+
+STACK_CRITERIA = {
+    "@instructions": "The features count one package's source files by language and name its manifest's ecosystem. Which language is the package primarily written in?",
+    "python": "Python source.", "typescript": "TypeScript source.", "javascript": "JavaScript source.",
+    "java": "Java source.", "go": "Go source.",
+}
+
+
+def stack_rules(f: Mapping[str, Any]) -> RuleResult:
+    """primary-stack-rules-v1: the manifest's ecosystem bounds the languages; file counts pick one."""
+    family = LANGUAGE_FAMILY.get(f["ecosystem"], ())
+    counts = {lang: n for lang, n in f["source_files_by_language"].items() if n > 0}
+    inside = {lang: n for lang, n in counts.items() if lang in family}
+    if not inside:
+        if counts:  # the manifest says one ecosystem and the source is in another
+            return RuleResult("conflict", candidates=tuple(sorted(set(counts) | set(family))), reason="manifest ecosystem and source languages disagree")
+        return RuleResult("insufficient_evidence", reason="no_source_files")
+    ranked = sorted(inside.items(), key=lambda kv: (-kv[1], kv[0]))
+    if len(ranked) == 1 or ranked[0][1] >= 2 * ranked[1][1]:
+        return RuleResult("resolved", ranked[0][0])
+    return RuleResult("ambiguous", candidates=tuple(lang for lang, _ in ranked))
+
+
+@verifier("vfy.primary-stack-v1")
+def verify_stack(f: Mapping[str, Any], label: str) -> str:
+    """Declaration and source consistency: the package has source in that language, inside its ecosystem."""
+    if f.get("source_files_by_language", {}).get(label, 0) == 0 or label not in LANGUAGE_FAMILY.get(f.get("ecosystem", ""), ()):
+        return "rejected"
+    return "confirmed" if len([n for n in f["source_files_by_language"].values() if n]) == 1 else "unchecked"

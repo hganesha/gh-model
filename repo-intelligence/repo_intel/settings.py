@@ -15,19 +15,13 @@ from .contracts import DecisionSpec, Model
 from .decisions.gateway import Gateway
 from .extractors import EXTRACTORS
 
-TABLES = {"workspace_settings": "SELECT, INSERT, UPDATE", "workspace_settings_revisions": "SELECT, INSERT"}
-DDL = """
-CREATE TABLE IF NOT EXISTS workspace_settings (
-  tenant_id text PRIMARY KEY, version int NOT NULL, document jsonb NOT NULL);
-CREATE TABLE IF NOT EXISTS workspace_settings_revisions (
-  tenant_id text NOT NULL, version int NOT NULL, document jsonb NOT NULL,
-  author text NOT NULL, updated_at timestamptz NOT NULL DEFAULT clock_timestamp(),
-  PRIMARY KEY (tenant_id, version));
-"""
-REF = re.compile(r"^(keychain|managed):[a-zA-Z0-9._-]{1,100}$")
+REF = re.compile(r"^(keychain|managed|vault):[a-zA-Z0-9._-]{1,100}$")
 PROVIDERS = ("jev", "microsoft-decision", "azure-openai", "cohere-rerank", "openai-embeddings")
 EXTRACTOR_IDS = frozenset(e.id for e in EXTRACTORS)
 MODEL_FUNCTIONS = ("dm.component-kind", "dm.capability-placement")
+# Coverage domains every snapshot must report, with denominators (spec §9.2, §14.1).
+COVERAGE_DOMAINS = ("inventory", "parse", "import_resolution", "route_to_handler", "data_access", "contract_match", "deployment_refs", "decisions", "dependency_capability", "event_topics")
+DEFAULT_REQUIRED_COVERAGE = ("inventory", "parse", "contract_match", "deployment_refs", "decisions")
 
 
 class Connection(Model):
@@ -68,6 +62,13 @@ class RepositoryTracking(Model):
     refs: tuple[str, ...] = Field(default=(), max_length=50)
     trigger: Literal["manual", "push", "poll"] = "manual"
     interval_minutes: int = Field(15, ge=1, le=1440)
+    # Providers this repository's excerpts may go to. None inherits the workspace policy;
+    # otherwise the effective set is the intersection with it, so a repository can only narrow.
+    allowed_providers: tuple[str, ...] | None = None
+    # Push-tracked repositories (spec §4.5): tags compile eagerly; pull requests
+    # compile on the first context request ("lazy") or after the debounce ("eager").
+    tags: bool = True
+    pull_requests: Literal["off", "lazy", "eager"] = "lazy"
 
     @model_validator(mode="after")
     def valid_refs(self) -> Self:
@@ -77,6 +78,8 @@ class RepositoryTracking(Model):
             for ref in self.refs
         ):
             raise ValueError("Use unique valid Git refs.")
+        if self.allowed_providers is not None and set(self.allowed_providers) - set(PROVIDERS):
+            raise ValueError("Unknown provider.")
         return self
 
 
@@ -99,6 +102,12 @@ class CompileSettings(Model):
     default_model: Key | None = None
     model_functions: dict[str, ModelSelection] = Field(default_factory=dict)
     decision_budget: int = Field(200, ge=0, le=2000)
+    # DM08 behaviour candidates: an LLM writes hypotheses. Experimental, so off by default.
+    behavior_candidates: bool = False
+    # The compile profile: coverage domains the publish gate requires, each with a denominator.
+    required_coverage: tuple[str, ...] = DEFAULT_REQUIRED_COVERAGE
+    # Per-repository egress narrowing, copied from `Settings.repositories` by `effective_compile`.
+    repository_egress: dict[str, tuple[str, ...]] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def known_options(self) -> Self:
@@ -108,7 +117,19 @@ class CompileSettings(Model):
             raise ValueError("Unknown provider.")
         if set(self.model_functions) - set(MODEL_FUNCTIONS):
             raise ValueError("Unknown decision function.")
+        if set(self.required_coverage) - set(COVERAGE_DOMAINS):
+            raise ValueError("Unknown coverage domain.")
         return self
+
+    def for_repository(self, repository_id: str) -> "CompileSettings":
+        """The settings one repository compiles under. Other repositories' egress rules are
+        dropped, so changing one repository's policy never changes another's toolchain."""
+        narrowed = self.repository_egress.get(repository_id)
+        update: dict = {"repository_egress": {}}
+        if narrowed is not None:
+            update["allowed_providers"] = tuple(sorted(set(self.allowed_providers) & set(narrowed)))
+            update["repository_egress"] = {repository_id: tuple(sorted(narrowed))}
+        return self.model_copy(update=update)
 
     def gateway(self, base: Gateway | None) -> Gateway | None:
         if base is None:
@@ -121,7 +142,7 @@ class CompileSettings(Model):
                 aliases.pop("decision-default", None)
         elif aliases.get("decision-default") and aliases["decision-default"].provider in PROVIDERS:
             aliases.pop("decision-default", None)
-        return Gateway(aliases, frozenset(self.allowed_providers) | (base.allowed_providers - set(PROVIDERS)))
+        return Gateway(aliases, frozenset(self.allowed_providers) | (base.allowed_providers - set(PROVIDERS)), base.llms, base.rates)
 
 
 class PlacementPolicy(Model):
@@ -133,11 +154,33 @@ class PlacementPolicy(Model):
     embedding_provider: Literal["local", "openai-embeddings"] = "local"
 
 
+class RetentionPolicy(Model):
+    """What garbage collection keeps (spec §4.5, §12). Defaults follow the spec."""
+
+    branch_days: int = Field(30, ge=1, le=3650)  # branch snapshots, plus each ref's current head
+    pull_request_days_after_close: int = Field(7, ge=0, le=3650)
+    tag_days: int | None = Field(None, ge=1, le=36500)  # None: kept while the tag is tracked
+    blob_cache_days: int = Field(14, ge=0, le=3650)  # source blobs; refilled from the host by OID
+    step_cache_days: int = Field(30, ge=0, le=3650)  # step outputs, ledger and placement caches, by last use
+    mirror_days: int = Field(14, ge=1, le=3650)  # bare mirrors not fetched into for this long
+    # Webhook delivery IDs are kept only to refuse redeliveries; GitHub redelivers for 3 days.
+    webhook_delivery_days: int = Field(7, ge=3, le=365)
+
+
+class ParityPolicy(Model):
+    """Production shadow compiles (spec §6 safety net)."""
+
+    shadow_rate: float = Field(0.02, ge=0, le=1)  # share of compiles also compiled cold
+    nightly_head: bool = True  # shadow-compile each default-branch head once a day
+
+
 class Settings(Model):
     connections: tuple[Connection, ...] = Field(default=(), max_length=50)
     repositories: dict[str, RepositoryTracking] = Field(default_factory=dict, max_length=500)
     compile: CompileSettings = Field(default_factory=CompileSettings)
     business_map: PlacementPolicy = Field(default_factory=PlacementPolicy)
+    retention: RetentionPolicy = Field(default_factory=RetentionPolicy)
+    parity: ParityPolicy = Field(default_factory=ParityPolicy)
 
     @model_validator(mode="after")
     def unique_connections(self) -> Self:
@@ -189,4 +232,5 @@ def environment_settings() -> dict:
 
 
 def effective_compile(settings: Settings) -> CompileSettings:
-    return settings.compile.model_copy(update=environment_settings())
+    egress = {repo: tuple(sorted(t.allowed_providers)) for repo, t in sorted(settings.repositories.items()) if t.allowed_providers is not None}
+    return settings.compile.model_copy(update={**environment_settings(), "repository_egress": egress})

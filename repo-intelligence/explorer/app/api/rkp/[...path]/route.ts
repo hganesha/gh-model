@@ -1,9 +1,12 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import type { NextRequest } from "next/server";
+import { actorOf, authConfig, readSession, sessionCookie } from "@/lib/auth";
+import { record, recordDir, replay, replayDir } from "@/lib/replay";
 
 // Server-side proxy to the RKP API. The bearer token is attached here and never
-// leaves the server: it is not echoed in responses, errors or headers.
+// leaves the server: it is not echoed in responses, errors or headers. Headers are
+// built from scratch, so a browser cannot supply its own X-RKP-Actor or X-RKP-Role.
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -47,17 +50,36 @@ async function forward(req: NextRequest, ctx: Context): Promise<Response> {
   }
   if (!sameOrigin(req)) return problem(403, "forbidden", "cross-origin requests are not allowed");
 
+  // With sign-in on, every call carries the signed-in user; the API records them and refuses writes from viewers.
+  const auth = authConfig();
+  const user = auth ? await readSession(auth, req.cookies.get(sessionCookie(auth))?.value) : null;
+  if (auth && !user) return problem(401, "unauthenticated", "Sign in to use the Explorer.");
+
+  // Slashes between segments are kept (repository ids contain one); ":" stays readable for sha256:<hex>.
+  const upstreamPath = segments.map((s) => encodeURIComponent(s).replace(/%3A/gi, ":").replace(/%40/g, "@")).join("/");
+  const apiPath = `/v1/${upstreamPath}${req.nextUrl.search}`;
+
+  const replaying = replayDir();
+  if (replaying) {
+    const text = req.method === "POST" ? await req.text() : undefined;
+    const hit = await replay(replaying, req.method, apiPath, text);
+    if (!hit) return problem(404, "not_recorded", "This Explorer replays recorded responses, and this request was not recorded.");
+    return new Response(hit.body, { status: hit.status, headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" } });
+  }
+
   const token = await readToken();
   if (!token) {
     return problem(500, "proxy_not_configured", "The explorer has no API token. Set RKP_DEV_TOKEN or create ../.rkp-store/dev-token.");
   }
 
   const base = (process.env.RKP_API_URL ?? "http://127.0.0.1:8787").replace(/\/+$/, "");
-  // Slashes between segments are kept (repository ids contain one); ":" stays readable for sha256:<hex>.
-  const upstreamPath = segments.map((s) => encodeURIComponent(s).replace(/%3A/gi, ":").replace(/%40/g, "@")).join("/");
-  const url = `${base}/v1/${upstreamPath}${req.nextUrl.search}`;
+  const url = `${base}${apiPath}`;
 
   const headers: Record<string, string> = { Authorization: `Bearer ${token}` };
+  if (user) {
+    headers["X-RKP-Actor"] = actorOf(user);
+    headers["X-RKP-Role"] = user.role;
+  }
   let body: string | undefined;
   if (req.method === "POST") {
     if (!(req.headers.get("content-type") ?? "").toLowerCase().startsWith("application/json")) {
@@ -98,6 +120,8 @@ async function forward(req: NextRequest, ctx: Context): Promise<Response> {
   } catch {
     return problem(502, "upstream_unreachable", "The RKP API closed the connection.");
   }
+  const recording = recordDir();
+  if (recording) await record(recording, req.method, apiPath, body, upstream.status, text);
   return new Response(text, {
     status: upstream.status,
     headers: {
