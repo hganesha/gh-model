@@ -2,8 +2,10 @@
 
 Manifests: pyproject.toml (PEP 621 or a full Poetry table), setup.py (read with
 `ast`, never run), setup.cfg, requirements*.txt, conda environment files,
-package.json, pom.xml, go.mod, Cargo.toml. Maven, Go and Cargo are inventory-only
-in v1: their manifests yield a Package and its declared dependencies, nothing more.
+package.json, pom.xml, build.gradle(.kts) and settings.gradle, build.sbt, .NET project
+files (nuget), Gemfile and *.gemspec (rubygems), Package.swift (swiftpm), go.mod,
+Cargo.toml. Cargo is inventory-only: its manifest yields a Package and its declared
+dependencies, nothing more.
 
 requirements*.txt and conda environment files name no package. Data and ML
 repositories often have nothing else, so they declare one named after their
@@ -424,7 +426,13 @@ _NS = re.compile(r"^\{[^}]*\}")
 
 
 class Pom(_Manifest):
+    """pom.xml: the artifact, its dependencies and, for a `pom`-packaged parent, its
+    `<modules>` (a workspace). A `jar` with no plugin that makes it runnable is an
+    importable library; Spring Boot, Quarkus, Micronaut and exec plugins make it a
+    program."""
+
     id = "manifest.maven"
+    version = "1.4.0"
     basename = "pom.xml"
 
     def extract(self, path, data, blob):
@@ -438,7 +446,15 @@ class Pom(_Manifest):
         if not (group and artifact):
             return Extraction(diagnostics=[diagnostic(self.id, "info", "no groupId/artifactId declared")])
         name_at = find_span(data, f"<artifactId>{artifact}</artifactId>") or whole_file(data)
-        out = [_package(blob, name_at, "maven", f"{group}:{artifact}", path)]
+        packaging = child(root, "packaging") or "jar"
+        modules = [m.text.strip() for c in root if _NS.sub("", c.tag) == "modules" for m in c if _NS.sub("", m.tag) == "module" and m.text]
+        plugins = {child(p, "artifactId") for b in root if _NS.sub("", b.tag) == "build" for ps in b if _NS.sub("", ps.tag) == "plugins" for p in ps}
+        runnable = bool(plugins & {"spring-boot-maven-plugin", "quarkus-maven-plugin", "micronaut-maven-plugin", "exec-maven-plugin", "appassembler-maven-plugin"})
+        shape = {"build_tool": "maven", "packaging": packaging, "is_workspace_root": packaging == "pom" and bool(modules),
+                 "has_library_entry": packaging == "jar" and not runnable, "has_start_script": runnable or packaging == "war"}
+        out = [_package(blob, name_at, "maven", f"{group}:{artifact}", path, shape)]
+        if modules:
+            out.append(_workspace(blob, find_span(data, "<modules>") or name_at, "maven", "maven", path, modules))
         cursor = name_at.end_byte
         for deps in (c for c in root if _NS.sub("", c.tag) == "dependencies"):
             for d in (c for c in deps if _NS.sub("", c.tag) == "dependency"):
@@ -500,6 +516,272 @@ class CargoToml(_Manifest):
                 m = re.compile(rb"^\s*" + re.escape(dep.encode()) + rb"\s*=", re.M).search(data, start)
                 at = span(data, m.start(), m.end()) if m else name_at
                 out.append(_dependency(blob, at, "cargo", dep, version if isinstance(version, str) else "", scope))
+        return Extraction(out)
+
+
+# ------------------------------------------------- JVM, .NET, Ruby and Swift
+#
+# Build scripts in Groovy, Kotlin, Scala, Ruby and Swift are programs; they are
+# read with patterns for the literal forms only (`implementation "g:a:v"`,
+# `gem "x"`, `.package(url: ...)`), never run. Anything computed is skipped.
+
+
+def _strip_line_comments(text: str) -> str:
+    """`//` and `#`-free text for pattern matching, with offsets kept."""
+    return re.sub(r"(?m)(?<![:\"'])//[^\n]*", lambda m: " " * len(m.group()), text)
+
+
+def _text(data: bytes) -> str | None:
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+
+
+_GRADLE_DEP = re.compile(r"""(?m)^\s*(implementation|api|compileOnly|runtimeOnly|testImplementation|testRuntimeOnly|kapt|ksp|annotationProcessor|developmentOnly)\s*\(?\s*(?:platform\(\s*)?["']([\w.-]+):([\w.-]+)(?::([\w.+-]+))?["']""")
+_GRADLE_PROJECT = re.compile(r"""(?m)^\s*(implementation|api|compileOnly|runtimeOnly|testImplementation)\s*\(?\s*project\(\s*(?:path\s*[:=]\s*)?["']:?([\w:.-]+)["']""")
+_GRADLE_SCOPES = {"testImplementation": "dev", "testRuntimeOnly": "dev", "compileOnly": "build", "kapt": "build", "ksp": "build", "annotationProcessor": "build", "developmentOnly": "dev"}
+_GRADLE_PLUGIN = re.compile(r"""\bid\s*\(?\s*["']([\w.-]+)["']|\bapply\s+plugin\s*:\s*["']([\w.-]+)["']|(?m:^|\{)\s*(application|`java-library`|java-library)\b""")
+_GRADLE_GROUP = re.compile(r"""(?m)^\s*group\s*=\s*["']([\w.-]+)["']""")
+
+
+class Gradle(_Manifest):
+    """build.gradle / build.gradle.kts: a Gradle project, named after its directory as
+    Gradle does (settings.gradle may rename the root). Dependencies are Maven
+    coordinates; `project(":lib")` is a dependency on the workspace project `lib`."""
+
+    id = "manifest.gradle"
+    version = "1.0.0"
+    basenames = ("build.gradle", "build.gradle.kts")
+
+    def matches(self, path):
+        return posixpath.basename(path) in self.basenames
+
+    def extract(self, path, data, blob):
+        raw = _text(data)
+        if raw is None:
+            return Extraction(diagnostics=[diagnostic(self.id, "warning", "not UTF-8 text")], parsed=False)
+        text = _strip_line_comments(raw)
+        plugins = {m.group(1) or m.group(2) or m.group(3).strip("`") for m in _GRADLE_PLUGIN.finditer(text)}
+        group = _GRADLE_GROUP.search(text)
+        shape = {"inferred_name": True, "build_tool": "gradle", "has_cli_entry": "application" in plugins, "has_library_entry": "java-library" in plugins,
+                 "has_start_script": bool(plugins & {"org.springframework.boot", "io.ktor.plugin", "io.micronaut.application", "io.quarkus"}), **({"group": group.group(1)} if group else {})}
+        out = [_package(blob, whole_file(data), "maven", posixpath.basename(posixpath.dirname(path)) or "root", path, shape)]
+        for m in _GRADLE_DEP.finditer(text):
+            out.append(_dependency(blob, span(data, len(raw[:m.start(2)].encode()), len(raw[:m.end(3)].encode())), "maven", f"{m.group(2)}:{m.group(3)}", m.group(4) or "", _GRADLE_SCOPES.get(m.group(1), "runtime")))
+        for m in _GRADLE_PROJECT.finditer(text):
+            out.append(_dependency(blob, span(data, len(raw[:m.start(2)].encode()), len(raw[:m.end(2)].encode())), "maven", m.group(2).rsplit(":", 1)[-1], "workspace", _GRADLE_SCOPES.get(m.group(1), "runtime")))
+        return Extraction(out)
+
+
+_GRADLE_INCLUDE = re.compile(r"""(?m)^\s*include\s*\(?\s*((?:["'][\w:.-]+["']\s*,?\s*)+)\)?""")
+_GRADLE_ROOT = re.compile(r"""(?m)^\s*rootProject\.name\s*=\s*["']([\w.-]+)["']""")
+
+
+class GradleSettings(_Manifest):
+    """settings.gradle(.kts): the root project's name and the included projects (a workspace)."""
+
+    id = "manifest.gradle_settings"
+    version = "1.0.0"
+    basenames = ("settings.gradle", "settings.gradle.kts")
+
+    def matches(self, path):
+        return posixpath.basename(path) in self.basenames
+
+    def extract(self, path, data, blob):
+        raw = _text(data)
+        if raw is None:
+            return Extraction(diagnostics=[diagnostic(self.id, "warning", "not UTF-8 text")], parsed=False)
+        text = _strip_line_comments(raw)
+        out: list = []
+        root = _GRADLE_ROOT.search(text)
+        members = [p.strip(":").replace(":", "/") for m in _GRADLE_INCLUDE.finditer(text) for p in re.findall(r"""["']([\w:.-]+)["']""", m.group(1))]
+        if root:
+            at = span(data, len(raw[:root.start(1)].encode()), len(raw[:root.end(1)].encode()))
+            out.append(_package(blob, at, "maven", root.group(1), path, {"build_tool": "gradle", "is_workspace_root": bool(members)}))
+        if members:
+            out.append(_workspace(blob, find_span(data, "include") or whole_file(data), "maven", "gradle", path, members))
+        return Extraction(out)
+
+
+_SBT_SETTING = re.compile(r"""(?m)^\s*(?:ThisBuild\s*/\s*)?(name|organization)\s*:=\s*"([\w.-]+)\"""")
+_SBT_DEP = re.compile(r""""([\w.-]+)"\s*(%%%?|%)\s*"([\w.-]+)"\s*%\s*(?:"([\w.+-]+)"|\w+)(?:\s*%\s*"?(Test|test|Provided|provided)"?)?""")
+_SBT_PROJECT = re.compile(r"""(?m)lazy\s+val\s+(\w+)\s*=\s*(?:\(\s*)?project(?:\s*\.in\(\s*file\(\s*"([\w./-]+)"\s*\)\s*\)|\s*\)?\s*\.in\(\s*file\(\s*"([\w./-]+)"\s*\)\s*\))?""")
+
+
+class Sbt(_Manifest):
+    """build.sbt: the project (organization:name), Maven-coordinate dependencies and
+    `lazy val x = project.in(file("x"))` subprojects as a workspace."""
+
+    id = "manifest.sbt"
+    version = "1.0.0"
+    basename = "build.sbt"
+
+    def extract(self, path, data, blob):
+        raw = _text(data)
+        if raw is None:
+            return Extraction(diagnostics=[diagnostic(self.id, "warning", "not UTF-8 text")], parsed=False)
+        text = _strip_line_comments(raw)
+        settings = {m.group(1): m for m in _SBT_SETTING.finditer(text)}
+        name = settings.get("name")
+        out: list = []
+        members = sorted({(m.group(2) or m.group(3) or m.group(1)) for m in _SBT_PROJECT.finditer(text)} - {"."})
+        if name:
+            at = span(data, len(raw[:name.start(2)].encode()), len(raw[:name.end(2)].encode()))
+            out.append(_package(blob, at, "maven", name.group(2), path, {"build_tool": "sbt", "is_workspace_root": bool(members), **({"group": settings["organization"].group(2)} if "organization" in settings else {})}))
+        else:
+            out.append(_package(blob, whole_file(data), "maven", posixpath.basename(posixpath.dirname(path)) or "root", path, {"build_tool": "sbt", "inferred_name": True, "is_workspace_root": bool(members)}))
+        for m in _SBT_DEP.finditer(text):
+            scope = "dev" if (m.group(5) or "").lower() == "test" else "runtime"  # Provided: supplied by the cluster at run time
+            out.append(_dependency(blob, span(data, len(raw[:m.start()].encode()), len(raw[:m.end(3) + 1].encode())), "maven", f"{m.group(1)}:{m.group(3)}", m.group(4) or "", scope))
+        if members:
+            out.append(_workspace(blob, find_span(data, "lazy val") or whole_file(data), "maven", "sbt", path, members))
+        return Extraction(out)
+
+
+_MSBUILD_PROJECT = re.compile(r"\.(cs|fs|vb)proj$")
+
+
+class MsBuildProject(_Manifest):
+    """A .NET project file: the assembly, its NuGet packages and its project references.
+    The Web SDK brings ASP.NET Core with it, so a Web project depends on
+    Microsoft.AspNetCore.App though no PackageReference says so."""
+
+    id = "manifest.nuget"
+    version = "1.0.0"
+    basename = ""
+
+    def matches(self, path):
+        return bool(_MSBUILD_PROJECT.search(path))
+
+    def extract(self, path, data, blob):
+        try:
+            root = ET.fromstring(data)
+        except ET.ParseError as exc:
+            return Extraction(diagnostics=[diagnostic(self.id, "error", f"unparseable: {exc}")], parsed=False)
+        tag = lambda n: _NS.sub("", n.tag)
+        props = {tag(c): (c.text or "").strip() for g in root if tag(g) == "PropertyGroup" for c in g}
+        stem = posixpath.splitext(posixpath.basename(path))[0]
+        name = props.get("PackageId") or props.get("AssemblyName") or stem
+        if "$(" in name:
+            name = stem
+        sdk = root.get("Sdk") or ""
+        output = props.get("OutputType", "").lower()
+        shape = {"build_tool": "msbuild", "sdk": sdk, "has_cli_entry": output == "exe" and not sdk.endswith(".Web"), "has_library_entry": output in ("", "library") and not sdk.endswith((".Web", ".Worker")),
+                 "has_start_script": sdk.endswith((".Web", ".Worker")), "publishable": props.get("IsPackable", "").lower() == "true"}
+        if props.get("TargetFramework") or props.get("TargetFrameworks"):
+            shape["target_framework"] = props.get("TargetFramework") or props.get("TargetFrameworks")
+        at = find_span(data, f"<PackageId>{name}") or find_span(data, f"<AssemblyName>{name}") or find_span(data, "<Project") or whole_file(data)
+        out = [_package(blob, at, "nuget", name, path, shape)]
+        if sdk.endswith(".Web"):
+            out.append(_dependency(blob, find_span(data, sdk) or at, "nuget", "Microsoft.AspNetCore.App", "sdk", "runtime"))
+        for item in (c for g in root if tag(g) == "ItemGroup" for c in g):
+            include = item.get("Include") or item.get("Update")
+            if not include:
+                continue
+            if tag(item) in ("PackageReference", "FrameworkReference"):
+                version = item.get("Version") or next((c.text or "" for c in item if tag(c) == "Version"), "")
+                scope = "dev" if (item.get("PrivateAssets") or "").lower() == "all" else "runtime"
+                out.append(_dependency(blob, find_span(data, f'"{include}"') or at, "nuget", include, version.strip(), scope))
+            elif tag(item) == "ProjectReference":
+                ref_name = posixpath.splitext(posixpath.basename(include.replace("\\", "/")))[0]
+                out.append(_dependency(blob, find_span(data, include) or at, "nuget", ref_name, "workspace", "runtime"))
+        return Extraction(out)
+
+
+_GEM = re.compile(r"""(?m)^\s*gem\s+["']([\w.-]+)["'](?:\s*,\s*["']([^"'\n]+)["'])?""")
+_GEM_GROUP = re.compile(r"(?m)^\s*group\s+([^\n]*?)\s+do\s*$")
+
+
+class Gemfile(_Manifest):
+    """Gemfile: Bundler dependencies. A Gemfile names no gem, so like requirements.txt
+    the package is named after its directory unless a gemspec there names it."""
+
+    id = "manifest.gemfile"
+    version = "1.0.0"
+    basename = "Gemfile"
+
+    def extract(self, path, data, blob):
+        raw = _text(data)
+        if raw is None:
+            return Extraction(diagnostics=[diagnostic(self.id, "warning", "not UTF-8 text")], parsed=False)
+        text = re.sub(r"(?m)#[^\n]*", lambda m: " " * len(m.group()), raw)
+        dev_ranges = []
+        for g in _GEM_GROUP.finditer(text):
+            if not re.search(r":(development|test)\b", g.group(1)) or re.search(r":production\b", g.group(1)):
+                continue
+            depth, end = 1, len(text)
+            for tok in re.finditer(r"(?m)^\s*(?:end\b|.*\bdo\b\s*(?:\|[^|]*\|)?\s*$)", text[g.end():]):
+                depth += -1 if tok.group().strip() == "end" else 1
+                if depth == 0:
+                    end = g.end() + tok.start()
+                    break
+            dev_ranges.append((g.end(), end))
+        out = [_package(blob, whole_file(data), "rubygems", posixpath.basename(posixpath.dirname(path)) or "root", path, {"inferred_name": True, "build_tool": "bundler"})]
+        for m in _GEM.finditer(text):
+            inline_dev = re.search(r"group:\s*\[?\s*:(development|test)", text[m.end(): text.find("\n", m.end())])
+            scope = "dev" if inline_dev or any(a <= m.start() < b for a, b in dev_ranges) else "runtime"
+            out.append(_dependency(blob, span(data, len(raw[:m.start(1)].encode()), len(raw[:m.end(1)].encode())), "rubygems", m.group(1), m.group(2) or "", scope))
+        return Extraction(out)
+
+
+_GEMSPEC_NAME = re.compile(r"""(?m)^\s*\w+\.name\s*=\s*["']([\w.-]+)["']""")
+_GEMSPEC_DEP = re.compile(r"""(?m)^\s*\w+\.add_(runtime_|development_)?dependency\s*\(?\s*["']([\w.-]+)["'](?:\s*,\s*["']([^"'\n]+)["'])?""")
+
+
+class Gemspec(_Manifest):
+    id = "manifest.gemspec"
+    version = "1.0.0"
+    basename = ""
+
+    def matches(self, path):
+        return path.endswith(".gemspec")
+
+    def extract(self, path, data, blob):
+        raw = _text(data)
+        if raw is None:
+            return Extraction(diagnostics=[diagnostic(self.id, "warning", "not UTF-8 text")], parsed=False)
+        name = _GEMSPEC_NAME.search(raw)
+        if not name:
+            return Extraction(diagnostics=[diagnostic(self.id, "info", "no literal gem name")])
+        at = span(data, len(raw[:name.start(1)].encode()), len(raw[:name.end(1)].encode()))
+        out = [_package(blob, at, "rubygems", name.group(1), path, {"build_tool": "gem", "has_library_entry": True, "has_cli_entry": ".executables" in raw})]
+        for m in _GEMSPEC_DEP.finditer(raw):
+            out.append(_dependency(blob, span(data, len(raw[:m.start(2)].encode()), len(raw[:m.end(2)].encode())), "rubygems", m.group(2), m.group(3) or "", "dev" if m.group(1) == "development_" else "runtime"))
+        return Extraction(out)
+
+
+_SWIFT_NAME = re.compile(r"""Package\s*\(\s*name\s*:\s*"([\w.-]+)\"""")
+_SWIFT_DEP = re.compile(r"""\.package\(\s*(?:name\s*:\s*"[^"]*"\s*,\s*)?(url|path)\s*:\s*"([^"]+)"(?:\s*,\s*(?:from|exact|branch|revision)\s*:\s*"([^"]+)")?""")
+_SWIFT_PRODUCT = re.compile(r"""\.(executable|library)\s*\(""")
+
+
+class SwiftPackage(_Manifest):
+    """Package.swift: the package and its dependencies, named by the last part of
+    their URL (`https://github.com/vapor/vapor.git` is `vapor`)."""
+
+    id = "manifest.swiftpm"
+    version = "1.0.0"
+    basename = "Package.swift"
+
+    def extract(self, path, data, blob):
+        raw = _text(data)
+        if raw is None:
+            return Extraction(diagnostics=[diagnostic(self.id, "warning", "not UTF-8 text")], parsed=False)
+        text = _strip_line_comments(raw)
+        name = _SWIFT_NAME.search(text)
+        if not name:
+            return Extraction(diagnostics=[diagnostic(self.id, "info", "no literal package name")])
+        products = {m.group(1) for m in _SWIFT_PRODUCT.finditer(text)}
+        at = span(data, len(raw[:name.start(1)].encode()), len(raw[:name.end(1)].encode()))
+        out = [_package(blob, at, "swiftpm", name.group(1), path, {"build_tool": "swiftpm", "has_cli_entry": ("executable" in products or ".executableTarget" in text) and "Vapor" not in text, "has_library_entry": "library" in products, "has_start_script": ".executableTarget" in text and "Vapor" in text})]
+        for m in _SWIFT_DEP.finditer(text):
+            source = m.group(2).rstrip("/")
+            dep = posixpath.basename(source[:-4] if source.endswith(".git") else source)
+            if m.group(1) == "path":
+                out.append(_dependency(blob, span(data, len(raw[:m.start(2)].encode()), len(raw[:m.end(2)].encode())), "swiftpm", dep, "workspace"))
+            elif re.fullmatch(r"[\w.-]+", dep):
+                out.append(_dependency(blob, span(data, len(raw[:m.start(2)].encode()), len(raw[:m.end(2)].encode())), "swiftpm", dep.lower(), m.group(3) or ""))
         return Extraction(out)
 
 
@@ -656,7 +938,8 @@ class TomlLock(_Lockfile):
         return Extraction([_lockfile(blob, data, self.ecosystem, self.tool, path, versions=dict(sorted(versions.items())))])
 
 
-EXTRACTORS = [PyProject(), SetupPy(), SetupCfg(), Requirements(), CondaEnvironment(), DbtProject(), PackageJson(), Pom(), GoMod(), CargoToml(), PnpmWorkspace(), PackageLock(), PnpmLock(), YarnLock(), TomlLock("poetry.lock"), TomlLock("uv.lock"), TomlLock("Cargo.lock")]
+EXTRACTORS = [PyProject(), SetupPy(), SetupCfg(), Requirements(), CondaEnvironment(), DbtProject(), PackageJson(), Pom(), GoMod(), CargoToml(),
+              Gradle(), GradleSettings(), Sbt(), MsBuildProject(), Gemfile(), Gemspec(), SwiftPackage(), PnpmWorkspace(), PackageLock(), PnpmLock(), YarnLock(), TomlLock("poetry.lock"), TomlLock("uv.lock"), TomlLock("Cargo.lock")]
 _TSCONFIG = re.compile(r"^(tsconfig|jsconfig)(\.[A-Za-z0-9_-]+)?\.json$")
 
 
@@ -666,7 +949,7 @@ class _ManifestBasenames(frozenset):
     `paths` cross unit boundaries."""
 
     def __contains__(self, name: object) -> bool:
-        return frozenset.__contains__(self, name) or (isinstance(name, str) and bool(_TSCONFIG.match(name) or _REQUIREMENTS.match(name)))
+        return frozenset.__contains__(self, name) or (isinstance(name, str) and bool(_TSCONFIG.match(name) or _REQUIREMENTS.match(name) or _MSBUILD_PROJECT.search(name) or name.endswith(".gemspec")))
 
 
 MANIFEST_BASENAMES = _ManifestBasenames(b for e in EXTRACTORS for b in getattr(e, "basenames", (e.basename,)) if b)

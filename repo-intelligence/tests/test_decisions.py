@@ -213,7 +213,7 @@ def _compile(tmp_path, fixture, commit=0, gateway=None, name="s"):
     }
 
 
-@pytest.mark.parametrize("fixture,topology", [("F01-python-api", "single"), ("F02-ts-monorepo", "monorepo"), ("F03-python-ts-hybrid", "hybrid"), ("F04-java-maven", "multi-package"), ("F10-ambiguous-incomplete", "unknown")])
+@pytest.mark.parametrize("fixture,topology", [("F01-python-api", "single"), ("F02-ts-monorepo", "monorepo"), ("F03-python-ts-hybrid", "hybrid"), ("F04-java-maven", "monorepo"), ("F10-ambiguous-incomplete", "unknown")])
 def test_repository_topology(tmp_path, fixture, topology):
     g = _compile(tmp_path, fixture)
     assert g["by_kind"]("Repository")[0]["attributes"]["topology"] == topology
@@ -238,9 +238,18 @@ def test_component_data_access_lifts_exact_symbol_links(tmp_path):
 
 
 def test_unsupported_language_yields_unknown_not_component(tmp_path):
+    # F05's last commit adds a Rust crate; Cargo is inventory-only, Go is not.
+    g = _compile(tmp_path, "F05-go-services", commit=4)
+    assert sorted(e["natural_key"]["root"] for e in g["by_kind"]("Component")) == [""]
+    assert [e["natural_key"]["ecosystem"] for e in g["by_kind"]("Package") if e["natural_key"]["manifest_dir"] == "tools/fmt"] == ["cargo"]
+    assert sum(1 for u in g["unknowns"] if u[:2] == ("Package", "component_boundary")) == 1
+
+
+def test_java_maven_modules_become_components(tmp_path):
     g = _compile(tmp_path, "F04-java-maven")
-    assert g["by_kind"]("Component") == []
-    assert sum(1 for u in g["unknowns"] if u[:2] == ("Package", "component_boundary")) == 3
+    kinds = {e["natural_key"]["root"]: e["attributes"]["component_kind"] for e in g["by_kind"]("Component")}
+    assert kinds == {"": "tooling", "core": "library", "service": "service"}
+    assert ("Component", "com.example.ledger:ledger-service", "EXPOSES", "GET /entries") in g["edges"]
 
 
 def test_ambiguous_component_abstains_without_a_model_and_resolves_with_one(tmp_path):

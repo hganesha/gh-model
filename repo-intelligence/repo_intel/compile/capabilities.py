@@ -13,7 +13,8 @@ from pydantic import Field, model_validator
 from repo_intel.compile.contracts import Model
 from repo_intel.extractors.manifests import normalize_pypi
 
-Ecosystem = Literal["npm", "pypi"]
+Ecosystem = Literal["npm", "pypi", "maven", "go", "nuget", "rubygems", "swiftpm"]
+CLASSIFIED_ECOSYSTEMS = frozenset({"npm", "pypi", "maven", "go", "nuget", "rubygems", "swiftpm"})
 ComponentRole = Literal["server", "frontend", "consumer", "data_processing", "ml_training"]
 
 

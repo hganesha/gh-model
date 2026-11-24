@@ -1,0 +1,12 @@
+{
+  "name": "shop-web",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "devDependencies": {
+    "turbo": "^2.1.0",
+    "nx": "^19.8.0"
+  }
+}

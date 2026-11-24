@@ -1,0 +1,16 @@
+asyncapi: 2.6.0
+info:
+  title: Shop events
+  version: 1.0.0
+servers:
+  prod:
+    url: kafka.internal:9092
+    protocol: kafka
+channels:
+  order-events:
+    publish:
+      message:
+        name: OrderPlaced
+    subscribe:
+      message:
+        name: OrderPlaced

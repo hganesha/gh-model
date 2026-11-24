@@ -794,7 +794,8 @@ def link_repo(shards: Mapping[str, Mapping[str, Any]], g: Any) -> list[dict[str,
         images = list(du["attributes"].get("images") or []) + ([du["attributes"]["image"]] if du["attributes"].get("image") else [])
         for repo in dict.fromkeys(image_repository(i) for i in images if isinstance(i, str) and i):
             runs.setdefault(repo, []).append(du["id"])
-    targets = {e["natural_key"]["path"]: e for e in ents.values() if e["kind"] == EntityKind.BUILD_TARGET}
+    # Container builds are keyed by their Dockerfile path; Bazel, Nx and Turborepo targets by {tool, label}.
+    targets = {e["natural_key"]["path"]: e for e in ents.values() if e["kind"] == EntityKind.BUILD_TARGET and "path" in e["natural_key"]}
     built: set[str] = {a["subject"] for s in shards.values() for a in s["assertions"] if a["predicate"] == Predicate.BUILT_BY}
     for p in sorted((e for e in ents.values() if e["kind"] == EntityKind.PIPELINE), key=lambda e: e["id"]):
         for b in p["attributes"].get("image_builds") or []:

@@ -18,7 +18,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from repo_intel.compile.buildgraph import Step, StepInputs
-from repo_intel.compile.capabilities import CapabilityCatalogue, match_package
+from repo_intel.compile.capabilities import CLASSIFIED_ECOSYSTEMS, CapabilityCatalogue, match_package
 from repo_intel.compile.contracts import Assertion, Conflict, CoverageEntry, Entity, Evidence, Unknown
 from repo_intel.decisions import dependency as dm_dependency
 from repo_intel.storage.hashing import digest
@@ -322,7 +322,7 @@ def _dependency_capabilities(
         e["id"]: e["natural_key"]
         for shard in shards.values()
         for e in shard["entities"]
-        if e["kind"] == EntityKind.EXTERNAL_DEPENDENCY and e["natural_key"]["ecosystem"] in ("npm", "pypi")
+        if e["kind"] == EntityKind.EXTERNAL_DEPENDENCY and e["natural_key"]["ecosystem"] in CLASSIFIED_ECOSYSTEMS
     }
     declarations: dict[str, set[str]] = {}
     for shard in shards.values():
@@ -364,7 +364,7 @@ def _dependency_capabilities(
             ))
     coverage = CoverageEntry(
         domain="dependency_capability", scope="@repo", numerator=classified,
-        denominator=len(declarations), detail={"ecosystems": ["npm", "pypi"]},
+        denominator=len(declarations), detail={"ecosystems": sorted(CLASSIFIED_ECOSYSTEMS)},
     )
     return decisions, coverage
 

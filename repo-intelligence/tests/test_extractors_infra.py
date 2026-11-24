@@ -540,7 +540,10 @@ def test_each_file_is_claimed_by_the_right_extractors():
     assert matching("Dockerfile") == {"infra.dockerfile"}
     assert matching(".github/workflows/ci.yml") == {"infra.github_actions", "data.jobs"}
     assert matching("docker-compose.yml") == {"infra.compose", "data.jobs"}
-    assert matching("k8s/deployment.yaml") == {"infra.kubernetes", "contract.openapi", "data.jobs"}
+    # CloudFormation and AsyncAPI read YAML by content, like OpenAPI.
+    assert matching("k8s/deployment.yaml") == {"infra.kubernetes", "infra.cloudformation", "contract.openapi", "contract.asyncapi", "data.jobs"}
+    assert matching("charts/api/templates/deployment.yaml") >= {"infra.kubernetes"} and matching("charts/api/Chart.yaml") >= {"infra.helm"}
+    assert matching("infra/main.bicep") == {"infra.bicep"} and matching("serverless.yml") >= {"infra.serverless"} and "infra.cloudformation" not in matching("serverless.yml")
     assert matching("terraform/main.tf") == {"infra.terraform"}
     assert "data.sql_ddl" in matching("sql/reports.sql") and "contract.openapi" in matching("schemas/order_created.json")
 

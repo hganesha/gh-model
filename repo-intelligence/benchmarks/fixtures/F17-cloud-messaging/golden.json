@@ -1,0 +1,371 @@
+{
+ "fixture": "F17-cloud-messaging",
+ "description": "An order pipeline across AWS (SAM, Serverless, Pulumi) and Azure (Bicep, Service Bus), with a Helm chart. Exercises the cloud IaC readers and the cloud message brokers in Python and TypeScript, and how a queue declared in infrastructure meets the code that uses it. 'since' names the milestone whose compiler must produce the item.",
+ "entities": [
+  {
+   "kind": "InfrastructureResource",
+   "natural_key": {
+    "provider": "bicep",
+    "type": "Microsoft.ServiceBus/namespaces",
+    "name": "bus"
+   },
+   "since": "M0",
+   "attributes": {
+    "physical_name": "shop-bus"
+   }
+  },
+  {
+   "kind": "InfrastructureResource",
+   "natural_key": {
+    "provider": "bicep",
+    "type": "Microsoft.ServiceBus/namespaces/queues",
+    "name": "billing"
+   },
+   "since": "M0",
+   "attributes": {
+    "physical_name": "billing"
+   }
+  },
+  {
+   "kind": "InfrastructureResource",
+   "natural_key": {
+    "provider": "bicep",
+    "type": "Microsoft.Web/serverfarms",
+    "name": "plan"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "InfrastructureResource",
+   "natural_key": {
+    "provider": "sam",
+    "type": "AWS::SQS::Queue",
+    "name": "OrdersQueue"
+   },
+   "since": "M0",
+   "attributes": {
+    "physical_name": "orders-queue"
+   }
+  },
+  {
+   "kind": "InfrastructureResource",
+   "natural_key": {
+    "provider": "sam",
+    "type": "AWS::SNS::Topic",
+    "name": "OrderNotifications"
+   },
+   "since": "M0",
+   "attributes": {
+    "physical_name": "order-notifications"
+   }
+  },
+  {
+   "kind": "InfrastructureResource",
+   "natural_key": {
+    "provider": "sam",
+    "type": "AWS::Serverless::Function",
+    "name": "ProcessOrders"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "InfrastructureResource",
+   "natural_key": {
+    "provider": "cloudformation",
+    "type": "AWS::SQS::Queue",
+    "name": "NotifyQueue"
+   },
+   "since": "M0",
+   "attributes": {
+    "physical_name": "notify-queue"
+   }
+  },
+  {
+   "kind": "InfrastructureResource",
+   "natural_key": {
+    "provider": "pulumi",
+    "type": "aws.s3.Bucket",
+    "name": "assets"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "InfrastructureResource",
+   "natural_key": {
+    "provider": "pulumi",
+    "type": "aws.sqs.Queue",
+    "name": "audit"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "DeploymentUnit",
+   "natural_key": {
+    "kind": "aws.Lambda",
+    "namespace": "template",
+    "name": "ProcessOrders"
+   },
+   "since": "M0",
+   "attributes": {
+    "handler": "orders.app.handler",
+    "events": [
+     "SQS"
+    ]
+   }
+  },
+  {
+   "kind": "DeploymentUnit",
+   "natural_key": {
+    "kind": "aws.Lambda",
+    "namespace": "notifier",
+    "name": "send"
+   },
+   "since": "M0",
+   "attributes": {
+    "routes": [
+     "POST /notify"
+    ],
+    "triggered_by": [
+     "notify-queue"
+    ]
+   }
+  },
+  {
+   "kind": "DeploymentUnit",
+   "natural_key": {
+    "kind": "helm.Chart",
+    "namespace": "helm",
+    "name": "orders-api"
+   },
+   "since": "M0",
+   "attributes": {
+    "chart_version": "0.3.1",
+    "dependencies": [
+     "redis"
+    ]
+   }
+  },
+  {
+   "kind": "Environment",
+   "natural_key": {
+    "name": "prod"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "EventTopic",
+   "natural_key": {
+    "name": "billing"
+   },
+   "since": "M0",
+   "attributes": {
+    "transport": "servicebus"
+   }
+  },
+  {
+   "kind": "EventTopic",
+   "natural_key": {
+    "name": "orders-queue"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "EventTopic",
+   "natural_key": {
+    "name": "order-notifications"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "EventTopic",
+   "natural_key": {
+    "name": "notify-queue"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "EventTopic",
+   "natural_key": {
+    "name": "inventory"
+   },
+   "since": "M2"
+  },
+  {
+   "kind": "Component",
+   "natural_key": {
+    "root": "worker"
+   },
+   "since": "M2",
+   "attributes": {
+    "component_kind": "worker"
+   }
+  }
+ ],
+ "edges": [
+  {
+   "subject": {
+    "kind": "Package",
+    "natural_key": {
+     "ecosystem": "pypi",
+     "name": "functions",
+     "manifest_dir": "functions"
+    }
+   },
+   "predicate": "SUBSCRIBES_TO",
+   "object": {
+    "kind": "EventTopic",
+    "natural_key": {
+     "name": "orders-queue"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Package",
+    "natural_key": {
+     "ecosystem": "pypi",
+     "name": "functions",
+     "manifest_dir": "functions"
+    }
+   },
+   "predicate": "PUBLISHES_TO",
+   "object": {
+    "kind": "EventTopic",
+    "natural_key": {
+     "name": "order-notifications"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Package",
+    "natural_key": {
+     "ecosystem": "npm",
+     "name": "billing-worker",
+     "manifest_dir": "worker"
+    }
+   },
+   "predicate": "SUBSCRIBES_TO",
+   "object": {
+    "kind": "EventTopic",
+    "natural_key": {
+     "name": "billing"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Package",
+    "natural_key": {
+     "ecosystem": "npm",
+     "name": "billing-worker",
+     "manifest_dir": "worker"
+    }
+   },
+   "predicate": "PUBLISHES_TO",
+   "object": {
+    "kind": "EventTopic",
+    "natural_key": {
+     "name": "inventory"
+    }
+   },
+   "since": "M2"
+  }
+ ],
+ "absent_entities": [
+  {
+   "kind": "EventTopic",
+   "natural_key": {
+    "name": "FORWARD_QUEUE_URL"
+   },
+   "why": "a queue URL read from the environment is dynamic: counted as unresolved, never named"
+  }
+ ],
+ "exclusions": [],
+ "forbidden_kinds": [],
+ "expected_unknowns": [
+  {
+   "since": "M2",
+   "detail": "functions/orders/app.py sends to a queue whose URL comes from FORWARD_QUEUE_URL: counted as unresolved in event_topics, not guessed"
+  }
+ ],
+ "expected_conflicts": [],
+ "commits": [
+  {
+   "dir": "01-dead-letter",
+   "expect": "a dead-letter queue declared in SAM and used by the function: the declared topic and the code's use are one EventTopic",
+   "added_entities": [
+    {
+     "kind": "InfrastructureResource",
+     "natural_key": {
+      "provider": "sam",
+      "type": "AWS::SQS::Queue",
+      "name": "OrdersDeadLetter"
+     },
+     "since": "M0",
+     "attributes": {
+      "physical_name": "orders-dlq"
+     }
+    },
+    {
+     "kind": "EventTopic",
+     "natural_key": {
+      "name": "orders-dlq"
+     },
+     "since": "M0"
+    }
+   ],
+   "removed_entities": []
+  },
+  {
+   "dir": "02-staging-stack",
+   "expect": "a new Pulumi stack file is a new Environment",
+   "added_entities": [
+    {
+     "kind": "Environment",
+     "natural_key": {
+      "name": "staging"
+     },
+     "since": "M0"
+    }
+   ],
+   "removed_entities": []
+  },
+  {
+   "dir": "03-retire-notifier",
+   "expect": "deleting serverless.yml removes its function, its queue resource and the queue's topic",
+   "added_entities": [],
+   "removed_entities": [
+    {
+     "kind": "DeploymentUnit",
+     "natural_key": {
+      "kind": "aws.Lambda",
+      "namespace": "notifier",
+      "name": "send"
+     },
+     "since": "M0"
+    },
+    {
+     "kind": "InfrastructureResource",
+     "natural_key": {
+      "provider": "cloudformation",
+      "type": "AWS::SQS::Queue",
+      "name": "NotifyQueue"
+     },
+     "since": "M0"
+    },
+    {
+     "kind": "EventTopic",
+     "natural_key": {
+      "name": "notify-queue"
+     },
+     "since": "M0"
+    }
+   ]
+  }
+ ],
+ "decision_cases": []
+}

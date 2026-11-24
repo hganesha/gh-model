@@ -17,6 +17,8 @@ Checked together on `claude/m0-m3-close-out`:
 - `step_worker --selfcheck`: every case blocked with the expected error under `sandbox-exec`, under Landlock in Docker, and in the hosted Azure API.
 - Explorer: Playwright, 16 passed (the record project runs only on request).
 
+On `claude/more-repo-types` (macOS): `pytest` 494 passed, and the Temporal tests pass with `RKP_TEMPORAL_TESTS=1`; `golden_check` and parity ok on all 18 fixtures. Not re-run there: the Linux/Landlock container and the hosted app.
+
 On `claude/data-ml-knowledge` (macOS, without Temporal): `pytest` 445 passed; `golden_check` and parity ok on all 15 fixtures; Explorer typecheck and Playwright (16 passed) with re-recorded responses. Not re-run there: the Linux/Landlock container and the hosted app.
 
 | Acceptance test (spec §14.5) | Test |
@@ -27,7 +29,7 @@ On `claude/data-ml-knowledge` (macOS, without Temporal): `pytest` 445 passed; `g
 | 4 Deployment | `test_link.py::test_f06_configuration_and_build_links_between_code_and_deployment`, `test_publish_gate.py::test_deployment_is_declared_never_observed` |
 | 5 Schema change | `test_parity_lineage.py::test_acceptance_5_schema_change` |
 | 8 Replay | `test_fixtures.py::test_replay_parity_and_reuse_on_every_commit` |
-| 9 Unsupported language | `test_decisions.py::test_unsupported_language_yields_unknown_not_component` |
+| 9 Unsupported language | `test_decisions.py::test_unsupported_language_yields_unknown_not_component` (a Rust crate; Java and Go have front ends since F16) |
 | 11 Rename | `test_parity_lineage.py::test_acceptance_11_component_rename` |
 | 12 Coalescing and redelivery | `test_lifecycle.py::test_acceptance_12_rapid_pushes_and_redelivery_publish_one_snapshot`, `test_workflow.py::test_ref_workflow_coalesces_rapid_pushes_and_duplicates` |
 | 13 Toolchain upgrade | `test_parity_lineage.py::test_acceptance_13_extractor_upgrade_is_attributed_to_extractor_change`, `test_buildgraph.py::test_changing_one_extractor_reruns_only_its_files` |
@@ -109,6 +111,24 @@ The compiler now reads repositories that are mostly data pipelines, model traini
 | Coverage | `data_lineage`: the share of data reads and writes whose target is named. A name computed at run time is counted, not guessed |
 
 Fixtures F11 (Databricks lakehouse), F12 (dbt and Airflow), F13 (ML training), F14 (mainframe and SAS) and F15 (ColdFusion, Teradata and Synapse) cover these, each with three seeded commits; `tests/test_extractors_data.py` covers the edge cases. The Explorer has a Jobs plane. Known gaps: JDBC tables set through `.option()` and dbt run from a shell command (`dbt build` in a BashOperator) are not linked; a COBOL `CALL` through a variable is counted as unresolved.
+
+## More languages, contracts, cloud infrastructure and build systems (after M3)
+
+Java, Go and the other languages below were inventory-only; each now has a front end. These front ends are best effort (Tier B): Pygments blanks comments, then patterns read the literal forms. A route, table or topic named by a constant or expression is counted as unresolved or left to the linker, never guessed.
+
+| Area | What is read |
+|---|---|
+| Manifests | `build.gradle(.kts)` and `settings.gradle` (Gradle projects and includes as a workspace), `build.sbt`, `pom.xml` `<modules>` and packaging, .NET project files (NuGet; the Web SDK implies ASP.NET Core), `Gemfile` and `*.gemspec`, `Package.swift`. Maven, Go, NuGet, RubyGems and SwiftPM packages now get components; Cargo stays inventory-only |
+| Java, Kotlin, Scala | Spring MVC and WebFlux, JAX-RS and Quarkus, Micronaut, Ktor routing blocks, Play `conf/routes`; JPA `@Entity` tables; SQL given to JDBC, JdbcTemplate and native `@Query`; `@KafkaListener`, `@SqsListener`, `@RabbitListener`, `@JmsListener` and the matching templates; gRPC `*ImplBase` services; Spring for GraphQL and DGS resolvers; Spark table lineage in Scala |
+| Go | net/http (including Go 1.22 `"GET /x"` patterns), gin, echo, fiber, chi and gorilla/mux, with group and subrouter prefixes; SQL given to database/sql, sqlx and pgx; GORM tables; kafka-go, Sarama and confluent-kafka-go topics; gRPC `Unimplemented*Server` services |
+| C# | ASP.NET Core controllers (`[controller]` and `[action]` tokens) and minimal APIs with `MapGroup` prefixes; EF Core `DbSet`, `[Table]` and `ToTable`; SQL given to `FromSqlRaw`, Dapper and `SqlCommand`; gRPC `*Base` services; Confluent.Kafka and Service Bus topics |
+| Ruby and Swift | Rails routes (`resources` expanded to their REST routes, `only`/`except`, `member`, `collection`, nested resources, `namespace`, `scope`), Sinatra; ActiveRecord tables; Karafka and producer topics. Vapor routes with `grouped` and `group` prefixes; Fluent models |
+| Contracts | protobuf services and messages, GraphQL SDL (root renames, `extend type`), AsyncAPI 2 and 3 channels as topics. Operations are matched to implementations by method and route, as OpenAPI ones are, across Python, TypeScript and the languages above |
+| Messaging | Amazon SQS and SNS, Google Pub/Sub, Azure Event Hubs and Service Bus, and RabbitMQ in Python and TypeScript, besides Kafka. A queue URL or ARN is reduced to its name; a name read from the environment is dynamic |
+| Cloud IaC | CloudFormation and AWS SAM (tags such as `!Ref` read safely), Serverless Framework, Bicep, Pulumi (stack files as environments; TypeScript and Python programs), Helm charts (`Chart.yaml` as a deployment unit; templates with their `{{ }}` actions blanked). A queue or topic with a literal physical name is also an `EventTopic`, so the code that uses it meets its declaration |
+| Build systems | Bazel `BUILD` files (read with `ast`, never evaluated), Nx `project.json` targets and Turborepo tasks, as `BuildTarget`s keyed `{tool, label}` with `DEPENDS_ON` between them |
+
+Fixtures F16 (protobuf, GraphQL and AsyncAPI implemented in Go, Kotlin, C#, Ruby and Swift), F17 (AWS and Azure infrastructure with cloud brokers) and F18 (Bazel, Nx and Turborepo) cover these, each with three seeded commits. F04 (Maven) and F05 (Go) now expect components and endpoints; acceptance test 9 uses F05's Rust crate. `tests/test_extractors_polyglot.py` covers the edge cases. Known gaps: a Lambda or Helm chart is not yet linked to the component whose code it deploys; Kotlin and Java routes built from constants are counted, not resolved; Nx `^target` and Turborepo `^task` dependencies stay attributes until the package graph is joined with the build graph; Pulumi programs in Go and C# are not read.
 
 ## Deviations from the spec so far
 

@@ -1,0 +1,8 @@
+{
+  "name": "@shop/ui",
+  "private": true,
+  "main": "src/index.tsx",
+  "dependencies": {
+    "react": "^18.3.0"
+  }
+}

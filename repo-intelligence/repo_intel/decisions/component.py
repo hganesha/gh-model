@@ -15,7 +15,7 @@ from repo_intel.compile.contracts import DecisionSpec
 from repo_intel.decisions.runner import RuleResult, verifier
 from repo_intel.extractors.manifests import effective_declarations
 
-SUPPORTED_ECOSYSTEMS = {"pypi", "npm", "dbt"}
+SUPPORTED_ECOSYSTEMS = {"pypi", "npm", "dbt", "maven", "go", "nuget", "rubygems", "swiftpm"}
 
 SPEC = DecisionSpec.model_validate({
     "id": "dm.component-kind", "version": "1.2.0", "scope": "unit",
@@ -107,7 +107,7 @@ def _features(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, Any]:
     evidence.update(o["evidence"]["id"] for o in builds)
     languages: dict[str, int] = {}
     for s in summaries:
-        if s["language"] in ("python", "typescript", "javascript", "java", "go"):
+        if s["language"] in ("python", "typescript", "javascript", "java", "kotlin", "scala", "go", "csharp", "ruby", "swift"):
             languages[s["language"]] = languages.get(s["language"], 0) + 1
     manifest = pkg["payload"].get("attributes", {})
     # Evidence is stated outright, with negatives included: a decision model judges what it

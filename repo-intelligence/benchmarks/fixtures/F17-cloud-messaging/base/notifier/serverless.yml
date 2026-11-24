@@ -1,0 +1,23 @@
+service: notifier
+
+provider:
+  name: aws
+  runtime: nodejs20.x
+  stage: prod
+
+functions:
+  send:
+    handler: src/send.handler
+    events:
+      - http:
+          path: /notify
+          method: post
+      - sqs:
+          arn: arn:aws:sqs:us-east-1:123456789012:notify-queue
+
+resources:
+  Resources:
+    NotifyQueue:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: notify-queue

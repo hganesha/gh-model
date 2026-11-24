@@ -41,13 +41,36 @@ def is_workflow(path: str) -> bool:
     return bool(_WORKFLOW.search(path))
 
 
+def is_helm_template(path: str) -> bool:
+    return bool(re.search(r"(?:^|/)templates/[^/]+\.ya?ml$", path))
+
+
 def is_compose(path: str) -> bool:
     return posixpath.basename(path) in COMPOSE_BASENAMES
 
 
+class _TolerantLoader(yaml.SafeLoader):
+    """SafeLoader that reads application tags (CloudFormation `!Ref`, `!GetAtt`,
+    `!Sub`, Ansible `!vault`, ...) as {"<tag>": value} instead of failing. Nothing is
+    constructed beyond plain mappings, lists and scalars."""
+
+
+def _tagged(loader: yaml.SafeLoader, suffix: str, node: yaml.Node) -> Any:
+    if isinstance(node, yaml.ScalarNode):
+        value: Any = loader.construct_scalar(node)
+    elif isinstance(node, yaml.SequenceNode):
+        value = loader.construct_sequence(node, deep=True)
+    else:
+        value = loader.construct_mapping(node, deep=True)
+    return {f"!{suffix}": value}
+
+
+_TolerantLoader.add_multi_constructor("!", _tagged)
+
+
 def load_yaml_documents(data: bytes) -> list[Any]:
     """Every YAML document in the file. Raises yaml.YAMLError / UnicodeDecodeError / RecursionError."""
-    return list(yaml.safe_load_all(data.decode("utf-8")))
+    return list(yaml.load_all(data.decode("utf-8"), Loader=_TolerantLoader))  # noqa: S506 - safe loader subclass
 
 
 YAML_ERRORS = (yaml.YAMLError, UnicodeDecodeError, RecursionError, ValueError)
@@ -283,10 +306,19 @@ class Kubernetes:
         return path.lower().endswith(YAML_SUFFIXES) and not is_workflow(path) and not is_compose(path)
 
     def extract(self, path, data, blob):
-        try:
-            docs = load_yaml_documents(data)
-        except YAML_ERRORS as exc:
-            return _unparseable(self.id, "YAML", exc)
+        if is_helm_template(path) and b"{{" in data:
+            # A Helm template is Go-templated YAML: blank each action (same length, so spans
+            # hold) and read what is literal; templated names are skipped below.
+            data_for_yaml = re.sub(rb"\{\{-?.*?-?\}\}", lambda m: b" " * len(m.group()), data, flags=re.S)
+            try:
+                docs = load_yaml_documents(data_for_yaml)
+            except YAML_ERRORS:
+                return Extraction(diagnostics=[diagnostic(self.id, "info", "Helm template not readable as YAML once actions are blanked")], parsed=False)
+        else:
+            try:
+                docs = load_yaml_documents(data)
+            except YAML_ERRORS as exc:
+                return _unparseable(self.id, "YAML", exc)
         docs = [d for d in docs if d is not None]
         out: list = []
         for doc, (start, end) in zip(docs, document_ranges(data, len(docs))):
