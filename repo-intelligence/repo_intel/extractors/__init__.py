@@ -21,13 +21,13 @@ import posixpath
 from collections.abc import Mapping
 from typing import Any
 
-from .. import secrets
-from ..buildgraph import Ref, Step, StepInputs, StepRunner, code_digest
-from ..contracts import FileSummary
-from ..hashing import digest, sha256_hex
-from ..ontology import EvidenceClass
-from .base import Extraction, Extractor, diagnostic, obs, whole_file
-from .manifests import MANIFEST_BASENAMES
+from repo_intel.ingest import secrets
+from repo_intel.compile.buildgraph import Ref, Step, StepInputs, StepRunner, code_digest
+from repo_intel.compile.contracts import FileSummary
+from repo_intel.storage.hashing import digest, sha256_hex
+from repo_intel.compile.ontology import EvidenceClass
+from repo_intel.extractors.base import Extraction, Extractor, diagnostic, obs, whole_file
+from repo_intel.extractors.manifests import MANIFEST_BASENAMES
 
 LANGUAGES = {
     ".py": "python", ".ts": "typescript", ".tsx": "typescript", ".js": "javascript", ".jsx": "javascript", ".mjs": "javascript", ".cjs": "javascript",

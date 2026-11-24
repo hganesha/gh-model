@@ -3,8 +3,8 @@
 from repo_intel.extractors import EXTRACTORS
 from repo_intel.extractors.contracts_data import OpenAPI, SqlDdl, migration_identity, split_statements
 from repo_intel.extractors.infrastructure import Compose, Dockerfile, GithubWorkflow, Kubernetes, Terraform, image_repository
-from repo_intel.hashing import sha256_hex
-from repo_intel.ontology import EntityKind, Predicate, check_relation
+from repo_intel.storage.hashing import sha256_hex
+from repo_intel.compile.ontology import EntityKind, Predicate, check_relation
 
 SECRET = "postgresql://admin:hunter2-s3cr3t@db.internal/prod"
 

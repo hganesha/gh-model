@@ -8,9 +8,9 @@ from pathlib import Path
 
 import pytest
 
-from repo_intel import github
-from repo_intel.snapshot import missing_objects, snapshot_commit
-from repo_intel.store import ObjectStore
+from repo_intel.ingest import github
+from repo_intel.ingest.snapshot import missing_objects, snapshot_commit
+from repo_intel.storage.store import ObjectStore
 
 GIT_ENV = {
     "PATH": os.environ.get("PATH", ""), "HOME": os.devnull, "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": os.devnull,

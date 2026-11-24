@@ -10,8 +10,8 @@ from __future__ import annotations
 import posixpath
 import re
 
-from ..ontology import EntityKind, EvidenceClass
-from .base import Extraction, entity, obs, span, whole_file
+from repo_intel.compile.ontology import EntityKind, EvidenceClass
+from repo_intel.extractors.base import Extraction, entity, obs, span, whole_file
 
 _MODELS = [
     ("anthropic", re.compile(rb"(?<![\w-])claude-(?:opus|sonnet|haiku|fable|mythos|instant|\d)[a-z0-9.-]*[a-z0-9]")),

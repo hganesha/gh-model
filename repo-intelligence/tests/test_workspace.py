@@ -11,12 +11,13 @@ import psycopg
 import pytest
 from fastapi.testclient import TestClient
 
-from repo_intel import business_map, projection, registry
-from repo_intel.api import create_app
+from repo_intel.workspace import business_map
+from repo_intel.knowledge import projection, registry
+from repo_intel.server.api import create_app
 from repo_intel.decisions.gateway import Gateway, ScriptedModel
-from repo_intel.fixtures import materialize
-from repo_intel.service import Service
-from repo_intel.store import ObjectStore
+from repo_intel.compile.fixtures import materialize
+from repo_intel.server.service import Service
+from repo_intel.storage.store import ObjectStore
 from test_service_api import AUTH, TOKEN, _finish
 
 
@@ -237,7 +238,7 @@ def test_cross_repository_candidates_and_declared_suggestion(workspace, tmp_path
 
 
 def test_gitlab_rest_browse_connect_and_push(workspace, f01, monkeypatch):
-    from repo_intel import connectors
+    from repo_intel.ingest import connectors
 
     client, service, _ = workspace
     fixture, shas = f01
@@ -357,7 +358,7 @@ def test_placement_is_inherited_after_a_component_folder_move(workspace, tmp_pat
 def test_placement_none_and_model_policy_are_cached_separately(store):
     from repo_intel.decisions import placement
     from repo_intel.decisions.runner import Budget
-    from repo_intel.settings import ModelSelection, PlacementPolicy
+    from repo_intel.workspace.settings import ModelSelection, PlacementPolicy
 
     draft = business_map.BusinessMap(stages=(business_map.Stage(
         id="stage", name="Stage", capabilities=(business_map.Capability(id="sales", name="Sales"),),
@@ -384,7 +385,7 @@ def test_placement_none_and_model_policy_are_cached_separately(store):
 
 @pytest.mark.parametrize("mode", ["github_pat", "github_device"])
 def test_github_token_connection_browse_and_compile(workspace, f01, monkeypatch, mode):
-    from repo_intel import connectors
+    from repo_intel.ingest import connectors
 
     client, service, _ = workspace
     fixture, shas = f01
@@ -435,8 +436,8 @@ def test_device_sign_in_explains_why_github_refused(monkeypatch):
     import io
     from urllib.error import HTTPError
 
-    from repo_intel import connectors
-    from repo_intel.settings import Connection
+    from repo_intel.ingest import connectors
+    from repo_intel.workspace.settings import Connection
 
     cfg = Connection(id="gh", name="GitHub", mode="github_device", host="github.com", client_id="Ov23exampleClient")
 
@@ -461,7 +462,7 @@ def test_hosted_device_sign_in_keeps_the_token_in_key_vault():
     """Hosted, a device sign-in token goes to Key Vault with the app's identity, not to an OS keychain."""
     import httpx
 
-    from repo_intel import connectors
+    from repo_intel.ingest import connectors
 
     vault, seen = {}, []
 
@@ -506,8 +507,8 @@ def test_installation_token_signs_app_jwt_and_caches_credential(monkeypatch):
     from cryptography.hazmat.primitives import hashes, serialization
     from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
-    from repo_intel import connectors
-    from repo_intel.settings import Connection
+    from repo_intel.ingest import connectors
+    from repo_intel.workspace.settings import Connection
 
     private = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     key = private.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()).decode()
@@ -643,7 +644,7 @@ def test_canvas_layout_moves_cards_without_rerunning_placement(workspace):
 
 
 def test_explicit_placement_retries_when_a_background_run_saved_first(workspace):
-    from repo_intel import business_map
+    from repo_intel.workspace import business_map
     client, service, _ = workspace
     _create_map(client)
     real, calls = service._place_once, []

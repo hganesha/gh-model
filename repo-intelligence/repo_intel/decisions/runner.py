@@ -29,11 +29,11 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
-from ..contracts import DecisionResult, DecisionSpec, Disagreement, Hypothesis, StrategyStep, decision_id
-from ..hashing import canonical, digest
-from ..store import ObjectStore
-from .gateway import ChoiceAnswer, DecisionModel, EgressDenied, Gateway, ModelUnavailable
-from .overrides import Overrides
+from repo_intel.compile.contracts import DecisionResult, DecisionSpec, Disagreement, Hypothesis, StrategyStep, decision_id
+from repo_intel.storage.hashing import canonical, digest
+from repo_intel.storage.store import ObjectStore
+from repo_intel.decisions.gateway import ChoiceAnswer, DecisionModel, EgressDenied, Gateway, ModelUnavailable
+from repo_intel.decisions.overrides import Overrides
 
 NONE_OF_THESE = "none_of_these"
 # Outcomes that say nothing about the case itself: the next compile may try again.

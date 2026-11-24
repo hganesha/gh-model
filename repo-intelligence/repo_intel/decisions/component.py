@@ -10,9 +10,9 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from ..buildgraph import Step, StepInputs
-from ..contracts import DecisionSpec
-from .runner import RuleResult, verifier
+from repo_intel.compile.buildgraph import Step, StepInputs
+from repo_intel.compile.contracts import DecisionSpec
+from repo_intel.decisions.runner import RuleResult, verifier
 
 SUPPORTED_ECOSYSTEMS = {"pypi", "npm"}
 

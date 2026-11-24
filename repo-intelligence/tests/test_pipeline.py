@@ -4,13 +4,13 @@ from threading import Barrier
 import pytest
 
 from conftest import REPO_ID
-from repo_intel import pipeline
-from repo_intel.capabilities import CapabilityCatalogue, load_catalogue, match_package
-from repo_intel.contracts import assertion_id, entity_id
-from repo_intel.fixtures import load_golden
-from repo_intel.pipeline import PublishGateError, compile_commit, load_manifest, load_shards, stage_compile, stage_snapshot
-from repo_intel.store import ObjectStore
-from repo_intel.verify import verify_snapshot
+from repo_intel.compile import pipeline
+from repo_intel.compile.capabilities import CapabilityCatalogue, load_catalogue, match_package
+from repo_intel.compile.contracts import assertion_id, entity_id
+from repo_intel.compile.fixtures import load_golden
+from repo_intel.compile.pipeline import PublishGateError, compile_commit, load_manifest, load_shards, stage_compile, stage_snapshot
+from repo_intel.storage.store import ObjectStore
+from repo_intel.compile.verify import verify_snapshot
 
 GOLDEN = load_golden("F01-python-api")
 

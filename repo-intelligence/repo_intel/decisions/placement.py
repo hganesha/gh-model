@@ -13,13 +13,13 @@ from time import sleep
 
 import httpx
 
-from ..business_map import BusinessMap, Capability, Placement
-from ..contracts import DecisionSpec
-from ..hashing import canonical, digest
-from ..settings import ModelSelection, PlacementPolicy
-from ..store import ObjectStore
-from .gateway import Gateway
-from .runner import Budget, Ledger, RuleResult, evaluate, verifier
+from repo_intel.workspace.business_map import BusinessMap, Capability, Placement
+from repo_intel.compile.contracts import DecisionSpec
+from repo_intel.storage.hashing import canonical, digest
+from repo_intel.workspace.settings import ModelSelection, PlacementPolicy
+from repo_intel.storage.store import ObjectStore
+from repo_intel.decisions.gateway import Gateway
+from repo_intel.decisions.runner import Budget, Ledger, RuleResult, evaluate, verifier
 
 DIMENSIONS = 384
 TOKEN = re.compile(r"[a-z0-9]+")
@@ -87,7 +87,7 @@ def embedding(policy: PlacementPolicy, allowed: tuple[str, ...], store: ObjectSt
     model = os.environ.get("RKP_EMBEDDING_MODEL", "text-embedding-3-small")
     base = os.environ.get("RKP_EMBEDDING_URL", "https://api.openai.com/v1").rstrip("/")
     key = os.environ.get("RKP_EMBEDDING_API_KEY")
-    from .gateway import ENTRA_SCOPE, azure_credential, bearer
+    from repo_intel.decisions.gateway import ENTRA_SCOPE, azure_credential, bearer
     credential = None if key else azure_credential(os.environ.get("RKP_EMBEDDING_AUTH"))
     if credential is not None:
         # Azure OpenAI v1 (`https://<resource>.openai.azure.com/openai/v1`): `az login` or the managed identity, no key.

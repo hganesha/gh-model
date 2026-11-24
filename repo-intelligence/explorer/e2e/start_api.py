@@ -8,8 +8,8 @@ import subprocess
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from repo_intel.fixtures import materialize
-from repo_intel.serve import main
+from repo_intel.compile.fixtures import materialize
+from repo_intel.server.serve import main
 
 data = TemporaryDirectory(prefix="rkp-browser-test-")
 atexit.register(data.cleanup)

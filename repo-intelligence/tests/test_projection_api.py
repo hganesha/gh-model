@@ -3,10 +3,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 from conftest import REPO_ID
-from repo_intel import projection
-from repo_intel.api import create_app
-from repo_intel.contracts import entity_id
-from repo_intel.pipeline import compile_commit
+from repo_intel.knowledge import projection
+from repo_intel.server.api import create_app
+from repo_intel.compile.contracts import entity_id
+from repo_intel.compile.pipeline import compile_commit
 
 TOKEN = "test-token-for-local-cluster-only"
 AUTH = {"Authorization": f"Bearer {TOKEN}"}

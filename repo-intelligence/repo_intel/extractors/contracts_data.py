@@ -27,9 +27,9 @@ import posixpath
 import re
 from typing import Any
 
-from ..ontology import EntityKind, EvidenceClass, Predicate
-from .base import Extraction, diagnostic, entity, obs, ref, relation, span, whole_file
-from .infrastructure import YAML_ERRORS, YAML_SUFFIXES, is_compose, is_workflow, load_yaml_documents, search_span
+from repo_intel.compile.ontology import EntityKind, EvidenceClass, Predicate
+from repo_intel.extractors.base import Extraction, diagnostic, entity, obs, ref, relation, span, whole_file
+from repo_intel.extractors.infrastructure import YAML_ERRORS, YAML_SUFFIXES, is_compose, is_workflow, load_yaml_documents, search_span
 
 E1 = EvidenceClass.E1
 K = EntityKind

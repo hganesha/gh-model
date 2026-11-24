@@ -5,12 +5,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 from conftest import REPO_ID
-from repo_intel import buildgraph, compiler, extractors, step_worker
-from repo_intel.buildgraph import (
-    InProcessExecutor, Ref, SandboxExecutor, SandboxUnavailable, Step, StepFailed, StepRunner, StepTimeout,
-    UndeclaredInputError, UnregisteredStepError, read_metrics, registry,
-)
-from repo_intel.pipeline import compile_commit, stage_snapshot
+from repo_intel.compile import buildgraph, compiler, step_worker
+from repo_intel import extractors
+from repo_intel.compile.buildgraph import InProcessExecutor, Ref, SandboxExecutor, SandboxUnavailable, Step, StepFailed, StepRunner, StepTimeout, UndeclaredInputError, UnregisteredStepError, read_metrics, registry
+from repo_intel.compile.pipeline import compile_commit, stage_snapshot
 
 
 @pytest.fixture(scope="module")
@@ -81,7 +79,7 @@ def test_registry_holds_every_pipeline_step():
         assert step.fn.__qualname__ == step.fn.__name__, f"{step.name} must be a top-level function"
     modules = buildgraph.step_modules()
     assert "repo_intel.extractors" in modules and "repo_intel.decisions.component" in modules
-    assert "repo_intel.api" not in modules and "repo_intel.buildgraph" not in modules
+    assert "repo_intel.server.api" not in modules and "repo_intel.compile.buildgraph" not in modules
 
 
 def test_step_modules_are_found_from_source():
@@ -205,7 +203,7 @@ def test_in_process_only_behind_the_dev_flag(monkeypatch):
 
 def test_fixture_compile_is_hermetic_and_matches_in_process(tmp_path, f01, sandbox, monkeypatch):
     """GI-004 acceptance: a whole fixture compiles under the sandbox; a rerun executes zero steps."""
-    from repo_intel.store import ObjectStore
+    from repo_intel.storage.store import ObjectStore
 
     repo, shas = f01
     monkeypatch.delenv(buildgraph.EXECUTOR_ENV, raising=False)
@@ -269,7 +267,7 @@ def test_metrics_are_written_when_the_runner_goes_away(store):
 
 
 def test_step_metrics_endpoint(store):
-    from repo_intel.api import create_app
+    from repo_intel.server.api import create_app
 
     StepRunner(store, executor=InProcessExecutor(), run_id="run_api").flush_metrics()
     client = TestClient(create_app("", store.tenant_id, "token", store=store))
@@ -283,7 +281,7 @@ def test_step_metrics_endpoint(store):
 
 
 def test_tenants_do_not_share_objects(tmp_path):
-    from repo_intel.store import ObjectStore
+    from repo_intel.storage.store import ObjectStore
     a, b = ObjectStore(tmp_path, "a"), ObjectStore(tmp_path, "b")
     d = a.put_bytes(b"same bytes")
     assert a.has(d) and not b.has(d)

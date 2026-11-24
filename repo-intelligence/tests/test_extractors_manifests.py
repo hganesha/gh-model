@@ -2,11 +2,11 @@
 
 import json
 
-from repo_intel.contracts import Evidence, Span
+from repo_intel.compile.contracts import Evidence, Span
 from repo_intel.extractors import MANIFEST_BASENAMES
 from repo_intel.extractors.manifests import CargoToml, PackageJson, PackageLock, PnpmLock, PnpmWorkspace, PyProject, TomlLock, YarnLock
 from repo_intel.extractors.tsconfig import TsConfig
-from repo_intel.planning import glob_match, plan_units
+from repo_intel.compile.planning import glob_match, plan_units
 
 BLOB = "ab" * 32
 
@@ -187,10 +187,10 @@ def test_plan_records_package_entry_points_and_maps_dist_to_src():
 
 def test_monorepo_lockfile_versions_and_workspace_boundary(tmp_path):
     from conftest import REPO_ID
-    from repo_intel.contracts import entity_id
-    from repo_intel.fixtures import materialize
-    from repo_intel.pipeline import compile_commit, load_shards
-    from repo_intel.store import ObjectStore
+    from repo_intel.compile.contracts import entity_id
+    from repo_intel.compile.fixtures import materialize
+    from repo_intel.compile.pipeline import compile_commit, load_shards
+    from repo_intel.storage.store import ObjectStore
 
     shas = materialize("F02-ts-monorepo", tmp_path / "repo")
     store = ObjectStore(tmp_path / "store", "t")

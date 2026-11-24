@@ -78,7 +78,7 @@ def load_pins(path: Path = PINS_PATH) -> dict[str, dict[str, str]]:
 
 
 def pins_hash(path: Path = PINS_PATH) -> str:
-    from ..hashing import digest
+    from repo_intel.storage.hashing import digest
     return digest(load_pins(path))
 
 
@@ -595,7 +595,7 @@ class Gateway:
         return {alias: f"{m.provider}/{getattr(m, 'model', '')}" for alias, m in sorted({**self.aliases, **self.llms}.items())}
 
     def identifiers(self) -> dict[str, dict[str, str | None]]:
-        from ..hashing import digest
+        from repo_intel.storage.hashing import digest
         return {
             alias: {
                 "model": f"{model.provider}/{getattr(model, 'model', '')}",

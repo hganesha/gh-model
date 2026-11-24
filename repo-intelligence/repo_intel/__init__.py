@@ -1,3 +1,3 @@
-"""Repository knowledge compiler. See the v2.0 architecture spec one directory up."""
+"""Repository knowledge compiler. Design: docs/architecture.md at the repository root."""
 
 RKP_SCHEMA = "2.0.0"
