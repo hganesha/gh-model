@@ -1,4 +1,5 @@
 import { defineConfig } from "@playwright/test";
+import path from "node:path";
 
 const token = "rkp-workspace-e2e-token";
 const apiPort = process.env.RKP_TEST_API_PORT ?? "18787";
@@ -8,6 +9,12 @@ const api = `http://127.0.0.1:${apiPort}`;
 const ui = `http://127.0.0.1:${uiPort}`;
 export const idp = `http://127.0.0.1:${idpPort}`;
 export const adminState = ".playwright-auth/admin.json";
+const replayPort = process.env.RKP_TEST_REPLAY_PORT ?? "13101";
+const strictPort = process.env.RKP_TEST_STRICT_PORT ?? "13102";
+export const replayUrl = `http://127.0.0.1:${replayPort}`;
+export const strictUrl = `http://127.0.0.1:${strictPort}`;
+// RKP_RECORD=1 npx playwright test --project=record  refreshes e2e/recorded from the fixtures.
+const recording = Boolean(process.env.RKP_RECORD);
 
 // The Explorer runs with sign-in on, against a local OpenID Connect provider (e2e/fake_idp.mjs)
 // that issues Entra-shaped tokens. The setup project signs in once as an administrator.
@@ -22,6 +29,9 @@ export default defineConfig({
     { name: "sign in", testMatch: /auth\.setup\.ts/ },
     { name: "workspace", testMatch: /workspace\.spec\.ts/, dependencies: ["sign in"], use: { storageState: adminState } },
     { name: "sign-in flows", testMatch: /sign-in\.spec\.ts/, dependencies: ["workspace"] },
+    { name: "record", testMatch: /record\.spec\.ts/, dependencies: ["sign in"], use: { storageState: adminState } },
+    // A production build against recorded responses only; it needs no API.
+    { name: "replay", testMatch: /replay\.spec\.ts/ },
   ],
   webServer: [
     {
@@ -48,8 +58,16 @@ export default defineConfig({
         RKP_PUBLIC_URL: ui,
         RKP_SESSION_SECRET: "e2e-session-secret-that-is-at-least-32-chars",
         RKP_OIDC_ADMIN_ROLES: "RKP.Admin",
+        ...(recording ? { RKP_API_RECORD: path.resolve(__dirname, "e2e", "recorded") } : {}),
       },
       timeout: 90_000,
+    },
+    {
+      command: "node e2e/start_replay.mjs",
+      url: `${replayUrl}/auth/signed-out`,
+      env: { REPLAY_PORT: replayPort, STRICT_PORT: strictPort },
+      timeout: 300_000,
+      gracefulShutdown: { signal: "SIGTERM", timeout: 5000 },
     },
   ],
 });

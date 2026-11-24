@@ -10,7 +10,7 @@ Repository knowledge compiler for the GitHub Intelligence Engine. Design: `../Gi
 | GI-002 fixtures | Done: F01–F10 with goldens tagged by milestone. Items due by M1 are checked on every test run |
 | GI-003 walking skeleton | Done: compile, PostgreSQL projection, query API, Temporal workflow |
 | GI-004 build-graph runtime | Step cache and declared-input enforcement at the API level. OS-level sandboxing of steps not started |
-| GI-005 GitHub ingestion | GitHub CLI, App, token, and device-flow connectors are available. GitLab and plain Git use the same ingestion interface. The GitHub CLI, GitHub REST token and plain Git over HTTPS connectors were checked live against a private GitHub repository (describe, resolve, fetch), and plain Git against a public GitLab repository; a missing ref and an invalid token are refused. GitHub device sign-in was checked live on the Azure deployment: token stored in Key Vault, repositories listed, and a private repository fetched and compiled. Not checked live: GitHub App, GitLab token and push webhooks, which need their own credentials. The Explorer uses in-process compile jobs |
+| GI-005 GitHub ingestion | GitHub CLI, App, token, and device-flow connectors are available. GitLab and plain Git use the same ingestion interface. The GitHub CLI, GitHub REST token and plain Git over HTTPS connectors were checked live against a private GitHub repository (describe, resolve, fetch), and plain Git against a public GitLab repository; a missing ref and an invalid token are refused. GitHub device sign-in was checked live on the Azure deployment: token stored in Key Vault, repositories listed, and a private repository fetched and compiled. Commits are fetched as a partial clone: commit and trees first, then only the blobs the snapshot reads, so vendored, generated and binary files never download (checked live on `hganesha/gh-model`: 1.7 s, 612 KB mirror). The snapshot never fetches over the network itself. The exclusion policy is pinned with the commit: built-in vendored and binary rules, then `.gitattributes` `linguist-generated` / `linguist-vendored` (set or unset), then the repository's own `.rkp/exclude` globs, each exclusion with its reason and rule. Not checked live: GitHub App, GitLab token and push webhooks, which need their own credentials. Pruning old webhook deliveries is left to GI-018. The Explorer uses in-process compile jobs |
 | GI-006 secret scan | Done: scan at admission, masked evidence endpoint, publish gate rejects leaked values. No blob-cache TTL yet |
 | GI-007 manifests and unit planning | Done: pyproject, package.json, pom.xml, go.mod; workspace dependencies link to sibling packages |
 | GI-008 Python | Extraction and linking done: FastAPI routes, SQLAlchemy tables and fields, Alembic migrations, config keys; imports, symbols, route-to-handler, ORM call sites to tables, tests to symbols (candidate), Kafka topics published and subscribed to (literal topics and topics passed as a string constant; a topic computed at run time is recorded as an unknown). Not done: router prefixes across files, call graph, method-level symbols beyond ORM use |
@@ -27,6 +27,7 @@ Repository knowledge compiler for the GitHub Intelligence Engine. Design: `../Gi
 | GI-020 delta and impact | `delta.py` and `GET /v1/knowledge/diff`: added, removed, changed, moved and "its file was edited" entities; relationship changes; one-hop impact; cause when attributable. Moves are recognised only from identical content, so a file that was moved and edited shows as removed plus added. Not done: Git rename detection, a persisted lineage table, per-entry cause when both code and toolchain changed |
 | GI-018 refs and triggers | Tracked refs, manual and polling triggers, and signed push intake work in the single-process service. Durable trigger reconciliation remains open |
 | GI-021 retention | Not started: no garbage collection, retraction or deletion |
+| GI-030 Explorer foundation | Done: reproducible build (lockfile, pinned versions, `next build` in CI); a production build serves nothing without sign-in unless `RKP_ALLOW_ANONYMOUS=1`; no database connection; planes named as in spec §18.3 (Architecture, Contracts, Data, AI integrations, Tests, Deployment, plus Quality); a production build renders every plane of F01 and F02 from recorded responses in `explorer/e2e/recorded` with no API running |
 
 ### M2 (decisions and compiler), partly complete
 
@@ -149,7 +150,7 @@ The Explorer can require sign-in with Microsoft Entra ID or any OpenID Connect p
 | `RKP_SESSION_SECRET` | at least 32 characters |
 | `RKP_OIDC_ADMIN_ROLES` | optional comma-separated app roles (Entra `roles` claim) or group IDs (`groups`) that may change things; everyone else is read-only. Empty: every signed-in user can |
 
-With neither issuer variable set, sign-in is off and nothing changes locally. A half-configured sign-in refuses every request rather than run open. Read-only users can browse everything. Connecting or compiling repositories, editing the map, reviewing placements and opening Settings return 403. For Entra, prefer app roles over groups: a user in many groups gets a group-overage reference instead of the list.
+With neither issuer variable set, sign-in is off under `next dev`. A production build then refuses every request unless `RKP_ALLOW_ANONYMOUS=1` says another control restricts access; `deploy.sh` sets it when it deploys without sign-in, behind the IP allow-list. A half-configured sign-in refuses every request rather than run open. Read-only users can browse everything. Connecting or compiling repositories, editing the map, reviewing placements and opening Settings return 403. For Entra, prefer app roles over groups: a user in many groups gets a group-overage reference instead of the list.
 
 ## Layout
 
@@ -217,3 +218,11 @@ Run the browser suite from the Explorer directory after installing the Python de
 npx playwright install chromium
 npm run test:e2e
 ~~~
+
+The suite also builds the Explorer for production and runs it twice with no API: once replaying the recorded fixture responses in `e2e/recorded` (every plane must render, and any write is refused), and once with neither sign-in nor `RKP_ALLOW_ANONYMOUS=1` (it must refuse every request). After a change to what the views request, record again:
+
+~~~bash
+RKP_RECORD=1 npx playwright test --project=record
+~~~
+
+`RKP_API_REPLAY=<dir>` runs any Explorer from recordings, for a demo without an API.

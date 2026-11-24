@@ -7,7 +7,9 @@ import { createRemoteJWKSet, jwtVerify, SignJWT, type JWTPayload } from "jose";
 // checked against the provider's published keys, and the session is an HMAC-signed
 // cookie. The internal API is told who is acting through the proxy (X-RKP-Actor/-Role).
 //
-// Off unless an issuer is configured:
+// Off in `next dev` unless an issuer is configured. A production build refuses every request
+// without one, unless RKP_ALLOW_ANONYMOUS=1 says another control restricts access.
+// Settings:
 //   RKP_ENTRA_TENANT_ID     Entra tenant (GUID or domain); sets the issuer for you, or
 //   RKP_OIDC_ISSUER         any OIDC issuer URL
 //   RKP_OIDC_CLIENT_ID, RKP_OIDC_CLIENT_SECRET   the app registration
@@ -54,7 +56,14 @@ export class AuthMisconfigured extends Error {}
 export function authConfig(env: NodeJS.ProcessEnv = process.env): AuthConfig | null {
   const tenant = env.RKP_ENTRA_TENANT_ID?.trim();
   const issuer = (env.RKP_OIDC_ISSUER?.trim() || (tenant ? `https://login.microsoftonline.com/${tenant}/v2.0` : "")).replace(/\/+$/, "");
-  if (!issuer) return null;
+  if (!issuer) {
+    // A production build serves no one without sign-in, unless the operator says another control
+    // (an IP allow-list, a private network) stands in for it. `next dev` stays open for local use.
+    if (env.NODE_ENV === "production" && env.RKP_ALLOW_ANONYMOUS !== "1") {
+      throw new AuthMisconfigured("Sign-in is required. Set RKP_ENTRA_TENANT_ID or RKP_OIDC_ISSUER, or RKP_ALLOW_ANONYMOUS=1 if another control such as an IP allow-list restricts access.");
+    }
+    return null;
+  }
   const missing = ["RKP_OIDC_CLIENT_ID", "RKP_OIDC_CLIENT_SECRET", "RKP_PUBLIC_URL", "RKP_SESSION_SECRET"].filter((k) => !env[k]?.trim());
   if (missing.length) throw new AuthMisconfigured(`Sign-in is configured but ${missing.join(", ")} ${missing.length > 1 ? "are" : "is"} not set.`);
   const secret = env.RKP_SESSION_SECRET!.trim();

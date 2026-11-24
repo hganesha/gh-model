@@ -1,0 +1,6 @@
+{
+ "method": "GET",
+ "path": "/v1/snapshots/sha256:5f20df26dd46d4ae87efd7083b6d3bc6fb92e17dcc5689d2b23dc5e2ce03c4db/entities?plane=deployment&kind=ConfigKey&limit=60",
+ "status": 200,
+ "body": "{\"entities\":[{\"id\":\"ent_vozgs7u3p3h7s2yzmyeifxh726\",\"kind\":\"ConfigKey\",\"name\":\"API_URL\",\"attributes\":{},\"natural_key\":{\"name\":\"API_URL\"},\"evidence_ids\":[\"ev_qkiyapl45r5qq4yg2sop527uwo\"]},{\"id\":\"ent_4o6ekgxjmzpcqrmeros4ts2k2n\",\"kind\":\"ConfigKey\",\"name\":\"DATABASE_URL\",\"attributes\":{},\"natural_key\":{\"name\":\"DATABASE_URL\"},\"evidence_ids\":[\"ev_pcunilsp77pxqnmisbtwcrbg5k\"]},{\"id\":\"ent_fnuieaq4ly3hrmqgzzgdhki6sb\",\"kind\":\"ConfigKey\",\"name\":\"PORT\",\"attributes\":{},\"natural_key\":{\"name\":\"PORT\"},\"evidence_ids\":[\"ev_6mteebdnziyqftomaj4qu4isc6\"]}],\"truncated\":false}"
+}

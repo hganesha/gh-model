@@ -340,7 +340,10 @@ resource explorer 'Microsoft.App/containerApps@2024-03-01' = if (deployApps) {
             { name: 'RKP_SESSION_SECRET', secretRef: 'session-secret' }
             { name: 'RKP_PUBLIC_URL', value: explorerUrl }
             { name: 'RKP_OIDC_ADMIN_ROLES', value: oidcAdminRoles }
-          ] : [])
+          ] : [
+            // Without sign-in, the ingress IP allow-list restricts access (or --allow-any opened it on purpose).
+            { name: 'RKP_ALLOW_ANONYMOUS', value: '1' }
+          ])
         }
       ]
       scale: {

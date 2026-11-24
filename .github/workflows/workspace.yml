@@ -33,7 +33,7 @@ jobs:
         run: |
           .venv/bin/python -m pytest -q
           .venv/bin/python -m repo_intel.golden_check
-      - name: Run Explorer browser suite
+      - name: Run Explorer browser suite (includes a production build replaying recorded fixture responses)
         working-directory: repo-intelligence/explorer
         run: |
           npm ci
