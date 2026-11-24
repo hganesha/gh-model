@@ -28,6 +28,7 @@ from .contracts import CoverageEntry
 from .extractors.base import ref
 from .extractors.manifests import normalize_pypi
 from .ontology import EntityKind, EvidenceClass, Predicate
+from .planning import pick_config, probe
 
 ROOT_UNIT = "@root"
 PY_IMPORT_TO_DIST = {"yaml": "pyyaml", "PIL": "pillow", "sklearn": "scikit-learn", "cv2": "opencv-python", "dateutil": "python-dateutil", "dotenv": "python-dotenv", "jwt": "pyjwt", "bs4": "beautifulsoup4"}
@@ -46,6 +47,25 @@ def _entities(summary: Mapping[str, Any], kind: str) -> list[dict[str, Any]]:
     return [o for o in summary["observations"] if o["kind"] == "entity" and o["payload"]["kind"] == kind]
 
 
+def _strip_ts(path: str) -> str:
+    for ext in (".d.ts",) + TS_EXT:
+        if path.endswith(ext):
+            return path[: -len(ext)]
+    return path
+
+
+def _local_ts_configs(summaries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """tsconfig aliases from this unit's own files, for a unit planned without them."""
+    out = []
+    for s in summaries:
+        for o in _of(s, "ts_config"):
+            p = o["payload"]
+            if p.get("paths"):
+                root = posixpath.normpath(posixpath.join(p["dir"], p["base_url"])) if p.get("base_url") is not None else p["dir"]
+                out.append({"config": s["path"], "dir": p["dir"], "root": "" if root == "." else root, "paths": p["paths"], "evidence": [o["evidence"]]})
+    return sorted(out, key=lambda c: (c["dir"], c["config"]))
+
+
 def _aliases(payload: Mapping[str, Any]) -> dict[str, str]:
     """original imported name -> local name, for `import x as y` forms."""
     raw = payload.get("aliases") or {}
@@ -56,6 +76,7 @@ def _aliases(payload: Mapping[str, Any]) -> dict[str, str]:
 
 class _Linker:
     def __init__(self, unit: Mapping[str, Any], summaries: list[dict[str, Any]], workspace: list[dict[str, Any]]):
+        self.unit_row = unit
         self.unit = unit["name"]
         self.root = "" if self.unit in (".", ROOT_UNIT) else self.unit
         self.files = {s["path"]: s for s in summaries}
@@ -69,7 +90,10 @@ class _Linker:
         self.unknowns: list[dict[str, Any]] = []
         self.symbols: dict[str, dict[str, dict[str, Any]]] = {p: {o["payload"]["name"]: o for o in _of(s, "symbol")} for p, s in self.files.items()}
         self.bindings: dict[str, dict[str, tuple[str, str]]] = {p: {} for p in self.files}  # local name -> (file, original name)
-        self.ts_aliases = sorted((o["payload"] for sm in summaries for o in _of(sm, "ts_paths")), key=lambda a: (len(a["dir"]), a["dir"]))
+        self.ts_configs = unit.get("ts_configs") or _local_ts_configs(summaries)
+        self.packages = {(p["ecosystem"], p["name"]): p for p in workspace}
+        self.external_bindings: dict[str, dict[str, tuple[str, str, str]]] = {p: {} for p in self.files}  # local name -> (package, file, name)
+        self.workspace_bound: list[str] = []
         self.imports = {"internal": 0, "workspace": 0, "external": 0, "stdlib": 0, "unresolved": 0}
         self.unresolved_imports: list[str] = []
 
@@ -149,39 +173,87 @@ class _Linker:
             self._unresolved(path, module)
 
     def _ts_file(self, stem: str) -> str | None:
-        stem = posixpath.normpath(stem)
-        candidates = [stem] + [stem + e for e in TS_EXT] + [posixpath.join(stem, "index" + e) for e in TS_EXT]
-        if posixpath.splitext(stem)[1] in (".js", ".jsx", ".mjs"):  # `./x.js` written for a file that is x.ts
-            base = posixpath.splitext(stem)[0]
-            candidates += [base + e for e in (".ts", ".tsx")]
-        return next((c for c in candidates if c in self.files), None)
+        return probe(stem, self.files.keys())
 
-    def _ts_alias(self, spec: str) -> str | None:
-        """Resolve a tsconfig `paths` alias such as `@/components/x` to a file in this unit."""
-        for alias in self.ts_aliases:
-            root = posixpath.join(alias["dir"], alias["base_url"])
-            for pattern, targets in alias["paths"].items():
-                if pattern.endswith("/*") and spec.startswith(pattern[:-1]):
-                    rest = spec[len(pattern) - 1:]
-                    stems = [posixpath.join(root, t[:-1] + rest) for t in targets if t.endswith("*")]
-                elif spec == pattern:
-                    stems = [posixpath.join(root, t) for t in targets]
-                else:
+    def _owner(self, file: str) -> dict[str, Any] | None:
+        """The workspace npm package whose directory holds `file`, if any."""
+        owners = [p for p in self.packages.values() if p["ecosystem"] == "npm" and (p["manifest_dir"] == "" or file.startswith(p["manifest_dir"] + "/"))]
+        return max(owners, key=lambda p: len(p["manifest_dir"])) if owners else None
+
+    def _ts_alias(self, path: str, spec: str) -> tuple[str, str] | None:
+        """Resolve a tsconfig `paths` alias such as `@/components/x`.
+
+        Returns ("internal", file) for a file in this unit, ("workspace", file or
+        stem) for a target in a sibling package, or None. The config used is the
+        one TypeScript would pick for `path`, with `extends` already followed."""
+        config = pick_config(path, self.ts_configs)
+        if config is None:
+            return None
+        for pattern, targets in sorted(config["paths"].items(), key=lambda kv: -len(kv[0].split("*")[0])):
+            if "*" in pattern:
+                prefix, _, suffix = pattern.partition("*")
+                if not (spec.startswith(prefix) and spec.endswith(suffix) and len(spec) >= len(prefix) + len(suffix)):
                     continue
-                for stem in stems:
-                    found = self._ts_file(stem)
-                    if found:
-                        return found
+                rest = spec[len(prefix): len(spec) - len(suffix)]
+                stems = [posixpath.join(config["root"], t.replace("*", rest, 1)) for t in targets]
+            elif spec == pattern:
+                stems = [posixpath.join(config["root"], t) for t in targets]
+            else:
+                continue
+            for stem in stems:
+                found = self._ts_file(stem)
+                if found:
+                    return "internal", found
+            for stem in stems:
+                stem = posixpath.normpath(stem)
+                if self.root and stem.startswith(self.root + "/"):
+                    continue
+                owner = self._owner(stem)
+                if owner is not None and (owner["manifest_dir"] or ".") != self.unit:
+                    exact = owner.get("entries", {}).get(".") if owner.get("entries", {}).get(".") and _strip_ts(owner["entries"]["."]) == _strip_ts(stem) else None
+                    return "workspace", exact or stem
+            return None
         return None
+
+    def _workspace_entry(self, spec: str, package: str) -> tuple[str | None, bool]:
+        """(file, known) for `@acme/ui` or `@acme/ui/button` from the sibling's `exports`,
+        `types` or `main`. known=False when the package declares nothing to bind to."""
+        p = self.packages.get(("npm", package))
+        entries = (p or {}).get("entries")
+        if not entries and not (p or {}).get("exports_strict"):
+            return None, False
+        subpath = "." + spec[len(package):]
+        if subpath in entries:
+            return entries[subpath], True
+        for pattern, target in entries.items():
+            if "*" in pattern:
+                prefix, _, suffix = pattern.partition("*")
+                if subpath.startswith(prefix) and subpath.endswith(suffix):
+                    return target.replace("*", subpath[len(prefix): len(subpath) - len(suffix)], 1), True
+        if subpath != "." and not p.get("exports_strict"):
+            return posixpath.join(p["manifest_dir"], subpath[2:]), True  # no exports map: any subpath is importable
+        return None, True
 
     def _ts_import(self, path: str, o: dict[str, Any]) -> None:
         p = o["payload"]
         spec = p.get("specifier") or ""
-        target = self._ts_file(posixpath.join(posixpath.dirname(path), spec)) if spec.startswith(".") else self._ts_alias(spec)
-        if target is not None:
+        names = p.get("names") or []
+        if spec.startswith("."):
+            target = self._ts_file(posixpath.join(posixpath.dirname(path), spec))
+            alias = ("internal", target) if target else None
+        else:
+            alias = self._ts_alias(path, spec)
+        if alias is not None and alias[0] == "internal":
             self.imports["internal"] += 1
-            for name in p.get("names") or []:
-                self.bindings[path][name] = (target, name)
+            for name in names:
+                self.bindings[path][name] = (alias[1], name)
+            return
+        if alias is not None:  # a path alias into a sibling package
+            self.imports["workspace"] += 1
+            owner = self._owner(alias[1])
+            self.workspace_bound.append(f"{path}: {spec} -> {alias[1]}")
+            for name in names:
+                self.external_bindings[path][name] = (owner["name"] if owner else "", alias[1], name)
             return
         if spec.startswith("."):
             self._unresolved(path, spec)
@@ -190,7 +262,15 @@ class _Linker:
         if spec.startswith("node:") or package in NODE_BUILTINS:
             self.imports["stdlib"] += 1
         elif ("npm", package) in self.workspace and ("npm", package) in self.declared:
+            file, known = self._workspace_entry(spec, package)
+            if known and file is None:
+                self._unresolved(path, f"{spec} (not exported by {package})")
+                return
             self.imports["workspace"] += 1
+            if file:
+                self.workspace_bound.append(f"{path}: {spec} -> {file}")
+                for name in names:
+                    self.external_bindings[path][name] = (package, file, name)
         elif ("npm", package) in self.declared:
             self.imports["external"] += 1
         else:
@@ -338,6 +418,17 @@ class _Linker:
                 for target in targets:  # the test file imports it; whether this test calls it is not established
                     self.relate(path, self.symbol_ref(*target), Predicate.TESTED_BY, test, [t["evidence"], self.symbols[target[0]][target[1]]["evidence"]], {"basis": "test_file_import"}, evidence_class=EvidenceClass.E4, resolution="candidate")
 
+    # -- lockfile versions (GI-007)
+
+    def link_resolved(self) -> None:
+        """The versions a lockfile pins for each package's declared dependencies, as
+        package attributes: what the stack facts (DM02) report as the version in use."""
+        for r in self.unit_row.get("resolved", []):
+            if r["manifest"] not in self.files:
+                continue
+            pkg = ref(EntityKind.PACKAGE, r["package"], r["package"]["name"])
+            self.emit("entity", r["manifest"], {**pkg, "attributes": {"resolved_dependencies": r["versions"], "lockfile": r["lockfile"]}}, r["evidence"], EvidenceClass.E1)
+
     # -- AI integrations (DM06)
 
     def link_ai(self) -> None:
@@ -382,13 +473,14 @@ def _unit_link(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, Any]:
     topics = linker.link_topics()
     linker.link_tests()
     linker.link_ai()
+    linker.link_resolved()
 
     imp = linker.imports
     total_imports = sum(imp.values())
     total_routes = sum(routes.values())
     total_data = sum(data.values())
     coverage = [
-        CoverageEntry(domain="import_resolution", scope=unit["name"], numerator=total_imports - imp["unresolved"], denominator=total_imports, detail={**imp, "unresolved_imports": sorted(linker.unresolved_imports)[:50]}).row(),
+        CoverageEntry(domain="import_resolution", scope=unit["name"], numerator=total_imports - imp["unresolved"], denominator=total_imports, detail={**imp, "unresolved_imports": sorted(linker.unresolved_imports)[:50], **({"workspace_bound": sorted(linker.workspace_bound)[:50]} if linker.workspace_bound else {})}).row(),
         CoverageEntry(domain="route_to_handler", scope=unit["name"], numerator=routes["symbol"] + routes["inline"], denominator=total_routes, detail=routes).row(),
         CoverageEntry(domain="data_access", scope=unit["name"], numerator=data["linked"], denominator=total_data, detail=data).row(),
     ]
@@ -397,7 +489,7 @@ def _unit_link(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, Any]:
     return {"unit": unit["name"], "observations": linker.out, "unknowns": linker.unknowns, "coverage": coverage, "exports": linker.exports()}
 
 
-UNIT_LINK = Step("unit.link", "0.5.0", _unit_link)
+UNIT_LINK = Step("unit.link", "0.6.0", _unit_link)
 
 
 # ---------------------------------------------------------------- repo-level

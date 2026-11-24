@@ -21,6 +21,7 @@ from .decisions.component import TOPOLOGY_SPEC, topology_rules
 from .hashing import digest
 from .link import match_call, normalize_route
 from .ontology import AssertionKind, EntityKind, EpistemicStatus, EvidenceClass, Predicate
+from .planning import plan_units
 
 ROOT_UNIT = "@root"
 GLOBAL_UNIT = "@global"
@@ -34,28 +35,11 @@ def unit_name(manifest_dir: str) -> str:
 
 
 def _unit_plan(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, Any]:
-    paths: list[str] = inputs["paths"]
-    packages = sorted(
-        ({k: obs["payload"][k] for k in ("ecosystem", "name", "manifest_dir")} for s in inputs["manifest_summaries"] for obs in s["observations"] if obs["kind"] == "package_declaration"),
-        key=lambda p: (p["manifest_dir"], p["ecosystem"], p["name"]),
-    )
-    roots = sorted({p["manifest_dir"] for p in packages})
-
-    def owner(path: str) -> str:
-        best: str | None = None
-        for root in roots:
-            if root == "" or path == root or path.startswith(root + "/"):
-                if best is None or len(root) > len(best):
-                    best = root
-        return ROOT_UNIT if best is None else unit_name(best)
-
-    members: dict[str, list[str]] = {unit_name(r): [] for r in roots}
-    for path in sorted(paths):
-        members.setdefault(owner(path), []).append(path)
-    return {"units": [{"name": name, "paths": members[name]} for name in sorted(members)], "packages": packages}
+    """See `planning.py`: units, workspace siblings, lockfile versions, tsconfig aliases."""
+    return plan_units(inputs["paths"], inputs["manifest_summaries"])
 
 
-UNIT_PLAN = Step("unit.plan", "0.2.0", _unit_plan)
+UNIT_PLAN = Step("unit.plan", "0.3.0", _unit_plan)
 
 
 # --------------------------------------------------------------- unit.compile

@@ -37,7 +37,14 @@
         "name": "@acme/web",
         "manifest_dir": "apps/web"
       },
-      "since": "M1"
+      "since": "M1",
+      "attributes": {
+        "resolved_dependencies": {
+          "next": "16.4.2",
+          "react": "19.2.6"
+        },
+        "lockfile": "pnpm-lock.yaml"
+      }
     },
     {
       "kind": "Package",
@@ -46,7 +53,14 @@
         "name": "@acme/api",
         "manifest_dir": "apps/api"
       },
-      "since": "M1"
+      "since": "M1",
+      "attributes": {
+        "resolved_dependencies": {
+          "@prisma/client": "6.9.0",
+          "express": "5.1.0"
+        },
+        "lockfile": "pnpm-lock.yaml"
+      }
     },
     {
       "kind": "Package",
@@ -537,6 +551,30 @@
       "dir": "04-base-tsconfig",
       "expect": "cross-cutting config change widens recompute; graph content unchanged",
       "added_entities": [],
+      "removed_entities": []
+    },
+    {
+      "dir": "05-workspace-boundary",
+      "expect": "a package outside the workspace globs is a unit of its own but not a workspace sibling: the worker's dependency on @acme/legacy is a registry dependency (GI-007)",
+      "added_entities": [
+        {
+          "kind": "Package",
+          "natural_key": {
+            "ecosystem": "npm",
+            "name": "@acme/legacy",
+            "manifest_dir": "tools/legacy"
+          },
+          "since": "M1"
+        },
+        {
+          "kind": "ExternalDependency",
+          "natural_key": {
+            "ecosystem": "npm",
+            "name": "@acme/legacy"
+          },
+          "since": "M1"
+        }
+      ],
       "removed_entities": []
     }
   ]

@@ -163,14 +163,15 @@ def test_tsconfig_path_aliases_resolve():
   "compilerOptions": { "baseUrl": ".", "paths": { "@/*": ["./src/*"], "~config": ["./config/index.ts"], }, },
 }'''
     found = TsConfig().extract("web/tsconfig.json", raw, "ab" * 32).observations
-    assert found[0].payload == {"dir": "web", "base_url": ".", "paths": {"@/*": ["./src/*"], "~config": ["./config/index.ts"]}}
+    assert found[0].kind == "ts_config"
+    assert found[0].payload == {"dir": "web", "extends": [], "base_url": ".", "paths": {"@/*": ["./src/*"], "~config": ["./config/index.ts"]}}
     assert strip_jsonc('{"a": "// not a comment", /* x */ "b": [1,],}') == '{"a": "// not a comment",  "b": [1]}'
     assert TsConfig().extract("tsconfig.json", b"{ not json", "ab" * 32).parsed is False
     assert not TsConfig().matches("package.json") and TsConfig().matches("apps/web/tsconfig.app.json")
 
     files = [
         _summary("web/package.json", ("package_declaration", {"ecosystem": "npm", "name": "web", "manifest_dir": "web"})),
-        _summary("web/tsconfig.json", ("ts_paths", found[0].payload)),
+        _summary("web/tsconfig.json", ("ts_config", found[0].payload)),
         _summary("web/src/components/ui/button.tsx", ("symbol", {"name": "Button", "symbol_kind": "function"})),
         _summary("web/src/client/index.ts", ("symbol", {"name": "api", "symbol_kind": "const"})),
         _summary("web/config/index.ts"),
