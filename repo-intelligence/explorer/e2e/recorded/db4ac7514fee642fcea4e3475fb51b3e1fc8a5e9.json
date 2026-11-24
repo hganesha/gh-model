@@ -1,0 +1,6 @@
+{
+ "method": "GET",
+ "path": "/v1/snapshots/sha256:5f20df26dd46d4ae87efd7083b6d3bc6fb92e17dcc5689d2b23dc5e2ce03c4db/placements",
+ "status": 200,
+ "body": "{\"components\":{}}"
+}

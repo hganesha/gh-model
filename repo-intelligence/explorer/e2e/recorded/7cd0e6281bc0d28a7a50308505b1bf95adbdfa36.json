@@ -1,0 +1,6 @@
+{
+ "method": "GET",
+ "path": "/v1/snapshots/sha256:9f4654b57e0d3400f861d7cf22f762e7835e66cd159059b398b2a60d06522f20/entities?plane=data&kind=Table&limit=60",
+ "status": 200,
+ "body": "{\"entities\":[{\"id\":\"ent_dgeij7oalacj253za2dxhfr3t5\",\"kind\":\"Table\",\"name\":\"customers\",\"attributes\":{\"orm\":\"sqlalchemy\",\"model\":\"Customer\"},\"natural_key\":{\"name\":\"customers\",\"datastore\":\"default\"},\"evidence_ids\":[\"ev_td5nv7fpjohzrvrsavohzsoimx\"]}],\"truncated\":false}"
+}

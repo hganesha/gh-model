@@ -1,0 +1,6 @@
+{
+ "method": "GET",
+ "path": "/v1/snapshots/sha256:5f20df26dd46d4ae87efd7083b6d3bc6fb92e17dcc5689d2b23dc5e2ce03c4db/entities?plane=data&kind=Table&limit=60",
+ "status": 200,
+ "body": "{\"entities\":[{\"id\":\"ent_7chjsp3jcggunnalhulwqnojbu\",\"kind\":\"Table\",\"name\":\"orders\",\"attributes\":{\"orm\":\"prisma\",\"model\":\"Order\"},\"natural_key\":{\"name\":\"orders\",\"datastore\":\"default\"},\"evidence_ids\":[\"ev_eq4mxybnnk3eppkgd2s52nceam\"]}],\"truncated\":false}"
+}
