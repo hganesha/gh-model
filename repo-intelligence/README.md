@@ -4,7 +4,7 @@ The repository knowledge compiler (RKP) for the GitHub Intelligence Engine. It c
 
 Design: [architecture](../docs/architecture.md). Plan: [implementation plan](../docs/implementation-plan.md).
 
-**Status:** milestones M0–M3 are built and their exit gates pass locally. CI, the live model checks and threshold calibration are still open; see [status](docs/status.md).
+**Status:** milestones M0–M3 are built and their exit gates pass locally. CI, the Jev live run and threshold calibration are still open; see [status](docs/status.md).
 
 ## Quick start
 

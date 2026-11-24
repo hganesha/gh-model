@@ -2,18 +2,19 @@
 
 **M0–M3 built; exit gates pass locally.** Design: [architecture](../../docs/architecture.md). Plan: [implementation plan](../../docs/implementation-plan.md).
 
-Every ticket in M0–M3 (GI-001 to GI-021, GI-030) is built, and its acceptance tests pass locally. Four things are still open:
+Every ticket in M0–M3 (GI-001 to GI-021, GI-030) is built, and its acceptance tests pass locally. Still open:
 
 - **CI.** The exit gates require a green CI run. CI cannot run until GitHub billing for Actions is fixed.
-- **Live checks.** The Jev model path and the LLM adapter have not been run live, because they need credentials.
-- **Calibration.** Decision thresholds stay placeholders until the M5 corpus calibrates them.
-- **Hosted sandbox.** The hosted Azure container runs steps without the OS sandbox (see GI-004).
+- **Jev live run.** The Jev path has not been run live: it needs a TypeSafe AI API key. Microsoft-Decision-1.1 and the LLM adapter (gpt-4.1-mini) have been run live.
+- **Calibration.** Decision thresholds stay placeholders. `benchmarks/calibrate.py` is ready, but the 15 synthetic fixture components cannot bound the error rate (the tightest 95% bound is 23%); the reviewed corpus of GI-026 (M5) is needed.
 
-Checked together on `claude/m0-m3-integration`:
+The hosted Azure app runs steps sandboxed (Landlock and seccomp; checked in the running container on 2026-11-24 with `--selfcheck` and a real compile).
 
-- `pytest`: 386 passed with `RKP_TEMPORAL_TESTS=1`.
-- `golden_check` and `python -m repo_intel.knowledge.parity`: all fixtures ok.
-- `step_worker --selfcheck`: every case blocked.
+Checked together on `claude/m0-m3-close-out`:
+
+- `pytest`: 391 passed with `RKP_TEMPORAL_TESTS=1` on macOS; 345 passed in a Linux container without `bwrap` (Landlock), where the PostgreSQL and Temporal tests skip.
+- `golden_check` and `python -m repo_intel.knowledge.parity`: all fixtures ok, on macOS and under Landlock.
+- `step_worker --selfcheck`: every case blocked with the expected error under `sandbox-exec`, under Landlock in Docker, and in the hosted Azure API.
 - Explorer: Playwright, 16 passed (the record project runs only on request).
 
 | Acceptance test (spec §14.5) | Test |
