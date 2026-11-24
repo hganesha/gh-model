@@ -1,0 +1,14 @@
+{
+    "name": "ds_stg_sales",
+    "properties": {
+        "type": "AzureSqlDWTable",
+        "linkedServiceName": {
+            "referenceName": "ls_dw",
+            "type": "LinkedServiceReference"
+        },
+        "typeProperties": {
+            "schema": "stg",
+            "table": "sales"
+        }
+    }
+}

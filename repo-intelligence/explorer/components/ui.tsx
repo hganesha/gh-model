@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, Boxes, Braces, Database, FileText, FlaskConical, Loader2, Rocket, ShieldCheck, Sparkles, Workflow, X } from "lucide-react";
+import { AlertTriangle, Boxes, Braces, CalendarClock, Database, FileText, FlaskConical, Loader2, Rocket, ShieldCheck, Sparkles, Workflow, X } from "lucide-react";
 import { useEffect, useRef, type ReactNode } from "react";
 import type { ApiError } from "@/lib/api";
 import { measured, percent, percentLabel } from "@/lib/format";
@@ -10,6 +10,7 @@ const PLANE_ICONS = {
   architecture: Boxes,
   contracts: Braces,
   data: Database,
+  jobs: CalendarClock,
   ai: Sparkles,
   tests: FlaskConical,
   deployment: Rocket,

@@ -1,6 +1,0 @@
-{
- "method": "GET",
- "path": "/v1/snapshots/sha256:3327f59c9ba9dbc31ade7a273624ddd2fda3bce5ed87464c0bbe9c92a8533dde/entities?plane=tests&kind=Test&limit=500",
- "status": 200,
- "body": "{\"entities\":[{\"id\":\"ent_5mqy2unlcycarsg6r3lclyaabq\",\"kind\":\"Test\",\"name\":\"test_handlers_exist\",\"attributes\":{\"framework\":\"pytest\"},\"natural_key\":{\"name\":\"test_handlers_exist\",\"path\":\"tests/test_customers.py\"},\"evidence_ids\":[\"ev_7hqlinmx3l2c7gupeqxvgbnya3\"]}],\"truncated\":false}"
-}

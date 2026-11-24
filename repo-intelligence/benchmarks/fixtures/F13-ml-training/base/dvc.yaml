@@ -1,0 +1,15 @@
+stages:
+  featurize:
+    cmd: python -m churn.featurize
+    deps:
+      - data/raw.csv
+      - churn/featurize.py
+    outs:
+      - data/features.parquet
+  train:
+    cmd: python -m churn.train
+    deps:
+      - data/features.parquet
+      - churn/train.py
+    outs:
+      - models/churn.json

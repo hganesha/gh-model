@@ -1,8 +1,15 @@
 """Package manifests, workspaces and lockfiles (GI-007).
 
-Manifests: pyproject.toml, package.json, pom.xml, go.mod, Cargo.toml. Maven, Go
-and Cargo are inventory-only in v1: their manifests yield a Package and its
-declared dependencies, nothing more.
+Manifests: pyproject.toml (PEP 621 or a full Poetry table), setup.py (read with
+`ast`, never run), setup.cfg, requirements*.txt, conda environment files,
+package.json, pom.xml, go.mod, Cargo.toml. Maven, Go and Cargo are inventory-only
+in v1: their manifests yield a Package and its declared dependencies, nothing more.
+
+requirements*.txt and conda environment files name no package. Data and ML
+repositories often have nothing else, so they declare one named after their
+directory, marked `inferred_name`. That declaration is weak: a named declaration
+of the same ecosystem in the same directory replaces it (`effective_declarations`),
+and its dependencies then belong to the named package.
 
 Workspaces: package.json `workspaces` (npm and yarn), pnpm-workspace.yaml,
 `[tool.uv.workspace]` and Cargo `[workspace]` yield a "workspace_declaration"
@@ -82,7 +89,10 @@ class PyProject(_Manifest):
             at = find_span(data, "[tool.uv.workspace]") or whole_file(data)
             members.append(_workspace(blob, at, "pypi", "uv", path, uv["members"], uv.get("exclude") if isinstance(uv.get("exclude"), list) else ()))
         if not isinstance(project, dict) or not isinstance(project.get("name"), str):
-            return Extraction(members, diagnostics=[diagnostic(self.id, "info", "no [project] name declared")])
+            poetry = _poetry(doc)
+            if poetry is None:
+                return Extraction(members, diagnostics=[diagnostic(self.id, "info", "no [project] name declared")])
+            return Extraction(self._poetry(path, data, blob, poetry) + members)
         m = re.search(rb"^name\s*=.*$", data, re.M)
         name_at = span(data, m.start(), m.end()) if m else whole_file(data)
         out = [_package(blob, name_at, "pypi", normalize_pypi(project["name"]), path, {"has_cli_entry": bool(project.get("scripts")), "publishable": _publication_version(project.get("version"))}), *members]
@@ -92,6 +102,246 @@ class PyProject(_Manifest):
             if parsed:
                 out.append(_dependency(blob, find_span(data, raw) or name_at, "pypi", normalize_pypi(parsed.group(1)), parsed.group(3).strip()))
         return Extraction(out)
+
+    def _poetry(self, path, data, blob, poetry):
+        """A Poetry project: `[tool.poetry]` with a name and a version, as Poetry itself requires."""
+        m = re.search(rb"^name\s*=.*$", data[max(data.find(b"[tool.poetry]"), 0):], re.M)
+        base = max(data.find(b"[tool.poetry]"), 0)
+        name_at = span(data, base + m.start(), base + m.end()) if m else whole_file(data)
+        out = [_package(blob, name_at, "pypi", normalize_pypi(poetry["name"]), path, {"has_cli_entry": bool(poetry.get("scripts")), "publishable": _publication_version(poetry.get("version")), "manager": "poetry"})]
+        sections = [("dependencies", poetry.get("dependencies"), "runtime"), ("dev-dependencies", poetry.get("dev-dependencies"), "dev")]
+        groups = poetry.get("group") if isinstance(poetry.get("group"), dict) else {}
+        sections += [(f"group.{g}.dependencies", body.get("dependencies"), "dev") for g, body in sorted(groups.items()) if isinstance(body, dict)]
+        for section, block, scope in sections:
+            start = max(data.find(f"[tool.poetry.{section}]".encode()), 0)
+            for dep, spec in sorted(block.items()) if isinstance(block, dict) else []:
+                if dep.lower() == "python":
+                    continue  # the interpreter, not a dependency
+                version = spec if isinstance(spec, str) else spec.get("version", "") if isinstance(spec, dict) else ""
+                hit = re.compile(rb"^\s*" + re.escape(dep.encode()) + rb"\s*=", re.M).search(data, start)
+                at = span(data, hit.start(), hit.end()) if hit else name_at
+                out.append(_dependency(blob, at, "pypi", normalize_pypi(dep), version if isinstance(version, str) else "", scope))
+        return out
+
+
+def _poetry(doc: dict) -> dict | None:
+    tool = doc.get("tool")
+    poetry = tool.get("poetry") if isinstance(tool, dict) else None
+    if isinstance(poetry, dict) and isinstance(poetry.get("name"), str) and isinstance(poetry.get("version"), str):
+        return poetry
+    return None
+
+
+# ------------------------------------------------------- Python without pyproject
+
+
+def _infer_name(path: str) -> str:
+    """The package name for a manifest that names none: its directory's name."""
+    return normalize_pypi(posixpath.basename(posixpath.dirname(path)) or "root")
+
+
+def _requirement(blob, data, raw, at, scope):
+    """One PEP 508 line, or None. URLs and local paths are never copied."""
+    line = raw.split(" #", 1)[0].strip()
+    if not line or line.startswith(("#", "-", ".", "/")) or "://" in line.split("@", 1)[0]:
+        return None
+    name_part, _, _url = line.partition(" @ ")
+    parsed = _REQ.match(name_part)
+    if not parsed:
+        return None
+    specifier = "" if _url else parsed.group(3).strip()
+    return _dependency(blob, at, "pypi", normalize_pypi(parsed.group(1)), specifier, scope)
+
+
+_REQUIREMENTS = re.compile(r"^requirements([-_.][A-Za-z0-9_.-]+)?\.(txt|in)$")
+_DEV_HINT = re.compile(r"dev|test|lint|doc|ci", re.I)
+
+
+class Requirements(_Manifest):
+    """requirements.txt and its variants (requirements-dev.txt, requirements.in)."""
+
+    id = "manifest.requirements"
+    version = "1.0.0"
+
+    def matches(self, path):
+        return bool(_REQUIREMENTS.match(posixpath.basename(path)))
+
+    def extract(self, path, data, blob):
+        try:
+            data.decode("utf-8")
+        except UnicodeDecodeError:
+            return Extraction(diagnostics=[diagnostic(self.id, "warning", "not UTF-8 text")], parsed=False)
+        suffix = _REQUIREMENTS.match(posixpath.basename(path)).group(1) or ""
+        scope = "dev" if _DEV_HINT.search(suffix) else "runtime"
+        out = [_package(blob, whole_file(data), "pypi", _infer_name(path), path, {"inferred_name": True})]
+        offset = 0
+        for line in data.splitlines(keepends=True):
+            raw = line.rstrip(b"\r\n")
+            if raw.strip():
+                dep = _requirement(blob, data, raw.decode("utf-8"), span(data, offset, offset + len(raw)), scope)
+                if dep:
+                    out.append(dep)
+            offset += len(line)
+        return Extraction(out)
+
+
+class SetupPy(_Manifest):
+    """setup.py, read as a syntax tree. Only literal arguments count; nothing is run."""
+
+    id = "manifest.setuppy"
+    basename = "setup.py"
+    version = "1.0.0"
+
+    def extract(self, path, data, blob):
+        import ast
+        try:
+            tree = ast.parse(data.decode("utf-8"))
+        except (SyntaxError, UnicodeDecodeError, ValueError, RecursionError) as exc:
+            return Extraction(diagnostics=[diagnostic(self.id, "error", f"unparseable: {type(exc).__name__}")], parsed=False)
+        call = next((n for n in ast.walk(tree) if isinstance(n, ast.Call) and (getattr(n.func, "id", None) or getattr(n.func, "attr", None)) == "setup"), None)
+        if call is None:
+            return Extraction(diagnostics=[diagnostic(self.id, "info", "no setup() call")])
+        kw = {k.arg: k.value for k in call.keywords if k.arg}
+        name = kw.get("name")
+        if not (isinstance(name, ast.Constant) and isinstance(name.value, str)):
+            return Extraction(diagnostics=[diagnostic(self.id, "info", "setup() has no literal name")])
+        lines = data.split(b"\n")
+        offsets = [0]
+        for line in lines:
+            offsets.append(offsets[-1] + len(line) + 1)
+
+        def at(node):
+            start = offsets[node.lineno - 1] + len(lines[node.lineno - 1].decode("utf-8", "replace")[: node.col_offset].encode())
+            end_line = getattr(node, "end_lineno", node.lineno)
+            end = offsets[end_line - 1] + len(lines[end_line - 1].decode("utf-8", "replace")[: getattr(node, "end_col_offset", node.col_offset)].encode())
+            return span(data, start, max(end, start))
+
+        version = kw.get("version")
+        entry_points = kw.get("entry_points")
+        cli = "scripts" in kw or (isinstance(entry_points, ast.Dict) and any(isinstance(k, ast.Constant) and k.value == "console_scripts" for k in entry_points.keys)) or (isinstance(entry_points, ast.Constant) and "console_scripts" in str(entry_points.value))
+        attrs = {"has_cli_entry": bool(cli), "publishable": isinstance(version, ast.Constant) and _publication_version(version.value)}
+        out = [_package(blob, at(name), "pypi", normalize_pypi(name.value), path, attrs)]
+        for key, scope in (("install_requires", "runtime"), ("tests_require", "dev"), ("setup_requires", "build")):
+            node = kw.get(key)
+            for item in node.elts if isinstance(node, (ast.List, ast.Tuple)) else []:
+                if isinstance(item, ast.Constant) and isinstance(item.value, str):
+                    dep = _requirement(blob, data, item.value, at(item), scope)
+                    if dep:
+                        out.append(dep)
+        return Extraction(out)
+
+
+class SetupCfg(_Manifest):
+    id = "manifest.setupcfg"
+    basename = "setup.cfg"
+    version = "1.0.0"
+
+    def extract(self, path, data, blob):
+        import configparser
+        parser = configparser.ConfigParser(interpolation=None)
+        try:
+            parser.read_string(data.decode("utf-8"))
+        except (configparser.Error, UnicodeDecodeError) as exc:
+            return Extraction(diagnostics=[diagnostic(self.id, "error", f"unparseable: {type(exc).__name__}")], parsed=False)
+        name = parser.get("metadata", "name", fallback="").strip()
+        if not name:
+            return Extraction(diagnostics=[diagnostic(self.id, "info", "no [metadata] name declared")])
+        m = re.search(rb"^name\s*=.*$", data, re.M)
+        name_at = span(data, m.start(), m.end()) if m else whole_file(data)
+        cli = parser.has_option("options.entry_points", "console_scripts") or parser.has_option("options", "scripts")
+        out = [_package(blob, name_at, "pypi", normalize_pypi(name), path, {"has_cli_entry": cli, "publishable": _publication_version(parser.get("metadata", "version", fallback="").strip())})]
+        start = max(data.find(b"install_requires"), 0)
+        for raw in parser.get("options", "install_requires", fallback="").splitlines():
+            if raw.strip():
+                dep = _requirement(blob, data, raw.strip(), find_span(data, raw.strip(), start) or name_at, "runtime")
+                if dep:
+                    out.append(dep)
+        return Extraction(out)
+
+
+_CONDA_SPEC = re.compile(r"^(?:[\w.-]+::)?([A-Za-z0-9][A-Za-z0-9._-]*)\s*(.*)$")
+
+
+class CondaEnvironment(_Manifest):
+    """environment.yml and conda.yaml: conda packages (ecosystem `conda`) and pip ones."""
+
+    id = "manifest.conda"
+    version = "1.0.0"
+    basenames = ("environment.yml", "environment.yaml", "conda.yaml", "conda.yml")
+
+    def matches(self, path):
+        return posixpath.basename(path) in self.basenames
+
+    def extract(self, path, data, blob):
+        try:
+            doc = yaml.safe_load(data.decode("utf-8"))
+        except (yaml.YAMLError, UnicodeDecodeError, RecursionError, ValueError) as exc:
+            return Extraction(diagnostics=[diagnostic(self.id, "warning", f"unparseable: {type(exc).__name__}")], parsed=False)
+        deps = doc.get("dependencies") if isinstance(doc, dict) else None
+        if not isinstance(deps, list):
+            return Extraction(diagnostics=[diagnostic(self.id, "info", "no dependencies list")])
+        out = [_package(blob, find_span(data, "dependencies") or whole_file(data), "pypi", _infer_name(path), path, {"inferred_name": True, "manager": "conda"})]
+        cursor = 0
+        for item in deps:
+            if isinstance(item, str):
+                m = _CONDA_SPEC.match(item.strip())
+                if not m or m.group(1).lower() in ("python", "pip"):
+                    continue
+                at = find_span(data, item, cursor) or whole_file(data)
+                cursor = at.end_byte
+                spec = m.group(2).strip()
+                out.append(_dependency(blob, at, "conda", normalize_pypi(m.group(1)), spec if spec.startswith(("=", "<", ">", "!", "~")) else ("==" + spec if spec else ""), "runtime"))
+            elif isinstance(item, dict) and isinstance(item.get("pip"), list):
+                for raw in item["pip"]:
+                    if isinstance(raw, str):
+                        at = find_span(data, raw, cursor) or whole_file(data)
+                        cursor = at.end_byte
+                        dep = _requirement(blob, data, raw, at, "runtime")
+                        if dep:
+                            out.append(dep)
+        return Extraction(out)
+
+
+class DbtProject(_Manifest):
+    """dbt_project.yml: a dbt project is a package of the `dbt` ecosystem."""
+
+    id = "manifest.dbt"
+    basename = "dbt_project.yml"
+    version = "1.0.0"
+
+    def extract(self, path, data, blob):
+        try:
+            doc = yaml.safe_load(data.decode("utf-8"))
+        except (yaml.YAMLError, UnicodeDecodeError, RecursionError, ValueError) as exc:
+            return Extraction(diagnostics=[diagnostic(self.id, "warning", f"unparseable: {type(exc).__name__}")], parsed=False)
+        name = doc.get("name") if isinstance(doc, dict) else None
+        if not isinstance(name, str) or not name:
+            return Extraction(diagnostics=[diagnostic(self.id, "info", "no project name declared")])
+        m = re.search(rb"^name\s*:.*$", data, re.M)
+        at = span(data, m.start(), m.end()) if m else whole_file(data)
+        return Extraction([_package(blob, at, "dbt", name, path, {"kind": "dbt_project"})])
+
+
+def effective_declarations(declarations: list[tuple[str, dict]]) -> tuple[list[tuple[str, dict]], dict[str, dict]]:
+    """Package declarations after weak ones give way (see the module docstring).
+
+    `declarations` is (manifest path, package_declaration observation). Returns the
+    declarations that stand, and for each manifest whose declaration gave way, the
+    payload of the one it gave way to: a named declaration of the same ecosystem in
+    the same directory, else the first inferred one by path.
+    """
+    weak = lambda o: bool(o["payload"].get("attributes", {}).get("inferred_name"))
+    winner: dict[tuple[str, str], dict] = {}
+    for path, o in sorted(declarations, key=lambda x: (weak(x[1]), x[0])):
+        winner.setdefault((o["payload"]["ecosystem"], o["payload"]["manifest_dir"]), o)
+    kept, redirect = [], {}
+    for path, o in declarations:
+        w = winner[(o["payload"]["ecosystem"], o["payload"]["manifest_dir"])]
+        if not weak(o) or w is o:
+            kept.append((path, o))
+        else:
+            redirect[path] = w["payload"]
+    return kept, redirect
 
 
 class PackageJson(_Manifest):
@@ -406,7 +656,7 @@ class TomlLock(_Lockfile):
         return Extraction([_lockfile(blob, data, self.ecosystem, self.tool, path, versions=dict(sorted(versions.items())))])
 
 
-EXTRACTORS = [PyProject(), PackageJson(), Pom(), GoMod(), CargoToml(), PnpmWorkspace(), PackageLock(), PnpmLock(), YarnLock(), TomlLock("poetry.lock"), TomlLock("uv.lock"), TomlLock("Cargo.lock")]
+EXTRACTORS = [PyProject(), SetupPy(), SetupCfg(), Requirements(), CondaEnvironment(), DbtProject(), PackageJson(), Pom(), GoMod(), CargoToml(), PnpmWorkspace(), PackageLock(), PnpmLock(), YarnLock(), TomlLock("poetry.lock"), TomlLock("uv.lock"), TomlLock("Cargo.lock")]
 _TSCONFIG = re.compile(r"^(tsconfig|jsconfig)(\.[A-Za-z0-9_-]+)?\.json$")
 
 
@@ -416,7 +666,7 @@ class _ManifestBasenames(frozenset):
     `paths` cross unit boundaries."""
 
     def __contains__(self, name: object) -> bool:
-        return frozenset.__contains__(self, name) or (isinstance(name, str) and bool(_TSCONFIG.match(name)))
+        return frozenset.__contains__(self, name) or (isinstance(name, str) and bool(_TSCONFIG.match(name) or _REQUIREMENTS.match(name)))
 
 
-MANIFEST_BASENAMES = _ManifestBasenames(b for e in EXTRACTORS for b in getattr(e, "basenames", (e.basename,)))
+MANIFEST_BASENAMES = _ManifestBasenames(b for e in EXTRACTORS for b in getattr(e, "basenames", (e.basename,)) if b)

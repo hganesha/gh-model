@@ -62,7 +62,7 @@ export function displayValue(value: unknown): string {
 export function entityContext(entity: Entity): string | null {
   const nk = entity.natural_key ?? {};
   const at = entity.attributes ?? {};
-  for (const candidate of [nk.path, at.path, nk.qualified_name, nk.component_root, nk.root, nk.datastore, nk.table, nk.ecosystem]) {
+  for (const candidate of [nk.path, at.path, nk.qualified_name, nk.component_root, nk.root, nk.datastore, nk.table, nk.job, nk.framework, nk.platform, nk.ecosystem]) {
     if (typeof candidate === "string" && candidate && candidate !== entity.name) return candidate;
   }
   return null;

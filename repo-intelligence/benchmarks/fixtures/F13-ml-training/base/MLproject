@@ -1,0 +1,9 @@
+name: churn
+conda_env: conda.yaml
+entry_points:
+  main:
+    parameters:
+      max_depth: {type: int, default: 6}
+    command: "python -m churn.train --max-depth {max_depth}"
+  featurize:
+    command: "python -m churn.featurize"

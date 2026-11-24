@@ -25,6 +25,7 @@ from repo_intel.storage.hashing import digest
 from repo_intel.compile.link import link_repo, match_call, normalize_route
 from repo_intel.compile.ontology import AssertionKind, EntityKind, EpistemicStatus, EvidenceClass, Predicate, functional_violations
 from repo_intel.compile.planning import plan_units
+from repo_intel.extractors.manifests import effective_declarations
 
 ROOT_UNIT = "@root"
 GLOBAL_UNIT = "@global"
@@ -42,7 +43,7 @@ def _unit_plan(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, Any]:
     return plan_units(inputs["paths"], inputs["manifest_summaries"])
 
 
-UNIT_PLAN = Step("unit.plan", "0.3.0", _unit_plan)
+UNIT_PLAN = Step("unit.plan", "0.4.0", _unit_plan)
 
 
 # --------------------------------------------------------------- unit.compile
@@ -116,13 +117,16 @@ def _unit_compile(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, An
         file_ev = next(o["evidence"] for o in s["observations"] if o["kind"] == "file")
         art = shard.entity(Entity.make(repo, EntityKind.ARTIFACT, {"path": s["path"]}, posixpath.basename(s["path"]), attributes={"language": s["language"], "parsed": s["parsed"]}, evidence_ids=[shard.cite(file_ev)]))
         artifact_of[s["path"]] = (art, file_ev["id"])
-        for o in s["observations"]:
-            if o["kind"] == "package_declaration" and unit_name(o["payload"]["manifest_dir"]) == unit["name"]:
-                ev = shard.cite(o["evidence"])
-                key = {k: o["payload"][k] for k in ("ecosystem", "name", "manifest_dir")}
-                pkg = shard.entity(Entity.make(repo, EntityKind.PACKAGE, key, key["name"], attributes=o["payload"].get("attributes", {}), evidence_ids=[ev]))
-                packages.append((pkg, ev))
-                declared_in[s["path"]] = pkg
+    standing, redirect = effective_declarations([(s["path"], o) for s in summaries for o in s["observations"] if o["kind"] == "package_declaration" and unit_name(o["payload"]["manifest_dir"]) == unit["name"]])
+    package_key = lambda p: {k: p[k] for k in ("ecosystem", "name", "manifest_dir")}
+    for path, o in standing:
+        ev = shard.cite(o["evidence"])
+        key = package_key(o["payload"])
+        pkg = shard.entity(Entity.make(repo, EntityKind.PACKAGE, key, key["name"], attributes=o["payload"].get("attributes", {}), evidence_ids=[ev]))
+        packages.append((pkg, ev))
+        declared_in[path] = pkg
+    for path, winner in redirect.items():  # a weak manifest's dependencies belong to the package that replaced it
+        declared_in[path] = Entity.make(repo, EntityKind.PACKAGE, package_key(winner), winner["name"]).id
     packages.sort()
     for pkg_id, pkg_ev in packages:
         for art, file_ev in artifact_of.values():
@@ -259,9 +263,12 @@ def _unit_compile(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, An
                     lift(Predicate.EXPOSES, e["id"], e["evidence_ids"][:1])
                 elif e["kind"] == EntityKind.AI_COMPONENT and e["evidence_ids"]:
                     lift(Predicate.CONTAINS, e["id"], e["evidence_ids"][:1])
-            for a in list(shard.assertions.values()):  # what its package publishes and subscribes to, the component does
-                if a["subject"] == pkg_id and a["predicate"] in (Predicate.PUBLISHES_TO, Predicate.SUBSCRIBES_TO):
+            own_work = {e["id"]: e["kind"].lower() for e in shard.entities.values() if e["kind"] in (EntityKind.NOTEBOOK, EntityKind.PROGRAM)}
+            for a in list(shard.assertions.values()):  # what its package (and its notebooks and programs) publish, subscribe to, read, write and produce, the component does
+                if a["subject"] == pkg_id and a["predicate"] in (Predicate.PUBLISHES_TO, Predicate.SUBSCRIBES_TO, Predicate.READS_FROM, Predicate.WRITES_TO, Predicate.PRODUCES):
                     lift(Predicate(a["predicate"]), a["object"], a["evidence_ids"], EvidenceClass(a["evidence_class"]), a["resolution"], {"via": "package"})
+                elif a["subject"] in own_work and a["predicate"] in (Predicate.READS_FROM, Predicate.WRITES_TO, Predicate.PRODUCES):
+                    lift(Predicate(a["predicate"]), a["object"], a["evidence_ids"], EvidenceClass(a["evidence_class"]), a["resolution"], {"via": own_work[a["subject"]]})
             touched: set[str] = set()
             for a in list(shard.assertions.values()):  # what its symbols read and write, the component reads and writes
                 if a["subject"] in symbol_ids and a["predicate"] in (Predicate.READS_FROM, Predicate.WRITES_TO):
@@ -295,7 +302,7 @@ def decision_status(decision: Mapping[str, Any]) -> str:
     return "inferred"
 
 
-UNIT_COMPILE = Step("unit.compile", "0.7.0", _unit_compile)
+UNIT_COMPILE = Step("unit.compile", "0.8.0", _unit_compile)
 
 
 # --------------------------------------------------------------- repo.compile

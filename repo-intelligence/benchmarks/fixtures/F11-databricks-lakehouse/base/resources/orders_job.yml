@@ -1,0 +1,29 @@
+resources:
+  jobs:
+    orders_daily:
+      name: orders-daily-${bundle.target}
+      schedule:
+        quartz_cron_expression: "0 0 2 * * ?"
+        timezone_id: UTC
+      tasks:
+        - task_key: ingest
+          notebook_task:
+            notebook_path: ../src/ingest_orders
+        - task_key: transform
+          depends_on:
+            - task_key: ingest
+          spark_python_task:
+            python_file: ../src/transform.py
+        - task_key: refresh
+          depends_on:
+            - task_key: transform
+          pipeline_task:
+            pipeline_id: ${resources.pipelines.orders_dlt.id}
+
+  pipelines:
+    orders_dlt:
+      name: orders-dlt-${bundle.target}
+      serverless: true
+      libraries:
+        - notebook:
+            path: ../src/dlt_orders.py

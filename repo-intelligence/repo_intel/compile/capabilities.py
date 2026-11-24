@@ -14,7 +14,7 @@ from repo_intel.compile.contracts import Model
 from repo_intel.extractors.manifests import normalize_pypi
 
 Ecosystem = Literal["npm", "pypi"]
-ComponentRole = Literal["server", "frontend", "consumer"]
+ComponentRole = Literal["server", "frontend", "consumer", "data_processing", "ml_training"]
 
 
 class Taxonomy(Model):

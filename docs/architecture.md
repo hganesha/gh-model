@@ -323,7 +323,7 @@ version: 1.0.0
 scope: unit
 input_schema: ComponentBoundaryFeatures.v1
 output_schema: ComponentBoundaryDecision.v1
-labels: [service, frontend_app, worker, cli, library, tooling, unknown]
+labels: [service, frontend_app, worker, cli, library, tooling, data_pipeline, ml_training, unknown]
 feature_sources: [repo.inventory, repo.symbols.index, repo.deployment.map]
 strategy:
   - kind: rules
@@ -377,10 +377,35 @@ Start with rules, parsers and a labeled benchmark, then add the decision model p
 ### 8.1 Entities (v1)
 `Repository`, `Artifact`, `Package`, `Component`, `Symbol`, `Interface`, `Endpoint`, `EventTopic`, `DataSchema`, `Table`, `Field`, `Migration`, `StorageResource`, `ConfigKey`, `AIComponent`, `ModelEndpoint`, `PromptArtifact`, `InfrastructureResource`, `DeploymentUnit`, `Environment`, `BuildTarget`, `Pipeline`, `Test`, `Owner`, `ExternalDependency`. Reserved for DM08/DM09: `Feature`, `Requirement`.
 
+Data and ML work (added 2026-11-24): `Job`, `Task`, `Dataset`, `Notebook`, `MLModel`.
+- **`Job`:** a scheduled or triggered unit of batch work, such as a Databricks job or pipeline, an Airflow DAG, an MLflow project, an Azure ML job or a DVC pipeline. Natural key `{framework, name}`. The schedule and trigger are attributes, not entities.
+- **`Task`:** one step of a job. Natural key `{framework, job, name}`.
+- **`Dataset`:** a named data asset that is not an ORM or DDL table: a lakehouse or catalog table (`catalog.schema.table`), a storage path (`abfss://`, `s3://`, `dbfs:/`), a dbt model or source, or a DVC-tracked path. Natural key `{name}`, with query strings stripped from paths.
+- **`Notebook`:** a Jupyter or Databricks notebook. Natural key `{path}`.
+- **`MLModel`:** a trained or pretrained model: an MLflow registered model, or a Hugging Face model (`hf:` prefix). Natural key `{name}`.
+
+Legacy code, for migration work (added 2026-11-24): `Program`, natural key `{platform, name}`. A COBOL program (`mainframe`), a SAS macro or program (`sas`), a ColdFusion component or page (`cfml`), a Teradata procedure or macro (`teradata`) and a T-SQL procedure in SQL Server or Synapse (`tsql`) are each a `Program`. Legacy repositories rarely carry a manifest, so each legacy file declares its own unit of code, and programs link to each other by name, as their platforms do. The rest of a legacy estate maps onto existing kinds:
+- JCL `JOB` cards are `Job`s, and their `EXEC` steps are `Task`s that `RUN` a program.
+- `DD DSN=` datasets, SAS library tables and Synapse pipeline sources and sinks are `Dataset`s; temporary datasets (`&&TEMP`, SAS `work.`) are not.
+- COBOL copybooks are `DataSchema`s that a program `DEPENDS_ON`.
+- Tables named in embedded or stand-alone SQL (COBOL `EXEC SQL`, `cfquery`, BTEQ, T-SQL) are `Table`s.
+- ColdFusion pages and remote component functions are `Endpoint`s that the program `EXPOSES`.
+- SAS `libname`s and ColdFusion data sources are `ConfigKey`s; their connection values are never read.
+
 Changes from v1: `Application`, `Service` and `Library` are one entity, `Component`, with `component_kind` drawn from the DM03 label set, so there is one vocabulary instead of three. `ConfigKey` is added because environment variables and config keys are how a component is linked to the resources it uses. `Migration` and `Owner` are added because relations already referred to them. `Revision` is dropped as an entity; the snapshot is the revision.
 
 ### 8.2 Relations (v1)
-`CONTAINS`, `DEFINED_IN`, `IMPLEMENTS`, `EXPOSES`, `CONSUMES`, `CALLS`, `DEPENDS_ON`, `READS_FROM`, `WRITES_TO`, `PUBLISHES_TO`, `SUBSCRIBES_TO`, `CONFIGURED_BY`, `REFERENCES_CONFIG`, `MIGRATES`, `BUILT_BY`, `DEPLOYED_AS`, `DEPLOYED_TO`, `TESTED_BY`, `OWNED_BY`, `ALIAS_OF`. Reserved: `SATISFIES`, `DERIVED_FROM`.
+`CONTAINS`, `DEFINED_IN`, `IMPLEMENTS`, `EXPOSES`, `CONSUMES`, `CALLS`, `DEPENDS_ON`, `READS_FROM`, `WRITES_TO`, `PUBLISHES_TO`, `SUBSCRIBES_TO`, `CONFIGURED_BY`, `REFERENCES_CONFIG`, `MIGRATES`, `BUILT_BY`, `DEPLOYED_AS`, `DEPLOYED_TO`, `TESTED_BY`, `OWNED_BY`, `ALIAS_OF`, and for data and ML work `RUNS`, `DERIVED_FROM`, `PRODUCES`, `SERVES`. Reserved: `SATISFIES`.
+
+The data and ML relations:
+- **`RUNS`:** a job or task runs a notebook, file, package or job, or a notebook runs another notebook (`%run`, `dbutils.notebook.run`).
+- **`DERIVED_FROM`:** a dataset is built from another dataset (dbt `ref` and `source`, `INSERT … SELECT`), which gives table-level lineage.
+- **`PRODUCES`:** code, a notebook, a job or a task produces a model (MLflow `log_model` or `register_model`).
+- **`SERVES`:** a deployment unit or component serves a model.
+
+`CALLS` also links programs (COBOL `CALL`, CICS `LINK` and `XCTL`, SAS macro calls, `cfinvoke`, `EXEC` of a procedure). `RUNS` takes a program as its object, and `DEPENDS_ON` takes a data schema (a copybook) or program.
+
+`READS_FROM` and `WRITES_TO` also take jobs, tasks and notebooks as subjects, and datasets and models as objects. `DEPENDS_ON` also links tasks to their upstream tasks. All of these are declared (E1) or parsed (E2); a read or write whose target is computed at run time is not guessed, but counted against the `data_lineage` coverage domain.
 
 Each relation has a schema: permitted subject and object kinds, direction, cardinality (functional or many), permitted qualifiers and the minimum evidence class. Multiple edges and conflicting assertions between the same pair are allowed.
 
@@ -508,6 +533,7 @@ Coverage is a ratio with a stated denominator, reported per domain, per language
 | Contract match | contract operations matched to an implementation | operations declared |
 | Deployment refs | image, env and resource references resolved | references declared |
 | Decisions | decisions resolved | decisions planned (abstentions listed by reason) |
+| Data lineage | dataset and table reads and writes whose target is named (a literal, a constant, or a template with named placeholders) | reads, writes and data-moving statements detected, in Spark, SQL, notebooks, orchestrators and legacy code |
 
 Files in unsupported languages, excluded files and unparsed files are counted and listed separately. A consumer's `context_profile` can set a minimum for any of these.
 
@@ -777,8 +803,9 @@ The prototype has no authentication, lockfile, migrations or version history. Si
 |---|---|
 | Architecture | topology, stack, components and kinds, dependencies (DM01–DM03) |
 | Contracts | interfaces, endpoints, event topics, producers and consumers (DM04) |
-| Data | schemas, tables, fields, migrations, read and write edges (DM05) |
-| AI integrations | providers, model endpoints, prompt artifacts, tool edges (DM06) |
+| Data | schemas, tables, datasets, fields, migrations, read, write and lineage edges (DM05) |
+| Jobs | scheduled and orchestrated jobs and their tasks, notebooks and legacy programs, and what each runs |
+| AI integrations | providers, model endpoints, prompt artifacts, tool edges (DM06), and trained models with what produces and serves them |
 | Tests | tests and `TESTED_BY` edges |
 | Deployment | build targets, pipelines, deployment units, declared targets (DM07) |
 | Quality | coverage with denominators, unknowns by reason, conflicts with all sides |

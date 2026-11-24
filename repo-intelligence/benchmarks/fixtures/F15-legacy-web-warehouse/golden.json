@@ -1,0 +1,1012 @@
+{
+ "fixture": "F15-legacy-web-warehouse",
+ "description": "A migration estate with no package manifests: a ColdFusion storefront (tag and script components, remote functions, pages, datasources), Teradata BTEQ and a stored procedure, and a Synapse workspace (pipeline, trigger, datasets, notebook, SQL script) with a T-SQL procedure. 'since' names the milestone whose compiler must produce the item.",
+ "entities": [
+  {
+   "kind": "Program",
+   "natural_key": {
+    "platform": "cfml",
+    "name": "cfml.services.orderservice"
+   },
+   "since": "M0",
+   "attributes": {
+    "kind": "component"
+   }
+  },
+  {
+   "kind": "Program",
+   "natural_key": {
+    "platform": "cfml",
+    "name": "cfml.services.auditservice"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "Program",
+   "natural_key": {
+    "platform": "cfml",
+    "name": "cfml/orders.cfm"
+   },
+   "since": "M0",
+   "attributes": {
+    "kind": "page"
+   }
+  },
+  {
+   "kind": "Program",
+   "natural_key": {
+    "platform": "cfml",
+    "name": "cfml/header.cfm"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "Endpoint",
+   "natural_key": {
+    "component_root": "",
+    "protocol": "http",
+    "method": "ANY",
+    "route": "/cfml/services/OrderService.cfc?method=getOrder"
+   },
+   "since": "M0",
+   "attributes": {
+    "framework": "coldfusion"
+   }
+  },
+  {
+   "kind": "Endpoint",
+   "natural_key": {
+    "component_root": "",
+    "protocol": "http",
+    "method": "ANY",
+    "route": "/cfml/orders.cfm"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "ConfigKey",
+   "natural_key": {
+    "name": "datasource:shopdb"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "Table",
+   "natural_key": {
+    "datastore": "default",
+    "name": "orders"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "Table",
+   "natural_key": {
+    "datastore": "default",
+    "name": "customers"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "Table",
+   "natural_key": {
+    "datastore": "default",
+    "name": "audit_log"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "Program",
+   "natural_key": {
+    "platform": "teradata",
+    "name": "teradata/load_sales.bteq"
+   },
+   "since": "M0",
+   "attributes": {
+    "kind": "script"
+   }
+  },
+  {
+   "kind": "Program",
+   "natural_key": {
+    "platform": "teradata",
+    "name": "edw.refresh_sales_stats"
+   },
+   "since": "M0",
+   "attributes": {
+    "kind": "procedure"
+   }
+  },
+  {
+   "kind": "Table",
+   "natural_key": {
+    "datastore": "default",
+    "name": "edw.sales"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "Table",
+   "natural_key": {
+    "datastore": "default",
+    "name": "edw.sales_daily"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "Table",
+   "natural_key": {
+    "datastore": "default",
+    "name": "stg.sales_raw"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "Job",
+   "natural_key": {
+    "framework": "synapse",
+    "name": "pl_daily_sales"
+   },
+   "since": "M0",
+   "attributes": {
+    "kind": "pipeline"
+   }
+  },
+  {
+   "kind": "Job",
+   "natural_key": {
+    "framework": "synapse",
+    "name": "tr_nightly"
+   },
+   "since": "M0",
+   "attributes": {
+    "kind": "trigger",
+    "schedule": "every 1 Day"
+   }
+  },
+  {
+   "kind": "Task",
+   "natural_key": {
+    "framework": "synapse",
+    "job": "pl_daily_sales",
+    "name": "copy_raw"
+   },
+   "since": "M0",
+   "attributes": {
+    "type": "Copy"
+   }
+  },
+  {
+   "kind": "Task",
+   "natural_key": {
+    "framework": "synapse",
+    "job": "pl_daily_sales",
+    "name": "clean"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "Task",
+   "natural_key": {
+    "framework": "synapse",
+    "job": "pl_daily_sales",
+    "name": "aggregate"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "Dataset",
+   "natural_key": {
+    "name": "ds_raw_sales"
+   },
+   "since": "M0",
+   "attributes": {
+    "kind": "synapse_dataset",
+    "format": "Parquet"
+   }
+  },
+  {
+   "kind": "Dataset",
+   "natural_key": {
+    "name": "ds_stg_sales"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "Dataset",
+   "natural_key": {
+    "name": "raw/sales"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "Table",
+   "natural_key": {
+    "datastore": "default",
+    "name": "stg.sales"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "Notebook",
+   "natural_key": {
+    "path": "synapse/notebook/nb_clean_sales.json"
+   },
+   "since": "M0",
+   "attributes": {
+    "format": "synapse"
+   }
+  },
+  {
+   "kind": "Dataset",
+   "natural_key": {
+    "name": "abfss://raw@salesdata.dfs.core.windows.net/sales"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "Dataset",
+   "natural_key": {
+    "name": "stg.sales_clean"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "Program",
+   "natural_key": {
+    "platform": "tsql",
+    "name": "dbo.usp_aggregate_sales"
+   },
+   "since": "M0",
+   "attributes": {
+    "kind": "procedure"
+   }
+  },
+  {
+   "kind": "Program",
+   "natural_key": {
+    "platform": "tsql",
+    "name": "sales_by_region"
+   },
+   "since": "M0",
+   "attributes": {
+    "kind": "script"
+   }
+  },
+  {
+   "kind": "Table",
+   "natural_key": {
+    "datastore": "default",
+    "name": "dbo.sales_agg"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "Table",
+   "natural_key": {
+    "datastore": "default",
+    "name": "rpt.sales_by_region"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "ConfigKey",
+   "natural_key": {
+    "name": "datasource:auditdb"
+   },
+   "since": "M0"
+  }
+ ],
+ "edges": [
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "cfml",
+     "name": "cfml.services.orderservice"
+    }
+   },
+   "predicate": "EXPOSES",
+   "object": {
+    "kind": "Endpoint",
+    "natural_key": {
+     "component_root": "",
+     "protocol": "http",
+     "method": "ANY",
+     "route": "/cfml/services/OrderService.cfc?method=getOrder"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "cfml",
+     "name": "cfml/orders.cfm"
+    }
+   },
+   "predicate": "EXPOSES",
+   "object": {
+    "kind": "Endpoint",
+    "natural_key": {
+     "component_root": "",
+     "protocol": "http",
+     "method": "ANY",
+     "route": "/cfml/orders.cfm"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "cfml",
+     "name": "cfml.services.orderservice"
+    }
+   },
+   "predicate": "READS_FROM",
+   "object": {
+    "kind": "Table",
+    "natural_key": {
+     "datastore": "default",
+     "name": "orders"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "cfml",
+     "name": "cfml.services.orderservice"
+    }
+   },
+   "predicate": "WRITES_TO",
+   "object": {
+    "kind": "Table",
+    "natural_key": {
+     "datastore": "default",
+     "name": "orders"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "cfml",
+     "name": "cfml.services.auditservice"
+    }
+   },
+   "predicate": "WRITES_TO",
+   "object": {
+    "kind": "Table",
+    "natural_key": {
+     "datastore": "default",
+     "name": "audit_log"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "cfml",
+     "name": "cfml/orders.cfm"
+    }
+   },
+   "predicate": "READS_FROM",
+   "object": {
+    "kind": "Table",
+    "natural_key": {
+     "datastore": "default",
+     "name": "customers"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "cfml",
+     "name": "cfml.services.orderservice"
+    }
+   },
+   "predicate": "REFERENCES_CONFIG",
+   "object": {
+    "kind": "ConfigKey",
+    "natural_key": {
+     "name": "datasource:shopdb"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "cfml",
+     "name": "cfml.services.orderservice"
+    }
+   },
+   "predicate": "CALLS",
+   "object": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "cfml",
+     "name": "cfml.services.auditservice"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "cfml",
+     "name": "cfml/orders.cfm"
+    }
+   },
+   "predicate": "CALLS",
+   "object": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "cfml",
+     "name": "cfml.services.orderservice"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "cfml",
+     "name": "cfml/orders.cfm"
+    }
+   },
+   "predicate": "CALLS",
+   "object": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "cfml",
+     "name": "cfml/header.cfm"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "teradata",
+     "name": "teradata/load_sales.bteq"
+    }
+   },
+   "predicate": "READS_FROM",
+   "object": {
+    "kind": "Table",
+    "natural_key": {
+     "datastore": "default",
+     "name": "stg.sales_raw"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "teradata",
+     "name": "teradata/load_sales.bteq"
+    }
+   },
+   "predicate": "WRITES_TO",
+   "object": {
+    "kind": "Table",
+    "natural_key": {
+     "datastore": "default",
+     "name": "edw.sales"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "teradata",
+     "name": "teradata/load_sales.bteq"
+    }
+   },
+   "predicate": "CALLS",
+   "object": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "teradata",
+     "name": "edw.refresh_sales_stats"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "teradata",
+     "name": "edw.refresh_sales_stats"
+    }
+   },
+   "predicate": "READS_FROM",
+   "object": {
+    "kind": "Table",
+    "natural_key": {
+     "datastore": "default",
+     "name": "edw.sales"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "teradata",
+     "name": "edw.refresh_sales_stats"
+    }
+   },
+   "predicate": "WRITES_TO",
+   "object": {
+    "kind": "Table",
+    "natural_key": {
+     "datastore": "default",
+     "name": "edw.sales_daily"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "synapse",
+     "name": "tr_nightly"
+    }
+   },
+   "predicate": "RUNS",
+   "object": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "synapse",
+     "name": "pl_daily_sales"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "synapse",
+     "name": "pl_daily_sales"
+    }
+   },
+   "predicate": "CONTAINS",
+   "object": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "synapse",
+     "job": "pl_daily_sales",
+     "name": "copy_raw"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "synapse",
+     "job": "pl_daily_sales",
+     "name": "clean"
+    }
+   },
+   "predicate": "DEPENDS_ON",
+   "object": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "synapse",
+     "job": "pl_daily_sales",
+     "name": "copy_raw"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "synapse",
+     "job": "pl_daily_sales",
+     "name": "aggregate"
+    }
+   },
+   "predicate": "DEPENDS_ON",
+   "object": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "synapse",
+     "job": "pl_daily_sales",
+     "name": "clean"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "synapse",
+     "job": "pl_daily_sales",
+     "name": "copy_raw"
+    }
+   },
+   "predicate": "READS_FROM",
+   "object": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "ds_raw_sales"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "synapse",
+     "job": "pl_daily_sales",
+     "name": "copy_raw"
+    }
+   },
+   "predicate": "WRITES_TO",
+   "object": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "ds_stg_sales"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "ds_raw_sales"
+    }
+   },
+   "predicate": "ALIAS_OF",
+   "object": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "raw/sales"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "ds_stg_sales"
+    }
+   },
+   "predicate": "ALIAS_OF",
+   "object": {
+    "kind": "Table",
+    "natural_key": {
+     "datastore": "default",
+     "name": "stg.sales"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "synapse",
+     "job": "pl_daily_sales",
+     "name": "clean"
+    }
+   },
+   "predicate": "RUNS",
+   "object": {
+    "kind": "Notebook",
+    "natural_key": {
+     "path": "synapse/notebook/nb_clean_sales.json"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Notebook",
+    "natural_key": {
+     "path": "synapse/notebook/nb_clean_sales.json"
+    }
+   },
+   "predicate": "READS_FROM",
+   "object": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "abfss://raw@salesdata.dfs.core.windows.net/sales"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Notebook",
+    "natural_key": {
+     "path": "synapse/notebook/nb_clean_sales.json"
+    }
+   },
+   "predicate": "WRITES_TO",
+   "object": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "stg.sales_clean"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "synapse",
+     "job": "pl_daily_sales",
+     "name": "aggregate"
+    }
+   },
+   "predicate": "RUNS",
+   "object": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "tsql",
+     "name": "dbo.usp_aggregate_sales"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "tsql",
+     "name": "dbo.usp_aggregate_sales"
+    }
+   },
+   "predicate": "READS_FROM",
+   "object": {
+    "kind": "Table",
+    "natural_key": {
+     "datastore": "default",
+     "name": "stg.sales_clean"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "tsql",
+     "name": "dbo.usp_aggregate_sales"
+    }
+   },
+   "predicate": "READS_FROM",
+   "object": {
+    "kind": "Table",
+    "natural_key": {
+     "datastore": "default",
+     "name": "dbo.stores"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "tsql",
+     "name": "dbo.usp_aggregate_sales"
+    }
+   },
+   "predicate": "WRITES_TO",
+   "object": {
+    "kind": "Table",
+    "natural_key": {
+     "datastore": "default",
+     "name": "dbo.sales_agg"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "tsql",
+     "name": "sales_by_region"
+    }
+   },
+   "predicate": "READS_FROM",
+   "object": {
+    "kind": "Table",
+    "natural_key": {
+     "datastore": "default",
+     "name": "dbo.sales_agg"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "tsql",
+     "name": "sales_by_region"
+    }
+   },
+   "predicate": "WRITES_TO",
+   "object": {
+    "kind": "Table",
+    "natural_key": {
+     "datastore": "default",
+     "name": "rpt.sales_by_region"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "cfml",
+     "name": "cfml.services.auditservice"
+    }
+   },
+   "predicate": "REFERENCES_CONFIG",
+   "object": {
+    "kind": "ConfigKey",
+    "natural_key": {
+     "name": "datasource:auditdb"
+    }
+   },
+   "since": "M0"
+  }
+ ],
+ "absent_entities": [
+  {
+   "kind": "Table",
+   "natural_key": {
+    "datastore": "default",
+    "name": "vt_sales"
+   },
+   "why": "a Teradata volatile table lives for the session only"
+  },
+  {
+   "kind": "Endpoint",
+   "natural_key": {
+    "component_root": "",
+    "protocol": "http",
+    "method": "ANY",
+    "route": "/cfml/services/OrderService.cfc?method=placeOrder"
+   },
+   "why": "placeOrder is public, not remote"
+  },
+  {
+   "kind": "Program",
+   "natural_key": {
+    "platform": "cfml",
+    "name": "services.orderservice"
+   },
+   "why": "component names resolve against the caller's directories, not taken as written"
+  }
+ ],
+ "exclusions": [],
+ "forbidden_kinds": [
+  "Package",
+  "Component"
+ ],
+ "expected_unknowns": [
+  {
+   "since": "M2",
+   "detail": "Synapse datasets and warehouse tables are matched by name only: ds_stg_sales aliases stg.sales, which no SQL here writes"
+  }
+ ],
+ "expected_conflicts": [],
+ "commits": [
+  {
+   "dir": "01-cancel-order",
+   "expect": "A new remote function is a new endpoint",
+   "added_entities": [
+    {
+     "kind": "Endpoint",
+     "natural_key": {
+      "component_root": "",
+      "protocol": "http",
+      "method": "ANY",
+      "route": "/cfml/services/OrderService.cfc?method=cancelOrder"
+     },
+     "since": "M0"
+    }
+   ],
+   "removed_entities": []
+  },
+  {
+   "dir": "02-publish-pipeline",
+   "expect": "An ExecutePipeline activity and the pipeline it runs",
+   "added_entities": [
+    {
+     "kind": "Task",
+     "natural_key": {
+      "framework": "synapse",
+      "job": "pl_daily_sales",
+      "name": "publish"
+     },
+     "since": "M0"
+    },
+    {
+     "kind": "Job",
+     "natural_key": {
+      "framework": "synapse",
+      "name": "pl_publish"
+     },
+     "since": "M0"
+    },
+    {
+     "kind": "Task",
+     "natural_key": {
+      "framework": "synapse",
+      "job": "pl_publish",
+      "name": "export"
+     },
+     "since": "M0"
+    }
+   ],
+   "removed_entities": []
+  },
+  {
+   "dir": "03-retire-bteq",
+   "expect": "The BTEQ script and the staging table only it read are gone; the procedure it called stays",
+   "added_entities": [],
+   "removed_entities": [
+    {
+     "kind": "Program",
+     "natural_key": {
+      "platform": "teradata",
+      "name": "teradata/load_sales.bteq"
+     },
+     "since": "M0"
+    },
+    {
+     "kind": "Table",
+     "natural_key": {
+      "datastore": "default",
+      "name": "stg.sales_raw"
+     },
+     "since": "M0"
+    }
+   ]
+  }
+ ],
+ "decision_cases": []
+}

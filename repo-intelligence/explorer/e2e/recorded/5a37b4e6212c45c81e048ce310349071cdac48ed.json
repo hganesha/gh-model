@@ -1,6 +1,0 @@
-{
- "method": "GET",
- "path": "/v1/repositories/local/5d3ffd013f4f/overrides",
- "status": 200,
- "body": "{\"repository_id\":\"local/5d3ffd013f4f\",\"version\":2,\"override_set_hash\":\"sha256:8438d8c9790796e926fbf86b899832c8601cc95b8860e466ef43fe165ca13eae\",\"decisions\":[],\"preferences\":[],\"history\":[{\"version\":2,\"author\":\"ada@example.test\",\"set_hash\":\"sha256:8438d8c9790796e926fbf86b899832c8601cc95b8860e466ef43fe165ca13eae\"},{\"version\":1,\"author\":\"ada@example.test\",\"set_hash\":\"sha256:c41353d52efd73e69f27d9a5988b10f4d4ae350c0a721caf0b60309082b7325d\"}]}"
-}

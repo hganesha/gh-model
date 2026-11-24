@@ -1,6 +1,0 @@
-{
- "method": "GET",
- "path": "/v1/snapshots/sha256:3327f59c9ba9dbc31ade7a273624ddd2fda3bce5ed87464c0bbe9c92a8533dde/entities?plane=architecture&kind=Component&limit=40",
- "status": 200,
- "body": "{\"entities\":[{\"id\":\"ent_pmufy2dwpagfwg6ruwy5aytiwj\",\"kind\":\"Component\",\"name\":\"orders-api\",\"attributes\":{\"ecosystem\":\"pypi\",\"frameworks\":[\"fastapi\"],\"kind_status\":\"supported\",\"decision_ref\":\"dec_qovtann6fns5ik7cn2qr56avwm\",\"component_kind\":\"service\",\"primary_language\":\"python\"},\"natural_key\":{\"root\":\"\"},\"evidence_ids\":[\"ev_cllwq424iukk3s6gxpef6kskcf\",\"ev_gpbiaapobuqagtpeqbqqspg2fi\",\"ev_jtztjjjiwfxiem5zzbec3nsi3o\",\"ev_lw57edzu2bfxa3lttckm5phfyy\",\"ev_p3a76uoywwpfv4rtkgr5dzkkjn\",\"ev_yl7uayvg3blrlytusxfkpxgol7\"]}],\"truncated\":false}"
-}

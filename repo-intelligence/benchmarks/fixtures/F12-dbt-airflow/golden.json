@@ -1,0 +1,730 @@
+{
+ "fixture": "F12-dbt-airflow",
+ "description": "A dbt project (sources, staging and mart models, schema tests) beside an Airflow DAG that runs a Spark extract, the dbt build and a SQL publish with a dataset outlet. Model lineage comes from ref() and source(); sources alias the warehouse tables the Spark job writes. 'since' names the milestone whose compiler must produce the item.",
+ "entities": [
+  {
+   "kind": "Package",
+   "natural_key": {
+    "ecosystem": "dbt",
+    "name": "analytics",
+    "manifest_dir": "analytics"
+   },
+   "since": "M0",
+   "attributes": {
+    "kind": "dbt_project"
+   }
+  },
+  {
+   "kind": "Package",
+   "natural_key": {
+    "ecosystem": "pypi",
+    "name": "orchestration",
+    "manifest_dir": "orchestration"
+   },
+   "since": "M0",
+   "attributes": {
+    "inferred_name": true
+   }
+  },
+  {
+   "kind": "Component",
+   "natural_key": {
+    "root": "analytics"
+   },
+   "since": "M2",
+   "attributes": {
+    "component_kind": "data_pipeline"
+   }
+  },
+  {
+   "kind": "Component",
+   "natural_key": {
+    "root": "orchestration"
+   },
+   "since": "M2",
+   "attributes": {
+    "component_kind": "data_pipeline"
+   }
+  },
+  {
+   "kind": "Job",
+   "natural_key": {
+    "framework": "airflow",
+    "name": "orders_pipeline"
+   },
+   "since": "M0",
+   "attributes": {
+    "schedule": "@daily"
+   }
+  },
+  {
+   "kind": "Task",
+   "natural_key": {
+    "framework": "airflow",
+    "job": "orders_pipeline",
+    "name": "extract"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "Task",
+   "natural_key": {
+    "framework": "airflow",
+    "job": "orders_pipeline",
+    "name": "dbt_build"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "Task",
+   "natural_key": {
+    "framework": "airflow",
+    "job": "orders_pipeline",
+    "name": "publish"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "Dataset",
+   "natural_key": {
+    "name": "stg_orders"
+   },
+   "since": "M0",
+   "attributes": {
+    "framework": "dbt",
+    "kind": "model"
+   }
+  },
+  {
+   "kind": "Dataset",
+   "natural_key": {
+    "name": "stg_customers"
+   },
+   "since": "M0",
+   "attributes": {
+    "framework": "dbt",
+    "kind": "model"
+   }
+  },
+  {
+   "kind": "Dataset",
+   "natural_key": {
+    "name": "fct_orders"
+   },
+   "since": "M0",
+   "attributes": {
+    "framework": "dbt",
+    "kind": "model"
+   }
+  },
+  {
+   "kind": "Dataset",
+   "natural_key": {
+    "name": "shop.orders"
+   },
+   "since": "M0",
+   "attributes": {
+    "framework": "dbt",
+    "kind": "source"
+   }
+  },
+  {
+   "kind": "Dataset",
+   "natural_key": {
+    "name": "shop.customers"
+   },
+   "since": "M0",
+   "attributes": {
+    "framework": "dbt",
+    "kind": "source"
+   }
+  },
+  {
+   "kind": "Dataset",
+   "natural_key": {
+    "name": "raw.orders"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "Dataset",
+   "natural_key": {
+    "name": "raw.customers"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "Dataset",
+   "natural_key": {
+    "name": "finance.fx_rates"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "Dataset",
+   "natural_key": {
+    "name": "reporting.daily_orders"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "Dataset",
+   "natural_key": {
+    "name": "analytics.fct_orders"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "Dataset",
+   "natural_key": {
+    "name": "snowflake://reporting/daily_orders"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "Test",
+   "natural_key": {
+    "path": "analytics/models/staging/schema.yml",
+    "name": "unique_stg_orders_order_id"
+   },
+   "since": "M0",
+   "attributes": {
+    "framework": "dbt"
+   }
+  },
+  {
+   "kind": "Test",
+   "natural_key": {
+    "path": "analytics/models/staging/schema.yml",
+    "name": "not_null_stg_orders_order_id"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "Test",
+   "natural_key": {
+    "path": "analytics/models/staging/schema.yml",
+    "name": "unique_stg_customers_customer_id"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "ExternalDependency",
+   "natural_key": {
+    "ecosystem": "pypi",
+    "name": "apache-airflow"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "ExternalDependency",
+   "natural_key": {
+    "ecosystem": "pypi",
+    "name": "dbt-snowflake"
+   },
+   "since": "M0"
+  }
+ ],
+ "edges": [
+  {
+   "subject": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "fct_orders"
+    }
+   },
+   "predicate": "DERIVED_FROM",
+   "object": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "stg_orders"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "fct_orders"
+    }
+   },
+   "predicate": "DERIVED_FROM",
+   "object": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "stg_customers"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "fct_orders"
+    }
+   },
+   "predicate": "DERIVED_FROM",
+   "object": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "finance.fx_rates"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "stg_orders"
+    }
+   },
+   "predicate": "DERIVED_FROM",
+   "object": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "shop.orders"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "stg_customers"
+    }
+   },
+   "predicate": "DERIVED_FROM",
+   "object": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "shop.customers"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "shop.orders"
+    }
+   },
+   "predicate": "ALIAS_OF",
+   "object": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "raw.orders"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "shop.customers"
+    }
+   },
+   "predicate": "ALIAS_OF",
+   "object": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "raw.customers"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Package",
+    "natural_key": {
+     "ecosystem": "dbt",
+     "name": "analytics",
+     "manifest_dir": "analytics"
+    }
+   },
+   "predicate": "WRITES_TO",
+   "object": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "fct_orders"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Package",
+    "natural_key": {
+     "ecosystem": "dbt",
+     "name": "analytics",
+     "manifest_dir": "analytics"
+    }
+   },
+   "predicate": "WRITES_TO",
+   "object": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "stg_orders"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "stg_orders"
+    }
+   },
+   "predicate": "TESTED_BY",
+   "object": {
+    "kind": "Test",
+    "natural_key": {
+     "path": "analytics/models/staging/schema.yml",
+     "name": "unique_stg_orders_order_id"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "stg_orders"
+    }
+   },
+   "predicate": "TESTED_BY",
+   "object": {
+    "kind": "Test",
+    "natural_key": {
+     "path": "analytics/models/staging/schema.yml",
+     "name": "not_null_stg_orders_order_id"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "airflow",
+     "name": "orders_pipeline"
+    }
+   },
+   "predicate": "CONTAINS",
+   "object": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "airflow",
+     "job": "orders_pipeline",
+     "name": "publish"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "airflow",
+     "job": "orders_pipeline",
+     "name": "dbt_build"
+    }
+   },
+   "predicate": "DEPENDS_ON",
+   "object": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "airflow",
+     "job": "orders_pipeline",
+     "name": "extract"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "airflow",
+     "job": "orders_pipeline",
+     "name": "publish"
+    }
+   },
+   "predicate": "DEPENDS_ON",
+   "object": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "airflow",
+     "job": "orders_pipeline",
+     "name": "dbt_build"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "airflow",
+     "job": "orders_pipeline",
+     "name": "extract"
+    }
+   },
+   "predicate": "RUNS",
+   "object": {
+    "kind": "Artifact",
+    "natural_key": {
+     "path": "orchestration/jobs/extract_orders.py"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "airflow",
+     "job": "orders_pipeline",
+     "name": "publish"
+    }
+   },
+   "predicate": "READS_FROM",
+   "object": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "analytics.fct_orders"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "airflow",
+     "job": "orders_pipeline",
+     "name": "publish"
+    }
+   },
+   "predicate": "WRITES_TO",
+   "object": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "reporting.daily_orders"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "airflow",
+     "job": "orders_pipeline",
+     "name": "publish"
+    }
+   },
+   "predicate": "WRITES_TO",
+   "object": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "snowflake://reporting/daily_orders"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Package",
+    "natural_key": {
+     "ecosystem": "pypi",
+     "name": "orchestration",
+     "manifest_dir": "orchestration"
+    }
+   },
+   "predicate": "WRITES_TO",
+   "object": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "raw.orders"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Package",
+    "natural_key": {
+     "ecosystem": "pypi",
+     "name": "orchestration",
+     "manifest_dir": "orchestration"
+    }
+   },
+   "predicate": "DEPENDS_ON",
+   "object": {
+    "kind": "ExternalDependency",
+    "natural_key": {
+     "ecosystem": "pypi",
+     "name": "dbt-snowflake"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Component",
+    "natural_key": {
+     "root": "analytics"
+    }
+   },
+   "predicate": "WRITES_TO",
+   "object": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "fct_orders"
+    }
+   },
+   "since": "M2"
+  }
+ ],
+ "absent_entities": [
+  {
+   "kind": "Package",
+   "natural_key": {
+    "ecosystem": "pypi",
+    "name": "analytics",
+    "manifest_dir": "analytics"
+   },
+   "why": "a dbt project is a dbt package, not a Python one"
+  },
+  {
+   "kind": "Dataset",
+   "natural_key": {
+    "name": "this"
+   },
+   "why": "{{ this }} is the model itself"
+  },
+  {
+   "kind": "Dataset",
+   "natural_key": {
+    "name": "public.orders"
+   },
+   "why": "the JDBC table is set through .option(), which is not read as lineage"
+  }
+ ],
+ "exclusions": [],
+ "forbidden_kinds": [],
+ "expected_unknowns": [
+  {
+   "since": "M2",
+   "detail": "the dbt_build task runs dbt through a shell command: no RUNS edge to the analytics package is inferred"
+  }
+ ],
+ "expected_conflicts": [],
+ "commits": [
+  {
+   "dir": "01-dim-customers",
+   "expect": "A new mart model",
+   "added_entities": [
+    {
+     "kind": "Dataset",
+     "natural_key": {
+      "name": "dim_customers"
+     },
+     "since": "M0",
+     "attributes": {
+      "framework": "dbt",
+      "kind": "model"
+     }
+    }
+   ],
+   "removed_entities": []
+  },
+  {
+   "dir": "02-feature-refresh",
+   "expect": "A TaskFlow DAG triggered by the published dataset",
+   "added_entities": [
+    {
+     "kind": "Job",
+     "natural_key": {
+      "framework": "airflow",
+      "name": "refresh_features"
+     },
+     "since": "M0",
+     "attributes": {
+      "schedule": "datasets"
+     }
+    },
+    {
+     "kind": "Task",
+     "natural_key": {
+      "framework": "airflow",
+      "job": "refresh_features",
+      "name": "load"
+     },
+     "since": "M0"
+    },
+    {
+     "kind": "Task",
+     "natural_key": {
+      "framework": "airflow",
+      "job": "refresh_features",
+      "name": "score"
+     },
+     "since": "M0"
+    },
+    {
+     "kind": "Dataset",
+     "natural_key": {
+      "name": "s3://shop-features/orders.parquet"
+     },
+     "since": "M0"
+    },
+    {
+     "kind": "Dataset",
+     "natural_key": {
+      "name": "s3://shop-features/scored.parquet"
+     },
+     "since": "M0"
+    }
+   ],
+   "removed_entities": []
+  },
+  {
+   "dir": "03-drop-stg-customers",
+   "expect": "The staging model, the mart built on it and its test are gone; fct_orders reads the source directly",
+   "added_entities": [],
+   "removed_entities": [
+    {
+     "kind": "Dataset",
+     "natural_key": {
+      "name": "stg_customers"
+     },
+     "since": "M0"
+    },
+    {
+     "kind": "Dataset",
+     "natural_key": {
+      "name": "dim_customers"
+     },
+     "since": "M0"
+    },
+    {
+     "kind": "Test",
+     "natural_key": {
+      "path": "analytics/models/staging/schema.yml",
+      "name": "unique_stg_customers_customer_id"
+     },
+     "since": "M0"
+    }
+   ]
+  }
+ ],
+ "decision_cases": []
+}

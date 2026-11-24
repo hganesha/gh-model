@@ -43,8 +43,8 @@ def compiled(tmp_path_factory):
     return run
 
 
-def test_there_are_ten_fixtures():
-    assert len(FIXTURES) == 10 and [f[:3] for f in FIXTURES] == [f"F{i:02d}" for i in range(1, 11)]
+def test_there_are_fifteen_fixtures():
+    assert len(FIXTURES) == 15 and [f[:3] for f in FIXTURES] == [f"F{i:02d}" for i in range(1, 16)]
 
 
 @pytest.mark.parametrize("name", FIXTURES)
@@ -158,7 +158,7 @@ def test_dependency_capability_coverage_on_fixture_bases(compiled):
         assert (coverage["numerator"], coverage["denominator"]) == (len(classified), len(declared))
         all_declared.update(declared.values())
         all_classified.update(declared[subject] for subject in classified)
-    assert (len(all_classified), len(all_declared)) == (15, 17)
+    assert (len(all_classified), len(all_declared)) == (24, 29)
 
 
 def test_configuration_values_never_enter_the_graph(compiled):

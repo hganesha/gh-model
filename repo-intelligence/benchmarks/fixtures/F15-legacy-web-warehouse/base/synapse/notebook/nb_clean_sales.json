@@ -1,0 +1,23 @@
+{
+    "name": "nb_clean_sales",
+    "properties": {
+        "nbformat": 4,
+        "nbformat_minor": 2,
+        "metadata": {
+            "language_info": {
+                "name": "python"
+            }
+        },
+        "cells": [
+            {
+                "cell_type": "code",
+                "metadata": {},
+                "source": [
+                    "raw = spark.read.parquet(\"abfss://raw@salesdata.dfs.core.windows.net/sales\")\n",
+                    "clean = raw.dropDuplicates([\"sale_id\"]).filter(\"amount > 0\")\n",
+                    "clean.write.mode(\"overwrite\").saveAsTable(\"stg.sales_clean\")\n"
+                ]
+            }
+        ]
+    }
+}

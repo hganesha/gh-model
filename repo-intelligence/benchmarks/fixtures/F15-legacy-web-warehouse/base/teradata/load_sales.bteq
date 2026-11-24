@@ -1,0 +1,14 @@
+.SET ERROROUT STDOUT
+.RUN FILE = /etc/td/logon.btq
+
+CREATE VOLATILE TABLE vt_sales AS (SELECT * FROM stg.sales_raw WHERE sale_date = CURRENT_DATE) WITH DATA ON COMMIT PRESERVE ROWS;
+
+INSERT INTO edw.sales (sale_id, store_id, amount, sale_date)
+SELECT sale_id, store_id, amount, sale_date FROM vt_sales;
+
+.IF ERRORCODE <> 0 THEN .QUIT 8
+
+CALL edw.refresh_sales_stats();
+
+.LOGOFF
+.QUIT 0

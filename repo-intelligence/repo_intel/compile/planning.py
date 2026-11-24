@@ -24,6 +24,8 @@ import posixpath
 from collections.abc import Iterable, Mapping
 from typing import Any
 
+from repo_intel.extractors.manifests import effective_declarations
+
 ROOT_UNIT = "@root"
 TS_EXT = (".ts", ".tsx", ".d.ts", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts")
 _CONFIG_PREFERENCE = ("tsconfig.json", "jsconfig.json")
@@ -265,7 +267,7 @@ def _entries(summaries: list[Mapping[str, Any]], files: frozenset[str]) -> dict[
 def plan_units(paths: list[str], manifest_summaries: list[Mapping[str, Any]]) -> dict[str, Any]:
     files = frozenset(paths)
     packages = sorted(
-        ({k: o["payload"][k] for k in ("ecosystem", "name", "manifest_dir")} for _, o in _of(manifest_summaries, "package_declaration")),
+        ({k: o["payload"][k] for k in ("ecosystem", "name", "manifest_dir")} for _, o in effective_declarations(_of(manifest_summaries, "package_declaration"))[0]),
         key=lambda p: (p["manifest_dir"], p["ecosystem"], p["name"]),
     )
     roots = sorted({p["manifest_dir"] for p in packages})

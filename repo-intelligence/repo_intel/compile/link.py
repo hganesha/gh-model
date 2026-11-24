@@ -27,7 +27,7 @@ from repo_intel.compile.buildgraph import Step, StepInputs
 from repo_intel.compile.contracts import Assertion, CoverageEntry
 from repo_intel.extractors.base import ref
 from repo_intel.extractors.infrastructure import image_repository
-from repo_intel.extractors.manifests import normalize_pypi
+from repo_intel.extractors.manifests import effective_declarations, normalize_pypi
 from repo_intel.compile.ontology import AssertionKind, EntityKind, EpistemicStatus, EvidenceClass, Predicate
 from repo_intel.compile.planning import pick_config, probe
 
@@ -97,7 +97,8 @@ class _Linker:
         self.unit = unit["name"]
         self.root = "" if self.unit in (".", ROOT_UNIT) else self.unit
         self.files = {s["path"]: s for s in summaries}
-        own = sorted((o["payload"] for s in summaries for o in _of(s, "package_declaration") if (o["payload"]["manifest_dir"] or ".") == self.unit), key=lambda p: (p["ecosystem"], p["name"]))
+        standing, _ = effective_declarations([(s["path"], o) for s in summaries for o in _of(s, "package_declaration")])
+        own = sorted((o["payload"] for _, o in standing if (o["payload"]["manifest_dir"] or ".") == self.unit), key=lambda p: (p["ecosystem"], p["name"]))
         self.package = own[0]["name"] if own else self.unit
         self.has_package = bool(own)
         self.package_ref = ref(EntityKind.PACKAGE, {k: own[0][k] for k in ("ecosystem", "name", "manifest_dir")}, own[0]["name"]) if own else None
@@ -706,10 +707,14 @@ def _unit_link(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, Any]:
         coverage.append(CoverageEntry(domain="call_graph", scope=unit["name"], numerator=calls["resolved"], denominator=calls["resolved"] + calls["unresolved"], detail=calls).row())
     if sum(topics.values()):  # reported only where a unit uses a message broker
         coverage.append(CoverageEntry(domain="event_topics", scope=unit["name"], numerator=topics["literal"] + topics["constant"], denominator=sum(topics.values()), detail=topics).row())
+    lineage = sorted(((s["path"], o["payload"]) for s in inputs["summaries"] for o in _of(s, "lineage_summary")), key=lambda x: x[0])
+    if lineage:  # reported only where a unit reads or writes data by name (spec §8.2)
+        resolved, unresolved = sum(p["resolved"] for _, p in lineage), sum(p["unresolved"] for _, p in lineage)
+        coverage.append(CoverageEntry(domain="data_lineage", scope=unit["name"], numerator=resolved, denominator=resolved + unresolved, detail={"files": len(lineage), "files_with_unresolved": sorted(path for path, p in lineage if p["unresolved"])[:50]}).row())
     return {"unit": unit["name"], "observations": linker.out, "unknowns": linker.unknowns, "coverage": coverage, "exports": linker.exports()}
 
 
-UNIT_LINK = Step("unit.link", "0.10.0", _unit_link)
+UNIT_LINK = Step("unit.link", "0.11.0", _unit_link)
 
 
 # ---------------------------------------------------------------- repo-level

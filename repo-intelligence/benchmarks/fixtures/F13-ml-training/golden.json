@@ -1,0 +1,673 @@
+{
+ "fixture": "F13-ml-training",
+ "description": "An ML training repository: a Poetry package with XGBoost training logged to MLflow, batch scoring from the registry, an MLproject, DVC stages and a tracked file, an Azure ML command job, and a conda.yaml whose pip dependencies join the Poetry package. 'since' names the milestone whose compiler must produce the item.",
+ "entities": [
+  {
+   "kind": "Package",
+   "natural_key": {
+    "ecosystem": "pypi",
+    "name": "churn-model",
+    "manifest_dir": ""
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "Component",
+   "natural_key": {
+    "root": ""
+   },
+   "since": "M2",
+   "attributes": {
+    "component_kind": "ml_training"
+   }
+  },
+  {
+   "kind": "MLModel",
+   "natural_key": {
+    "name": "churn_classifier"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "Dataset",
+   "natural_key": {
+    "name": "data/raw.csv"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "Dataset",
+   "natural_key": {
+    "name": "data/features.parquet"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "Dataset",
+   "natural_key": {
+    "name": "models/churn.json"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "Dataset",
+   "natural_key": {
+    "name": "azureml:churn-raw"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "Job",
+   "natural_key": {
+    "framework": "mlflow",
+    "name": "churn"
+   },
+   "since": "M0",
+   "attributes": {
+    "kind": "project"
+   }
+  },
+  {
+   "kind": "Task",
+   "natural_key": {
+    "framework": "mlflow",
+    "job": "churn",
+    "name": "main"
+   },
+   "since": "M0",
+   "attributes": {
+    "type": "entry_point"
+   }
+  },
+  {
+   "kind": "Task",
+   "natural_key": {
+    "framework": "mlflow",
+    "job": "churn",
+    "name": "featurize"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "Job",
+   "natural_key": {
+    "framework": "dvc",
+    "name": "dvc"
+   },
+   "since": "M0",
+   "attributes": {
+    "kind": "pipeline"
+   }
+  },
+  {
+   "kind": "Task",
+   "natural_key": {
+    "framework": "dvc",
+    "job": "dvc",
+    "name": "featurize"
+   },
+   "since": "M0",
+   "attributes": {
+    "type": "stage"
+   }
+  },
+  {
+   "kind": "Task",
+   "natural_key": {
+    "framework": "dvc",
+    "job": "dvc",
+    "name": "train"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "Job",
+   "natural_key": {
+    "framework": "azureml",
+    "name": "churn-train"
+   },
+   "since": "M0",
+   "attributes": {
+    "kind": "command"
+   }
+  },
+  {
+   "kind": "ExternalDependency",
+   "natural_key": {
+    "ecosystem": "pypi",
+    "name": "xgboost"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "ExternalDependency",
+   "natural_key": {
+    "ecosystem": "pypi",
+    "name": "scikit-learn"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "ExternalDependency",
+   "natural_key": {
+    "ecosystem": "pypi",
+    "name": "mlflow"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "ExternalDependency",
+   "natural_key": {
+    "ecosystem": "pypi",
+    "name": "pytest"
+   },
+   "since": "M0"
+  }
+ ],
+ "edges": [
+  {
+   "subject": {
+    "kind": "Package",
+    "natural_key": {
+     "ecosystem": "pypi",
+     "name": "churn-model",
+     "manifest_dir": ""
+    }
+   },
+   "predicate": "PRODUCES",
+   "object": {
+    "kind": "MLModel",
+    "natural_key": {
+     "name": "churn_classifier"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Package",
+    "natural_key": {
+     "ecosystem": "pypi",
+     "name": "churn-model",
+     "manifest_dir": ""
+    }
+   },
+   "predicate": "READS_FROM",
+   "object": {
+    "kind": "MLModel",
+    "natural_key": {
+     "name": "churn_classifier"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Package",
+    "natural_key": {
+     "ecosystem": "pypi",
+     "name": "churn-model",
+     "manifest_dir": ""
+    }
+   },
+   "predicate": "READS_FROM",
+   "object": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "data/raw.csv"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Package",
+    "natural_key": {
+     "ecosystem": "pypi",
+     "name": "churn-model",
+     "manifest_dir": ""
+    }
+   },
+   "predicate": "WRITES_TO",
+   "object": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "data/features.parquet"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Package",
+    "natural_key": {
+     "ecosystem": "pypi",
+     "name": "churn-model",
+     "manifest_dir": ""
+    }
+   },
+   "predicate": "READS_FROM",
+   "object": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "data/features.parquet"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "mlflow",
+     "name": "churn"
+    }
+   },
+   "predicate": "CONTAINS",
+   "object": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "mlflow",
+     "job": "churn",
+     "name": "main"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "mlflow",
+     "job": "churn",
+     "name": "main"
+    }
+   },
+   "predicate": "RUNS",
+   "object": {
+    "kind": "Artifact",
+    "natural_key": {
+     "path": "churn/train.py"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "mlflow",
+     "job": "churn",
+     "name": "featurize"
+    }
+   },
+   "predicate": "RUNS",
+   "object": {
+    "kind": "Artifact",
+    "natural_key": {
+     "path": "churn/featurize.py"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "dvc",
+     "name": "dvc"
+    }
+   },
+   "predicate": "CONTAINS",
+   "object": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "dvc",
+     "job": "dvc",
+     "name": "train"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "dvc",
+     "job": "dvc",
+     "name": "train"
+    }
+   },
+   "predicate": "DEPENDS_ON",
+   "object": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "dvc",
+     "job": "dvc",
+     "name": "featurize"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "dvc",
+     "job": "dvc",
+     "name": "featurize"
+    }
+   },
+   "predicate": "READS_FROM",
+   "object": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "data/raw.csv"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "dvc",
+     "job": "dvc",
+     "name": "featurize"
+    }
+   },
+   "predicate": "WRITES_TO",
+   "object": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "data/features.parquet"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "dvc",
+     "job": "dvc",
+     "name": "train"
+    }
+   },
+   "predicate": "READS_FROM",
+   "object": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "data/features.parquet"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "dvc",
+     "job": "dvc",
+     "name": "train"
+    }
+   },
+   "predicate": "WRITES_TO",
+   "object": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "models/churn.json"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "dvc",
+     "job": "dvc",
+     "name": "featurize"
+    }
+   },
+   "predicate": "RUNS",
+   "object": {
+    "kind": "Artifact",
+    "natural_key": {
+     "path": "churn/featurize.py"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "dvc",
+     "job": "dvc",
+     "name": "train"
+    }
+   },
+   "predicate": "RUNS",
+   "object": {
+    "kind": "Artifact",
+    "natural_key": {
+     "path": "churn/train.py"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "azureml",
+     "name": "churn-train"
+    }
+   },
+   "predicate": "RUNS",
+   "object": {
+    "kind": "Artifact",
+    "natural_key": {
+     "path": "churn/train.py"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "azureml",
+     "name": "churn-train"
+    }
+   },
+   "predicate": "READS_FROM",
+   "object": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "azureml:churn-raw"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Package",
+    "natural_key": {
+     "ecosystem": "pypi",
+     "name": "churn-model",
+     "manifest_dir": ""
+    }
+   },
+   "predicate": "DEPENDS_ON",
+   "object": {
+    "kind": "ExternalDependency",
+    "natural_key": {
+     "ecosystem": "pypi",
+     "name": "pytest"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Component",
+    "natural_key": {
+     "root": ""
+    }
+   },
+   "predicate": "PRODUCES",
+   "object": {
+    "kind": "MLModel",
+    "natural_key": {
+     "name": "churn_classifier"
+    }
+   },
+   "since": "M2"
+  }
+ ],
+ "absent_entities": [
+  {
+   "kind": "Package",
+   "natural_key": {
+    "ecosystem": "pypi",
+    "name": "root",
+    "manifest_dir": ""
+   },
+   "why": "conda.yaml names no package; the Poetry declaration in the same directory replaces it"
+  },
+  {
+   "kind": "Package",
+   "natural_key": {
+    "ecosystem": "conda",
+    "name": "root",
+    "manifest_dir": ""
+   },
+   "why": "conda.yaml names no package"
+  },
+  {
+   "kind": "Package",
+   "natural_key": {
+    "ecosystem": "conda",
+    "name": "churn",
+    "manifest_dir": ""
+   },
+   "why": "the environment name is not a package name"
+  },
+  {
+   "kind": "ExternalDependency",
+   "natural_key": {
+    "ecosystem": "conda",
+    "name": "python"
+   },
+   "why": "the interpreter is not a dependency"
+  },
+  {
+   "kind": "ExternalDependency",
+   "natural_key": {
+    "ecosystem": "conda",
+    "name": "pip"
+   },
+   "why": "the installer is not a dependency"
+  },
+  {
+   "kind": "Dataset",
+   "natural_key": {
+    "name": "azureml:churn-raw:1"
+   },
+   "why": "the asset version is not part of its name"
+  }
+ ],
+ "exclusions": [],
+ "forbidden_kinds": [],
+ "expected_unknowns": [],
+ "expected_conflicts": [],
+ "commits": [
+  {
+   "dir": "01-embeddings",
+   "expect": "A pretrained sentence encoder from Hugging Face",
+   "added_entities": [
+    {
+     "kind": "MLModel",
+     "natural_key": {
+      "name": "hf:sentence-transformers/all-MiniLM-L6-v2"
+     },
+     "since": "M0"
+    },
+    {
+     "kind": "ExternalDependency",
+     "natural_key": {
+      "ecosystem": "pypi",
+      "name": "sentence-transformers"
+     },
+     "since": "M0"
+    }
+   ],
+   "removed_entities": []
+  },
+  {
+   "dir": "02-uplift",
+   "expect": "A second model is trained and registered",
+   "added_entities": [
+    {
+     "kind": "MLModel",
+     "natural_key": {
+      "name": "uplift_model"
+     },
+     "since": "M0"
+    },
+    {
+     "kind": "ExternalDependency",
+     "natural_key": {
+      "ecosystem": "pypi",
+      "name": "lightgbm"
+     },
+     "since": "M0"
+    }
+   ],
+   "removed_entities": []
+  },
+  {
+   "dir": "03-drop-dvc",
+   "expect": "The DVC pipeline and its stages are gone; data/raw.csv stays because code still reads it",
+   "added_entities": [],
+   "removed_entities": [
+    {
+     "kind": "Job",
+     "natural_key": {
+      "framework": "dvc",
+      "name": "dvc"
+     },
+     "since": "M0"
+    },
+    {
+     "kind": "Task",
+     "natural_key": {
+      "framework": "dvc",
+      "job": "dvc",
+      "name": "featurize"
+     },
+     "since": "M0"
+    },
+    {
+     "kind": "Task",
+     "natural_key": {
+      "framework": "dvc",
+      "job": "dvc",
+      "name": "train"
+     },
+     "since": "M0"
+    },
+    {
+     "kind": "Dataset",
+     "natural_key": {
+      "name": "models/churn.json"
+     },
+     "since": "M0"
+    }
+   ]
+  }
+ ],
+ "decision_cases": []
+}

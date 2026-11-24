@@ -1,0 +1,666 @@
+{
+ "fixture": "F14-mainframe-sas",
+ "description": "Legacy batch with no package manifests: COBOL programs with embedded DB2 SQL and a copybook, a JCL job whose steps run them through IKJEFT01 and read and write catalogued datasets and a GDG, and a SAS program with a macro, librefs and PROC SQL. 'since' names the milestone whose compiler must produce the item.",
+ "entities": [
+  {
+   "kind": "Program",
+   "natural_key": {
+    "platform": "mainframe",
+    "name": "CUSTUPD"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "Program",
+   "natural_key": {
+    "platform": "mainframe",
+    "name": "DATEUTIL"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "DataSchema",
+   "natural_key": {
+    "kind": "copybook",
+    "name": "CUSTREC"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "Job",
+   "natural_key": {
+    "framework": "jcl",
+    "name": "CUSTJOB"
+   },
+   "since": "M0",
+   "attributes": {
+    "kind": "job"
+   }
+  },
+  {
+   "kind": "Task",
+   "natural_key": {
+    "framework": "jcl",
+    "job": "CUSTJOB",
+    "name": "STEP010"
+   },
+   "since": "M0",
+   "attributes": {
+    "program": "SORT"
+   }
+  },
+  {
+   "kind": "Task",
+   "natural_key": {
+    "framework": "jcl",
+    "job": "CUSTJOB",
+    "name": "STEP020"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "Task",
+   "natural_key": {
+    "framework": "jcl",
+    "job": "CUSTJOB",
+    "name": "STEP030"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "Table",
+   "natural_key": {
+    "datastore": "default",
+    "name": "customer"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "Table",
+   "natural_key": {
+    "datastore": "default",
+    "name": "cust_hist"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "Dataset",
+   "natural_key": {
+    "name": "prod.cust.daily.extract"
+   },
+   "since": "M0",
+   "attributes": {
+    "platform": "mainframe"
+   }
+  },
+  {
+   "kind": "Dataset",
+   "natural_key": {
+    "name": "prod.cust.archive"
+   },
+   "since": "M0",
+   "attributes": {
+    "gdg": true
+   }
+  },
+  {
+   "kind": "Program",
+   "natural_key": {
+    "platform": "sas",
+    "name": "sas/monthly_load.sas"
+   },
+   "since": "M0",
+   "attributes": {
+    "kind": "program"
+   }
+  },
+  {
+   "kind": "Program",
+   "natural_key": {
+    "platform": "sas",
+    "name": "audit_log"
+   },
+   "since": "M0",
+   "attributes": {
+    "kind": "macro"
+   }
+  },
+  {
+   "kind": "Dataset",
+   "natural_key": {
+    "name": "rpt.customer_extract"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "Dataset",
+   "natural_key": {
+    "name": "rpt.customer_summary"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "Dataset",
+   "natural_key": {
+    "name": "rpt.audit_log"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "Dataset",
+   "natural_key": {
+    "name": "stage.customers_{month}"
+   },
+   "since": "M0",
+   "attributes": {
+    "parameterized": true
+   }
+  },
+  {
+   "kind": "ConfigKey",
+   "natural_key": {
+    "name": "libname:rpt"
+   },
+   "since": "M0",
+   "attributes": {
+    "engine": "oracle"
+   }
+  },
+  {
+   "kind": "ConfigKey",
+   "natural_key": {
+    "name": "libname:stage"
+   },
+   "since": "M0"
+  }
+ ],
+ "edges": [
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "mainframe",
+     "name": "CUSTUPD"
+    }
+   },
+   "predicate": "CALLS",
+   "object": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "mainframe",
+     "name": "DATEUTIL"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "mainframe",
+     "name": "CUSTUPD"
+    }
+   },
+   "predicate": "DEPENDS_ON",
+   "object": {
+    "kind": "DataSchema",
+    "natural_key": {
+     "kind": "copybook",
+     "name": "CUSTREC"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "mainframe",
+     "name": "CUSTUPD"
+    }
+   },
+   "predicate": "READS_FROM",
+   "object": {
+    "kind": "Table",
+    "natural_key": {
+     "datastore": "default",
+     "name": "customer"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "mainframe",
+     "name": "CUSTUPD"
+    }
+   },
+   "predicate": "WRITES_TO",
+   "object": {
+    "kind": "Table",
+    "natural_key": {
+     "datastore": "default",
+     "name": "customer"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "mainframe",
+     "name": "CUSTUPD"
+    }
+   },
+   "predicate": "WRITES_TO",
+   "object": {
+    "kind": "Table",
+    "natural_key": {
+     "datastore": "default",
+     "name": "cust_hist"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "jcl",
+     "name": "CUSTJOB"
+    }
+   },
+   "predicate": "CONTAINS",
+   "object": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "jcl",
+     "job": "CUSTJOB",
+     "name": "STEP020"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "jcl",
+     "job": "CUSTJOB",
+     "name": "STEP020"
+    }
+   },
+   "predicate": "DEPENDS_ON",
+   "object": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "jcl",
+     "job": "CUSTJOB",
+     "name": "STEP010"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "jcl",
+     "job": "CUSTJOB",
+     "name": "STEP030"
+    }
+   },
+   "predicate": "DEPENDS_ON",
+   "object": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "jcl",
+     "job": "CUSTJOB",
+     "name": "STEP020"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "jcl",
+     "job": "CUSTJOB",
+     "name": "STEP020"
+    }
+   },
+   "predicate": "RUNS",
+   "object": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "mainframe",
+     "name": "CUSTUPD"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "jcl",
+     "job": "CUSTJOB",
+     "name": "STEP010"
+    }
+   },
+   "predicate": "READS_FROM",
+   "object": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "prod.cust.daily.extract"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "jcl",
+     "job": "CUSTJOB",
+     "name": "STEP030"
+    }
+   },
+   "predicate": "WRITES_TO",
+   "object": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "prod.cust.archive"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "sas",
+     "name": "sas/monthly_load.sas"
+    }
+   },
+   "predicate": "READS_FROM",
+   "object": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "rpt.customer_extract"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "sas",
+     "name": "sas/monthly_load.sas"
+    }
+   },
+   "predicate": "WRITES_TO",
+   "object": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "stage.customers_{month}"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "sas",
+     "name": "sas/monthly_load.sas"
+    }
+   },
+   "predicate": "READS_FROM",
+   "object": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "stage.customers_{month}"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "sas",
+     "name": "sas/monthly_load.sas"
+    }
+   },
+   "predicate": "WRITES_TO",
+   "object": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "rpt.customer_summary"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "sas",
+     "name": "sas/monthly_load.sas"
+    }
+   },
+   "predicate": "CALLS",
+   "object": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "sas",
+     "name": "audit_log"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "sas",
+     "name": "audit_log"
+    }
+   },
+   "predicate": "WRITES_TO",
+   "object": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "rpt.audit_log"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "sas",
+     "name": "sas/monthly_load.sas"
+    }
+   },
+   "predicate": "REFERENCES_CONFIG",
+   "object": {
+    "kind": "ConfigKey",
+    "natural_key": {
+     "name": "libname:rpt"
+    }
+   },
+   "since": "M0"
+  }
+ ],
+ "absent_entities": [
+  {
+   "kind": "Dataset",
+   "natural_key": {
+    "name": "prod.loadlib"
+   },
+   "why": "a STEPLIB is a load library, not data"
+  },
+  {
+   "kind": "Dataset",
+   "natural_key": {
+    "name": "&&sorted"
+   },
+   "why": "a temporary dataset passed between steps"
+  },
+  {
+   "kind": "Program",
+   "natural_key": {
+    "platform": "mainframe",
+    "name": "SORT"
+   },
+   "why": "system utilities are not application programs"
+  },
+  {
+   "kind": "Program",
+   "natural_key": {
+    "platform": "mainframe",
+    "name": "IKJEFT01"
+   },
+   "why": "the TSO batch host is not an application program"
+  },
+  {
+   "kind": "Program",
+   "natural_key": {
+    "platform": "mainframe",
+    "name": "WS-PGM"
+   },
+   "why": "a CALL through a variable names no program"
+  },
+  {
+   "kind": "Dataset",
+   "natural_key": {
+    "name": "work.sorted"
+   },
+   "why": "WORK is SAS's temporary library"
+  },
+  {
+   "kind": "Dataset",
+   "natural_key": {
+    "name": "stage.customers_x_____"
+   },
+   "why": "the masked macro variable must not leak into a name"
+  }
+ ],
+ "exclusions": [],
+ "forbidden_kinds": [
+  "Package",
+  "Component"
+ ],
+ "expected_unknowns": [
+  {
+   "since": "M2",
+   "detail": "CUSTUPD's CALL WS-PGM names its target through a variable: counted as unresolved, not guessed"
+  },
+  {
+   "since": "M2",
+   "detail": "no package manifest: legacy programs are not grouped into components"
+  }
+ ],
+ "expected_conflicts": [],
+ "commits": [
+  {
+   "dir": "01-report-step",
+   "expect": "A report program and the JCL step that runs it",
+   "added_entities": [
+    {
+     "kind": "Program",
+     "natural_key": {
+      "platform": "mainframe",
+      "name": "CUSTRPT"
+     },
+     "since": "M0"
+    },
+    {
+     "kind": "Task",
+     "natural_key": {
+      "framework": "jcl",
+      "job": "CUSTJOB",
+      "name": "STEP040"
+     },
+     "since": "M0"
+    }
+   ],
+   "removed_entities": []
+  },
+  {
+   "dir": "02-cics-inquiry",
+   "expect": "A CICS transaction reads a VSAM file and links to the date utility",
+   "added_entities": [
+    {
+     "kind": "Program",
+     "natural_key": {
+      "platform": "mainframe",
+      "name": "CUSTINQ"
+     },
+     "since": "M0"
+    },
+    {
+     "kind": "Dataset",
+     "natural_key": {
+      "name": "custmast"
+     },
+     "since": "M0"
+    }
+   ],
+   "removed_entities": []
+  },
+  {
+   "dir": "03-retire-sas",
+   "expect": "The SAS program, its macro, librefs and the datasets only SAS named are gone",
+   "added_entities": [],
+   "removed_entities": [
+    {
+     "kind": "Program",
+     "natural_key": {
+      "platform": "sas",
+      "name": "sas/monthly_load.sas"
+     },
+     "since": "M0"
+    },
+    {
+     "kind": "Program",
+     "natural_key": {
+      "platform": "sas",
+      "name": "audit_log"
+     },
+     "since": "M0"
+    },
+    {
+     "kind": "ConfigKey",
+     "natural_key": {
+      "name": "libname:rpt"
+     },
+     "since": "M0"
+    },
+    {
+     "kind": "Dataset",
+     "natural_key": {
+      "name": "rpt.customer_summary"
+     },
+     "since": "M0"
+    },
+    {
+     "kind": "Dataset",
+     "natural_key": {
+      "name": "stage.customers_{month}"
+     },
+     "since": "M0"
+    }
+   ]
+  }
+ ],
+ "decision_cases": []
+}

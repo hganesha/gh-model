@@ -1,0 +1,1 @@
+{"message": "Retire the SAS load (moved to the warehouse)", "delete": ["sas/monthly_load.sas", "sas/macros/audit.sas"]}

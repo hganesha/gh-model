@@ -34,6 +34,7 @@
   --c-architecture: #5b8757;
   --c-contracts: #8669ad;
   --c-data: #4a7bb3;
+  --c-jobs: #6b7f2e;
   --c-ai: #b6628a;
   --c-tests: #2f8c82;
   --c-deployment: #bd7f33;
@@ -81,6 +82,7 @@
     --c-architecture: #86b481;
     --c-contracts: #ab92cf;
     --c-data: #7ba8dc;
+    --c-jobs: #b3c46e;
     --c-ai: #d68bb0;
     --c-tests: #5fbab0;
     --c-deployment: #dba55c;
@@ -92,6 +94,7 @@
 .plane-architecture { --p: var(--c-architecture); }
 .plane-contracts { --p: var(--c-contracts); }
 .plane-data { --p: var(--c-data); }
+.plane-jobs { --p: var(--c-jobs); }
 .plane-ai { --p: var(--c-ai); }
 .plane-tests { --p: var(--c-tests); }
 .plane-deployment { --p: var(--c-deployment); }

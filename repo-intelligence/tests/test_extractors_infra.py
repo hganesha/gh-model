@@ -523,6 +523,11 @@ def test_unrelated_yaml_and_json_yield_nothing():
         "tsconfig.base.json": b'{\n  // comments make this invalid JSON\n  "compilerOptions": {}\n}',
         "notes/openapi-notes.yaml": b"notes:\n  openapi: we should write one\n",
     }
+    cases["k8s/deployment.yaml"] = b"apiVersion: apps/v1\nkind: Deployment\nspec:\n  template:\n    spec:\n      containers:\n        - name: x\n          resources: {limits: {cpu: 1}}\n"
+    from repo_intel.extractors.data_jobs import DataJobs
+    for path, data in cases.items():
+        assert DataJobs().extract(path, data, sha256_hex(data)).observations == [], path
+    del cases["k8s/deployment.yaml"]
     for path, data in cases.items():
         for extractor in (e for e in (Kubernetes(), Compose(), GithubWorkflow(), OpenAPI()) if e.matches(path)):
             result = extractor.extract(path, data, sha256_hex(data))
@@ -530,10 +535,12 @@ def test_unrelated_yaml_and_json_yield_nothing():
 
 
 def test_each_file_is_claimed_by_the_right_extractors():
+    # `data.jobs` reads every YAML file: Azure ML jobs and Databricks resource files
+    # have no fixed names. It yields nothing for YAML that is not one of them.
     assert matching("Dockerfile") == {"infra.dockerfile"}
-    assert matching(".github/workflows/ci.yml") == {"infra.github_actions"}
-    assert matching("docker-compose.yml") == {"infra.compose"}
-    assert matching("k8s/deployment.yaml") == {"infra.kubernetes", "contract.openapi"}
+    assert matching(".github/workflows/ci.yml") == {"infra.github_actions", "data.jobs"}
+    assert matching("docker-compose.yml") == {"infra.compose", "data.jobs"}
+    assert matching("k8s/deployment.yaml") == {"infra.kubernetes", "contract.openapi", "data.jobs"}
     assert matching("terraform/main.tf") == {"infra.terraform"}
     assert "data.sql_ddl" in matching("sql/reports.sql") and "contract.openapi" in matching("schemas/order_created.json")
 

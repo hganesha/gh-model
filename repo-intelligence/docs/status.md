@@ -17,6 +17,8 @@ Checked together on `claude/m0-m3-close-out`:
 - `step_worker --selfcheck`: every case blocked with the expected error under `sandbox-exec`, under Landlock in Docker, and in the hosted Azure API.
 - Explorer: Playwright, 16 passed (the record project runs only on request).
 
+On `claude/data-ml-knowledge` (macOS, without Temporal): `pytest` 445 passed; `golden_check` and parity ok on all 15 fixtures; Explorer typecheck and Playwright (16 passed) with re-recorded responses. Not re-run there: the Linux/Landlock container and the hosted app.
+
 | Acceptance test (spec §14.5) | Test |
 |---|---|
 | 1 Monorepo | `test_fixtures.py::test_goldens_due_by_the_compiler_milestone` (F02), `test_decisions.py::test_component_kinds_by_rules_in_a_monorepo` |
@@ -39,7 +41,7 @@ Each publish-gate invariant (§14.1) has a failing-case test in `tests/test_publ
 |---|---|
 
 | GI-001 ontology, contracts, hashing | Done |
-| GI-002 fixtures | Done: F01–F10 with goldens tagged by milestone. Items due by M1 are checked on every test run |
+| GI-002 fixtures | Done: F01–F10 with goldens tagged by milestone (F11–F15, for data, ML and legacy repositories, were added afterwards; see below). Items due by M1 are checked on every test run |
 | GI-003 walking skeleton | Done: compile, PostgreSQL projection, query API, Temporal workflow |
 | GI-004 build-graph runtime | Done. Steps are listed in a registry (`buildgraph.registry()`). Each step's version is its declared version plus a digest of its code, so a code change invalidates its cache without a manual bump. `file.extract` keys each file on the versions of only the extractors that apply to it (`extractors.extractor_versions()`). By default, steps run in a reused worker (`python -m repo_intel.compile.step_worker`) under `sandbox-exec` (macOS), `bwrap` (Linux), or, on Linux without `bwrap` (containers, including the hosted Azure app), Landlock and seccomp applied by the worker to itself before it reads any input (`compile/confine.py`; no privileges needed). The worker gets read-only access to only the current step's declared inputs, with no network, no store and an empty environment, under a time limit. `RKP_STEP_EXECUTOR=inprocess` is a dev/test-only fallback. Per-step hits, executions and seconds are kept in the store index `step_metrics` and served at `GET /v1/step-metrics`. `python -m repo_intel.compile.step_worker --selfcheck` checks that the sandbox blocks file, environment, network and write access, each with the error the sandbox causes (any other failure counts as not blocked) |
 | GI-005 GitHub ingestion | GitHub CLI, App, token, and device-flow connectors are available. GitLab and plain Git use the same ingestion interface. The GitHub CLI, GitHub REST token and plain Git over HTTPS connectors were checked live against a private GitHub repository (describe, resolve, fetch), and plain Git against a public GitLab repository; a missing ref and an invalid token are refused. GitHub device sign-in was checked live on the Azure deployment: token stored in Key Vault, repositories listed, and a private repository fetched and compiled. Commits are fetched as a partial clone: commit and trees first, then only the blobs the snapshot reads, so vendored, generated and binary files never download (checked live on `hganesha/gh-model`: 1.7 s, 612 KB mirror). The snapshot never fetches over the network itself. The exclusion policy is pinned with the commit: built-in vendored and binary rules, then `.gitattributes` `linguist-generated` / `linguist-vendored` (set or unset), then the repository's own `.rkp/exclude` globs, each exclusion with its reason and rule. Not checked live: GitHub App, GitLab token and push webhooks, which need their own credentials. Garbage collection forgets webhook delivery IDs older than `settings.retention.webhook_delivery_days` (7 by default; GitHub redelivers for 3), keeping each connection's latest. The Explorer uses in-process compile jobs |
@@ -82,7 +84,7 @@ To keep a decision model across restarts, put its non-secret settings (endpoint,
 | GI-019 parity | Done: `python -m repo_intel.knowledge.parity` compares incremental and cold compiles on every fixture and names differing shards and rows; a sampled shadow compile (`settings.parity.shadow_rate`, plus a nightly run on default-branch heads) quarantines a mismatching snapshot, records a parity incident and promotes the cold result |
 | GI-020 delta and impact | Done: `delta.py` and `GET /v1/knowledge/diff` report a cause per entry and per delta (source, extractor, decision, policy or override change, or mixed), multi-hop impact up to three hops including tests, and moves from identical content or `git diff -M` renames, so a moved-and-edited file is a move. Lineage is persisted in `entity_lineage`; `GET /v1/entities/{id}/lineage` returns the history.. Bumping one extractor re-extracts only the files it matches, and the delta attributes every change to `extractor_change` (acceptance test 13) |
 | GI-021 retention | Done: mark-and-sweep garbage collection over the object store with per-ref retention (`settings.retention`), retraction (`POST .../snapshots/{h}/retract`, every read returns 410 with the replacement), repository deletion (`DELETE /v1/repositories/{id}`) and workspace deletion, each audited |
-| GI-030 Explorer foundation | Done: reproducible build (lockfile, pinned versions, `next build` in CI); a production build serves nothing without sign-in unless `RKP_ALLOW_ANONYMOUS=1`; no database connection; planes named as in spec §18.3 (Architecture, Contracts, Data, AI integrations, Tests, Deployment, plus Quality); a production build renders every plane of F01 and F02 from recorded responses in `explorer/e2e/recorded` with no API running. The Explorer also shows the M2/M3 work, and browser tests cover it:
+| GI-030 Explorer foundation | Done: reproducible build (lockfile, pinned versions, `next build` in CI); a production build serves nothing without sign-in unless `RKP_ALLOW_ANONYMOUS=1`; no database connection; planes named as in spec §18.3 (Architecture, Contracts, Data, Jobs, AI integrations, Tests, Deployment, plus Quality); a production build renders every plane of F01 and F02 from recorded responses in `explorer/e2e/recorded` with no API running. The Explorer also shows the M2/M3 work, and browser tests cover it:
 
 - quarantined and retracted snapshots, with promote and retract actions, and a retracted snapshot pointing to its replacement;
 - opening a tracked ref by name, which also requests a lazy pull-request compile;
@@ -92,6 +94,21 @@ To keep a decision model across restarts, put its non-secret settings (endpoint,
 - conflict types, and excluded files with their reasons (`GET /v1/snapshots/{h}/exclusions`);
 - settings for tags and pull requests, per-repository providers, compile profile, retention and parity;
 - build-cache step metrics, garbage collection, secret re-scan, and repository and workspace deletion |
+
+## Data, ML and legacy repositories (after M3)
+
+The compiler now reads repositories that are mostly data pipelines, model training or legacy code. The new kinds and relations are in [architecture](../../docs/architecture.md) §8.1–8.2.
+
+| Area | What is read |
+|---|---|
+| Python manifests | `requirements*.txt` / `.in` (dev scope for dev, test, lint, doc and CI files), `setup.py` (literal arguments only), `setup.cfg`, Poetry in `pyproject.toml`, conda `environment.yml`, `dbt_project.yml`. A requirements or conda file names no package, so it declares one named after its directory; a named declaration of the same ecosystem in the same directory replaces it and takes its dependencies |
+| Notebooks and PySpark | Jupyter, Databricks source and Synapse notebooks as `Notebook` entities, with `%run` and `dbutils.notebook.run`. Spark, `spark.sql`, Delta, DLT and pandas reads and writes become `Dataset` lineage; f-string parts stay as `{placeholders}` marked parameterized; widgets and secret scopes become config keys |
+| Orchestration | Databricks Asset Bundles (jobs, tasks, pipelines, serving endpoints, targets), Airflow DAGs (operators, TaskFlow, dependencies, dataset schedules, outlets and inlets), dbt models (`ref`, `source`, schema tests, sources aliasing warehouse tables), MLproject, DVC stages and tracked files, Azure ML jobs. Commands such as `python -m pkg.mod` link to the file they run |
+| ML | MLflow `log_model` / `register_model` (`PRODUCES` an `MLModel`) and `models:/` loads, Hugging Face `from_pretrained`, `pipeline` and Sentence Transformers, training calls. Component kinds `data_pipeline` and `ml_training`, and eight new capabilities in the catalogue |
+| Legacy | COBOL (columns 8–72, `CALL`, copybooks, embedded SQL, CICS), JCL (steps, programs, datasets, GDGs; temporary datasets and load libraries skipped), SAS (DATA steps, PROC SQL, librefs, macros), ColdFusion (components, remote functions as endpoints, queries, datasources, component lookup), Teradata BTEQ and procedures, T-SQL procedures, Synapse and Data Factory pipelines, triggers, datasets and SQL scripts, all as `Program`, `Job`, `Task` and `Dataset` |
+| Coverage | `data_lineage`: the share of data reads and writes whose target is named. A name computed at run time is counted, not guessed |
+
+Fixtures F11 (Databricks lakehouse), F12 (dbt and Airflow), F13 (ML training), F14 (mainframe and SAS) and F15 (ColdFusion, Teradata and Synapse) cover these, each with three seeded commits; `tests/test_extractors_data.py` covers the edge cases. The Explorer has a Jobs plane. Known gaps: JDBC tables set through `.option()` and dbt run from a shell command (`dbt build` in a BashOperator) are not linked; a COBOL `CALL` through a variable is counted as unresolved.
 
 ## Deviations from the spec so far
 
