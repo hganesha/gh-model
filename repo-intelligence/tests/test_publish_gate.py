@@ -291,4 +291,4 @@ def test_toolchain_records_extractor_versions_and_the_step_executor(store, f01):
     m = compile_commit(store, repo, REPO_ID, shas[0]).manifest
     toolchain = store.get_json(m.toolchain_hash)
     assert set(toolchain["extractors"]) == {e.id for e in EXTRACTORS}
-    assert toolchain["step_executor"] in ("sandbox-exec", "bwrap", "inprocess")
+    assert toolchain["step_executor"] in ("sandbox-exec", "bwrap", "landlock", "inprocess")

@@ -9,7 +9,7 @@ deploy/azure/deploy.sh -g rkp --entra --providers-file ../.rkp-store/providers.e
 | Piece | Azure resource | Size |
 |---|---|---|
 | Explorer | Container App, public HTTPS, Entra/OIDC sign-in and/or IP allow-list, scales to zero | 0.25 vCPU, 0.5 GiB |
-| API | Container App, internal ingress only, one replica (compile jobs run in-process) | 0.5 vCPU, 1 GiB |
+| API | Container App, internal ingress only, one replica; compile steps run in a Landlock/seccomp-confined worker | 0.5 vCPU, 1 GiB |
 | Projection | PostgreSQL Flexible Server, reachable from Azure services only, TLS | Burstable B1ms, 32 GB |
 | Object store, git mirrors, `providers.env` | Azure Files share mounted at `/data` | Standard LRS |
 | Images | Container Registry | Basic |

@@ -1,6 +1,7 @@
 """Sandboxed step worker (spec §3.3 hermeticity; plan GI-004).
 
     python -m repo_intel.compile.step_worker --inputs DIR     # serve steps (started by SandboxExecutor)
+    python -m repo_intel.compile.step_worker --inputs DIR --confine   # the same, self-confined (Linux, no bwrap)
     python -m repo_intel.compile.step_worker --selfcheck      # prove the sandbox blocks file, env and network reads
 
 The host starts this module inside `sandbox-exec` or `bwrap`. The worker can read
@@ -77,7 +78,7 @@ PROBE_UNDECLARED_INPUT = Step("selfcheck.undeclared_input", "1", _probe_undeclar
 PROBE_SLEEP = Step("selfcheck.sleep", "1", _probe_sleep)
 
 
-def serve(inputs_dir: str) -> int:
+def serve(inputs_dir: str, confine: bool = False) -> int:
     proto = os.fdopen(os.dup(1), "wb")
     os.dup2(2, 1)  # steps that print write to stderr
     sys.stdout = sys.stderr
@@ -89,6 +90,16 @@ def serve(inputs_dir: str) -> int:
         data = (base / ref.digest.split(":", 1)[1]).read_bytes()
         return data if ref.kind == "bytes" else json.loads(data)
 
+    if confine:  # Linux without bwrap: confine this process before the first input is read
+        from repo_intel.compile.buildgraph import landlock_read_roots
+        from repo_intel.compile.confine import confine as apply_confinement
+
+        from repo_intel.extractors import extractor_versions
+
+        for step in steps.values():  # versions are digests of source code: read it while it is readable
+            step.version
+        extractor_versions()
+        apply_confinement(landlock_read_roots(inputs_dir))
     proto.write(b"R" + f"{sys.version_info.major}.{sys.version_info.minor}".encode() + b"\n")
     proto.flush()
     for line in sys.stdin.buffer:
@@ -129,20 +140,24 @@ def selfcheck() -> int:
         listener.bind(("127.0.0.1", 0))
         listener.listen(1)
         runner = StepRunner(ObjectStore(Path(tmp) / "store", "selfcheck"), use_cache=False, executor=SandboxExecutor(timeout=30))
-        probes = [
-            (probe.PROBE_READ_FILE, {"path": str(secret)}),
-            (probe.PROBE_WRITE_FILE, {"path": str(Path(tmp) / "written.txt")}),
-            (probe.PROBE_ENV, {"name": "RKP_SELFCHECK_PROBE"}),
-            (probe.PROBE_NETWORK, {"host": "127.0.0.1", "port": listener.getsockname()[1]}),
+        probes = [  # each must fail with the error the sandbox causes, not with any error
+            (probe.PROBE_READ_FILE, {"path": str(secret)}, "PermissionError"),
+            (probe.PROBE_WRITE_FILE, {"path": str(Path(tmp) / "written.txt")}, "PermissionError"),
+            (probe.PROBE_ENV, {"name": "RKP_SELFCHECK_PROBE"}, "KeyError"),
+            (probe.PROBE_NETWORK, {"host": "127.0.0.1", "port": listener.getsockname()[1]}, "PermissionError"),
         ]
         failures = 0
-        for step, config in probes:
+        for step, config, expected in probes:
             try:
                 runner.run(step, {}, config)
                 print(f"FAIL {step.name}: the sandbox allowed it")
                 failures += 1
             except StepFailed as exc:
-                print(f"ok   {step.name}: blocked ({exc.error_type})")
+                if exc.error_type == expected:
+                    print(f"ok   {step.name}: blocked ({exc.error_type})")
+                else:
+                    print(f"FAIL {step.name}: failed with {exc.error_type}, not {expected}: {exc}")
+                    failures += 1
         listener.close()
     print(f"sandbox: {runner.executor.name}")
     return 1 if failures else 0
@@ -152,12 +167,13 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m repo_intel.compile.step_worker")
     parser.add_argument("--inputs")
     parser.add_argument("--selfcheck", action="store_true")
+    parser.add_argument("--confine", action="store_true", help="confine this worker with Landlock and seccomp (Linux)")
     args = parser.parse_args(argv)
     if args.selfcheck:
         return selfcheck()
     if not args.inputs:
         parser.error("--inputs is required")
-    return serve(args.inputs)
+    return serve(args.inputs, confine=args.confine)
 
 
 if __name__ == "__main__":
