@@ -6,14 +6,15 @@ import { api, snapshotPath, useApi } from "@/lib/api";
 import type { Summary } from "@/lib/types";
 import type { Connection, ConnectionMode, ModelSelection, SettingsDocument, SettingsView as SettingsResponse, Tracking } from "@/lib/workspace";
 import { Badge, ErrorNote, Loading } from "./ui";
+import { CompileProfile, Maintenance, RetentionAndParity } from "./settings-lifecycle";
 
 const modes: Record<ConnectionMode, string> = {
   github_pat: "GitHub token", github_device: "GitHub device sign-in", github_app: "GitHub App",
   gitlab_token: "GitLab token", git_https: "Git HTTPS token", git_ssh: "Git SSH deploy key",
 };
-const providers = ["jev", "microsoft-decision", "azure-openai", "cohere-rerank", "openai-embeddings"];
+const PROVIDERS = ["jev", "microsoft-decision", "azure-openai", "cohere-rerank", "openai-embeddings"];
 const kinds = ["service", "worker", "frontend_app", "library", "cli", "tooling", "unknown"];
-const policyDefault: Tracking = { refs: [], trigger: "manual", interval_minutes: 15 };
+const policyDefault: Tracking = { refs: [], trigger: "manual", interval_minutes: 15, allowed_providers: null, tags: true, pull_requests: "lazy" };
 
 function defaultConnection(): Connection {
   return {
@@ -155,6 +156,19 @@ function RepositorySettings({ view, draft, update }: { view: SettingsResponse; d
             <option value="manual">Manual</option><option value="push">On push</option><option value="poll">Poll</option>
           </select></label>
           {row.trigger === "poll" && <label className="field"><span>Poll interval (minutes)</span><input type="number" value={row.interval_minutes} min={1} max={1440} onChange={(e) => patch(repo.repository_id, { interval_minutes: Number(e.target.value) })} /></label>}
+          {row.trigger === "push" && <>
+            <label className="work-check"><input type="checkbox" checked={row.tags ?? true} onChange={(e) => patch(repo.repository_id, { tags: e.target.checked })} /> Compile pushed tags</label>
+            <label className="field"><span>Pull requests</span><select value={row.pull_requests ?? "lazy"} onChange={(e) => patch(repo.repository_id, { pull_requests: e.target.value as Tracking["pull_requests"] })}>
+              <option value="off">Ignore</option><option value="lazy">Compile when first asked for</option><option value="eager">Compile after each push (debounced)</option>
+            </select></label>
+          </>}
+        </div>
+        <div className="work-tool-controls">
+          <label className="work-check"><input type="checkbox" checked={row.allowed_providers !== null && row.allowed_providers !== undefined}
+            onChange={(e) => patch(repo.repository_id, { allowed_providers: e.target.checked ? [...draft.compile.allowed_providers] : null })} /> Narrow which model providers see this repository</label>
+          {row.allowed_providers && <div className="work-tool-grid">{draft.compile.allowed_providers.map((id) => <label key={id} className="work-check">
+            <input type="checkbox" checked={row.allowed_providers!.includes(id)} onChange={(e) => patch(repo.repository_id, { allowed_providers: toggle(row.allowed_providers ?? [], id, e.target.checked) })} /> {id}
+          </label>)}{draft.compile.allowed_providers.length === 0 && <p className="group-note">No provider is allowed for the workspace, so none can be allowed here.</p>}</div>}
         </div>
       </div>;
     })}
@@ -185,6 +199,7 @@ function Models({ view, draft, update, setStatus }: {
 }) {
   const [testing, setTesting] = useState(false);
   const aliases = Object.keys(view.available_models).filter((id) => id !== "decision-default");
+  const providers = view.providers ?? PROVIDERS;
   const activeAllow = view.environment.allowed_providers ?? draft.compile.allowed_providers;
   const activeDefault = view.environment.default_model === undefined ? draft.compile.default_model : view.environment.default_model;
   function patch(change: Partial<SettingsDocument["compile"]>) {
@@ -280,7 +295,10 @@ function SettingsForm({ initial, reload }: { initial: SettingsResponse; reload: 
     <RepositorySettings view={view} draft={draft} update={setDraft} />
     <ExtractorSettings view={view} draft={draft} update={setDraft} />
     <Models view={view} draft={draft} update={setDraft} setStatus={setStatus} />
+    <CompileProfile view={view} draft={draft} update={setDraft} />
     <MapPolicy draft={draft} update={setDraft} />
+    <RetentionAndParity draft={draft} update={setDraft} />
+    <Maintenance view={view} setStatus={setStatus} onChanged={reload} />
   </form>;
 }
 

@@ -35,7 +35,8 @@ def identities(conn: psycopg.Connection, tenant: str, rkp_hash: str) -> dict[str
 def latest(repositories: list[dict]) -> list[tuple[dict, dict]]:
     selected = []
     for repo in repositories:
-        snapshots = repo["snapshots"]
+        # A retracted snapshot cannot be read and a quarantined one is not its ref's current one.
+        snapshots = [s for s in repo["snapshots"] if not s.get("retracted") and not s.get("quarantined")]
         if snapshots:
             active = max(snapshots, key=lambda s: (s["ref"] == repo["default_branch"], s.get("requested_at", s["compiled_at"])))
             selected.append((repo, active))

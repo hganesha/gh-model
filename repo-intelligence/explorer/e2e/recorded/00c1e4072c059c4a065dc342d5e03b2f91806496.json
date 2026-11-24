@@ -1,6 +1,0 @@
-{
- "method": "GET",
- "path": "/v1/snapshots/sha256:89cb9ee89581de6a35063144f2044edc287b9e2ec0ce8faceacf5f32945c4f02/entities?plane=tests&kind=Test&limit=500",
- "status": 200,
- "body": "{\"entities\":[{\"id\":\"ent_obscgz5avi3hvfjcfgk7vxrvqf\",\"kind\":\"Test\",\"name\":\"orders > lists newest first\",\"attributes\":{\"framework\":\"vitest\"},\"natural_key\":{\"name\":\"orders > lists newest first\",\"path\":\"apps/api/src/orders.test.ts\"},\"evidence_ids\":[\"ev_mxevnufn65hfupg47pwgzeq5ww\"]}],\"truncated\":false}"
-}

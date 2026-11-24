@@ -8,17 +8,22 @@ const PROXY = "/api/rkp/";
 export class ApiError extends Error {
   status: number;
   code: string | null;
-  constructor(message: string, status: number, code: string | null) {
+  /** Structured detail, e.g. a retracted snapshot's reason and replacement. */
+  details: Record<string, unknown> | null;
+  constructor(message: string, status: number, code: string | null, details: Record<string, unknown> | null = null) {
     super(message);
     this.name = "ApiError";
     this.status = status;
     this.code = code;
+    this.details = details;
   }
 }
 
 interface RequestOptions {
   body?: unknown;
   signal?: AbortSignal;
+  /** Defaults to POST with a body and GET without one. */
+  method?: "GET" | "POST" | "PUT" | "DELETE";
 }
 
 export async function api<T>(path: string, options: RequestOptions = {}): Promise<T> {
@@ -26,7 +31,7 @@ export async function api<T>(path: string, options: RequestOptions = {}): Promis
   let res: Response;
   try {
     res = await fetch(PROXY + path, {
-      method: hasBody ? "POST" : "GET",
+      method: options.method ?? (hasBody ? "POST" : "GET"),
       headers: hasBody ? { "Content-Type": "application/json" } : undefined,
       body: hasBody ? JSON.stringify(options.body) : undefined,
       cache: "no-store",
@@ -45,7 +50,7 @@ export async function api<T>(path: string, options: RequestOptions = {}): Promis
   if (!res.ok) {
     const p = (payload ?? {}) as { message?: unknown; detail?: unknown; code?: unknown };
     const message = typeof p.message === "string" ? p.message : typeof p.detail === "string" ? p.detail : `Request failed (${res.status})`;
-    throw new ApiError(message, res.status, typeof p.code === "string" ? p.code : null);
+    throw new ApiError(message, res.status, typeof p.code === "string" ? p.code : null, (p as { details?: Record<string, unknown> }).details ?? null);
   }
   return payload as T;
 }

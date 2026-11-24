@@ -4,10 +4,41 @@ import { ArrowLeft, ArrowRight, CircleHelp, EyeOff, FileCode2, Share2, X } from 
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError, snapshotPath, useApi } from "@/lib/api";
 import { placementLabel, type SnapshotPlacements } from "@/lib/workspace";
-import { displayValue, kindLabel, plural, shortId } from "@/lib/format";
+import { displayValue, kindLabel, plural, shortId, shortSha } from "@/lib/format";
 import { planeOfKind } from "@/lib/planes";
-import type { Assertion, EntityDetail, EntityRef, EvidenceExcerpt, Unknown } from "@/lib/types";
+import { CONFLICT_TYPES, type Assertion, type EntityDetail, type EntityRef, type EvidenceExcerpt, type LineageResponse, type Unknown } from "@/lib/types";
 import { AssertionBadges, Badge, ErrorNote, isTentative, Loading } from "./ui";
+import { useOverrides } from "@/lib/overrides";
+
+/** For a single-valued fact with two values: which one wins, and the owner's way to choose. */
+function FunctionalConflict({ conflict, detail, repositoryId }: { conflict: EntityDetail["conflicts"][number]; detail: EntityDetail; repositoryId: string | null }) {
+  const overrides = useOverrides(repositoryId);
+  const rows = (conflict.assertion_ids ?? []).map((id) => detail.assertions.find((a) => a.id === id)).filter((a): a is Assertion => Boolean(a));
+  if (!rows.length) return null;
+  const owner = overrides.data?.preferences.find((p) => p.predicate === rows[0].predicate && p.subject === rows[0].subject);
+  return (
+    <ul className="lineage-list">
+      {rows.map((a) => {
+        const name = detail.neighbours[a.object]?.name ?? shortId(a.object);
+        const chosen = owner?.object === a.object;
+        return (
+          <li key={a.id}>
+            <code>{a.predicate}</code> <span>{name}</span> <AssertionBadges assertion={a} />
+            {conflict.preferred === a.id && <Badge tone="verified" title="Chosen under precedence">preferred</Badge>}
+            {repositoryId && overrides.data && !chosen && (
+              <button type="button" className="link-btn" disabled={overrides.saving}
+                onClick={() => void overrides.save((cur) => ({ ...cur, preferences: [...cur.preferences.filter((p) => !(p.predicate === a.predicate && p.subject === a.subject)), { predicate: a.predicate, subject: a.subject, object: a.object, reason: "" }] }))}>
+                Prefer this (owner override)
+              </button>
+            )}
+            {chosen && <Badge tone="class">owner&apos;s choice · applies after recompiling</Badge>}
+          </li>
+        );
+      })}
+      {overrides.problem && <li className="form-error" role="alert">{overrides.problem}</li>}
+    </ul>
+  );
+}
 
 function Definitions({ data, empty }: { data: Record<string, unknown>; empty: string }) {
   const entries = Object.entries(data ?? {});
@@ -250,7 +281,39 @@ function ProvidedCapabilities({ hash, id, provided, neighbours, onNavigate }: {
   </section>;
 }
 
-function DrawerBody({ hash, id, onNavigate, onViewInGraph, onPlacementChanged }: { hash: string; id: string; onNavigate: (id: string) => void; onViewInGraph: (ref: EntityRef) => void; onPlacementChanged: () => void }) {
+/** The entity across revisions (GI-020), loaded on request. */
+function History({ id, hash }: { id: string; hash: string }) {
+  const [open, setOpen] = useState(false);
+  const { data, error, loading, reload } = useApi<LineageResponse>(open ? `entities/${encodeURIComponent(id)}/lineage` : null);
+  return (
+    <section>
+      <h3>History</h3>
+      {!open && <button type="button" className="link-btn" onClick={() => setOpen(true)}>Show this entity across snapshots</button>}
+      {loading && <Loading label="Loading history" />}
+      {error && (error.status === 404 ? <p className="group-note">No history is recorded for this entity yet.</p> : <ErrorNote error={error} onRetry={reload} what="the history" />)}
+      {data && (
+        <>
+          <p className="group-note">Every published snapshot that holds this entity, oldest first. A new ID after a move or rename is linked by the basis shown.</p>
+          <ol className="lineage-list">
+            {data.revisions.map((r) => (
+              <li key={`${r.rkp_hash}:${r.entity_id}`}>
+                <code>{shortSha(r.commit_sha)}</code>
+                <span className="muted">{new Date(r.published_at).toLocaleDateString()}</span>
+                <span>{r.name}</span>
+                {r.rkp_hash === hash && <Badge tone="verified">this snapshot</Badge>}
+                {r.status !== "complete" && <Badge tone="candidate">{r.status}</Badge>}
+                {r.moved_from && <Badge tone="class" title={`Moved from ${r.moved_from}`}>moved: {r.basis}</Badge>}
+              </li>
+            ))}
+          </ol>
+          {data.truncated && <p className="group-note">Only the first revisions are shown.</p>}
+        </>
+      )}
+    </section>
+  );
+}
+
+function DrawerBody({ hash, id, repositoryId, onNavigate, onViewInGraph, onPlacementChanged }: { hash: string; id: string; repositoryId: string | null; onNavigate: (id: string) => void; onViewInGraph: (ref: EntityRef) => void; onPlacementChanged: () => void }) {
   const { data, error, loading, reload } = useApi<EntityDetail>(snapshotPath(hash, `entities/${encodeURIComponent(id)}`));
   const [evidenceShown, setEvidenceShown] = useState(EVIDENCE_PAGE);
 
@@ -325,8 +388,9 @@ function DrawerBody({ hash, id, onNavigate, onViewInGraph, onPlacementChanged }:
           <ul className="conflict-list">
             {data.conflicts.map((c) => (
               <li key={c.id}>
-                <Badge tone="candidate">{c.conflict_type}</Badge>
+                <Badge tone="candidate" title={CONFLICT_TYPES[c.conflict_type]}>{c.conflict_type}</Badge>
                 <span>{displayValue(c.basis)}</span>
+                {c.conflict_type === "functional_violation" && <FunctionalConflict conflict={c} detail={data} repositoryId={repositoryId} />}
               </li>
             ))}
           </ul>
@@ -356,6 +420,8 @@ function DrawerBody({ hash, id, onNavigate, onViewInGraph, onPlacementChanged }:
         )}
       </section>
 
+      <History id={entity.id} hash={hash} />
+
       <p className="drawer-id">
         <code>{entity.id}</code>
       </p>
@@ -373,8 +439,11 @@ export function EntityDrawer({
   onClose,
   onViewInGraph,
   onPlacementChanged,
+  repositoryId = null,
 }: {
   hash: string;
+  /** The snapshot's repository, for owner overrides. */
+  repositoryId?: string | null;
   /** Short commit and ref of the snapshot this entity is read from. */
   snapshotLabel: string;
   /** True when that snapshot is not the one selected in the sidebar. */
@@ -424,7 +493,7 @@ export function EntityDrawer({
         </p>
       )}
       <div className="drawer-scroll" key={`${hash}:${id}`}>
-        <DrawerBody hash={hash} id={id} onNavigate={onNavigate} onViewInGraph={onViewInGraph} onPlacementChanged={onPlacementChanged} />
+        <DrawerBody hash={hash} id={id} repositoryId={repositoryId} onNavigate={onNavigate} onViewInGraph={onViewInGraph} onPlacementChanged={onPlacementChanged} />
       </div>
     </aside>
   );

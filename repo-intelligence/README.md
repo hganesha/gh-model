@@ -13,10 +13,10 @@ Every ticket in M0–M3 (GI-001 to GI-021, GI-030) is built, and its acceptance 
 
 Checked together on `claude/m0-m3-integration`:
 
-- `pytest`: 385 passed with `RKP_TEMPORAL_TESTS=1`.
+- `pytest`: 386 passed with `RKP_TEMPORAL_TESTS=1`.
 - `golden_check` and `python -m repo_intel.parity`: all fixtures ok.
 - `step_worker --selfcheck`: every case blocked.
-- Explorer: Playwright, 14 passed (the record project runs only on request).
+- Explorer: Playwright, 16 passed (the record project runs only on request).
 
 | Acceptance test (spec §14.5) | Test |
 |---|---|
@@ -83,7 +83,16 @@ To keep a decision model across restarts, put its non-secret settings (endpoint,
 | GI-019 parity | Done: `python -m repo_intel.parity` compares incremental and cold compiles on every fixture and names differing shards and rows; a sampled shadow compile (`settings.parity.shadow_rate`, plus a nightly run on default-branch heads) quarantines a mismatching snapshot, records a parity incident and promotes the cold result |
 | GI-020 delta and impact | Done: `delta.py` and `GET /v1/knowledge/diff` report a cause per entry and per delta (source, extractor, decision, policy or override change, or mixed), multi-hop impact up to three hops including tests, and moves from identical content or `git diff -M` renames, so a moved-and-edited file is a move. Lineage is persisted in `entity_lineage`; `GET /v1/entities/{id}/lineage` returns the history.. Bumping one extractor re-extracts only the files it matches, and the delta attributes every change to `extractor_change` (acceptance test 13) |
 | GI-021 retention | Done: mark-and-sweep garbage collection over the object store with per-ref retention (`settings.retention`), retraction (`POST .../snapshots/{h}/retract`, every read returns 410 with the replacement), repository deletion (`DELETE /v1/repositories/{id}`) and workspace deletion, each audited |
-| GI-030 Explorer foundation | Done: reproducible build (lockfile, pinned versions, `next build` in CI); a production build serves nothing without sign-in unless `RKP_ALLOW_ANONYMOUS=1`; no database connection; planes named as in spec §18.3 (Architecture, Contracts, Data, AI integrations, Tests, Deployment, plus Quality); a production build renders every plane of F01 and F02 from recorded responses in `explorer/e2e/recorded` with no API running |
+| GI-030 Explorer foundation | Done: reproducible build (lockfile, pinned versions, `next build` in CI); a production build serves nothing without sign-in unless `RKP_ALLOW_ANONYMOUS=1`; no database connection; planes named as in spec §18.3 (Architecture, Contracts, Data, AI integrations, Tests, Deployment, plus Quality); a production build renders every plane of F01 and F02 from recorded responses in `explorer/e2e/recorded` with no API running. The Explorer also shows the M2/M3 work, and browser tests cover it:
+
+- quarantined and retracted snapshots, with promote and retract actions, and a retracted snapshot pointing to its replacement;
+- opening a tracked ref by name, which also requests a lazy pull-request compile;
+- a cause on each diff entry, the compiler parts that changed, and impact up to three hops;
+- an entity's history across snapshots;
+- owner overrides, for decision labels in the Decisions view and for preferred values in the entity drawer;
+- conflict types, and excluded files with their reasons (`GET /v1/snapshots/{h}/exclusions`);
+- settings for tags and pull requests, per-repository providers, compile profile, retention and parity;
+- build-cache step metrics, garbage collection, secret re-scan, and repository and workspace deletion |
 
 Check what the compiler produces against the goldens:
 

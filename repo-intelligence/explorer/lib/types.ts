@@ -12,6 +12,10 @@ export interface SnapshotRef {
   toolchain_hash?: string;
   /** ISO 8601 commit date; missing on snapshots compiled before the API reported it. */
   committed_at?: string | null;
+  /** Lifecycle flags from the registry (GI-019, GI-021). */
+  retracted?: boolean;
+  quarantined?: boolean;
+  promoted?: boolean;
 }
 
 export interface Repository {
@@ -81,6 +85,37 @@ export interface Conflict {
   subject_ids: string[];
   evidence_ids: string[];
   basis: unknown;
+  /** For functional_violation: the assertion that wins under precedence (owner override, then evidence class). */
+  preferred?: string | null;
+  assertion_ids?: string[];
+}
+
+export const CONFLICT_TYPES: Record<string, string> = {
+  declared_vs_implemented: "Declared but not implemented",
+  functional_violation: "Two values for a single-valued fact",
+  label_disagreement: "Rules and a model (or an owner) disagree",
+};
+
+export interface LineageRevision {
+  rkp_hash: string;
+  commit_sha: string;
+  repository_id: string;
+  status: string;
+  published_at: string;
+  entity_id: string;
+  kind: string;
+  name: string;
+  natural_key: unknown;
+  moved_from: string | null;
+  basis: string;
+}
+
+export interface LineageResponse {
+  lineage_id: string;
+  entity_id: string;
+  entity_ids: string[];
+  revisions: LineageRevision[];
+  truncated: boolean;
 }
 
 export interface Summary {
@@ -208,6 +243,8 @@ export interface DiffEntity {
   from_key?: unknown;
   to_key?: unknown;
   changed_fields?: string[];
+  /** Why this entry changed: source_change, extractor_change, decision_change, override_change or policy_change. */
+  cause?: string;
 }
 
 export interface Support {
@@ -223,6 +260,7 @@ export interface DiffAssertion {
   structural: boolean;
   subject: EntityRef;
   object: EntityRef;
+  cause?: string;
   before?: Support;
   after?: Support;
 }
@@ -234,6 +272,9 @@ export interface ImpactRow {
   because_change: string;
   certainty: "exact" | "candidate" | string;
   plane: string | null;
+  /** 1 for a direct neighbour of a change; more when reached through other impacted entities. */
+  hops?: number;
+  through?: EntityRef | null;
 }
 
 export interface DiffResponse {
@@ -241,7 +282,9 @@ export interface DiffResponse {
   to: { rkp_hash: string; commit_sha: string };
   same_toolchain: boolean;
   same_source: boolean;
-  cause: "none" | "source_change" | "toolchain_change" | "undetermined" | string;
+  cause: "none" | "source_change" | "toolchain_change" | "extractor_change" | "decision_change" | "override_change" | "policy_change" | "mixed" | "undetermined" | string;
+  /** Which parts of the compiler differ, grouped by cause, e.g. {"extractor_change": ["extractor manifest.pyproject"]}. */
+  toolchain_changes?: Record<string, string[]>;
   files: { available: boolean; added: string[]; removed: string[]; modified: string[] };
   summary: {
     entities: ChangeCounts;
@@ -250,6 +293,7 @@ export interface DiffResponse {
     by_kind: Record<string, ChangeCounts>;
     shards: { changed: string[]; added: string[]; removed: string[]; unchanged: number };
     impacted: number;
+    causes?: Record<string, number>;
   };
   entities: DiffEntity[];
   assertions: DiffAssertion[];

@@ -1,11 +1,11 @@
 "use client";
 
-import { useMemo } from "react";
-import { useApi } from "@/lib/api";
+import { useMemo, useState } from "react";
+import { snapshotPath, useApi } from "@/lib/api";
 import { displayValue, kindLabel, measured, percent, percentLabel, plural, shortId } from "@/lib/format";
 import { domainLabel } from "@/lib/planes";
-import type { CoverageRow, EntityRef, QueryResponse, Ratio, Summary } from "@/lib/types";
-import { Badge, Bar, ErrorNote } from "./ui";
+import { CONFLICT_TYPES, type CoverageRow, type EntityRef, type QueryResponse, type Ratio, type Summary } from "@/lib/types";
+import { Badge, Bar, ErrorNote, Loading } from "./ui";
 
 /**
  * Resolve entity ids to names with one depth-0 graph query. Until it answers
@@ -48,7 +48,9 @@ function detailFacts(detail: Record<string, unknown>): string[] {
   const facts: string[] = [];
   for (const [key, value] of Object.entries(detail ?? {})) {
     if (typeof value === "number") facts.push(`${key} ${value.toLocaleString("en-US")}`);
-    else if (key === "by_language" && value && typeof value === "object") {
+    else if (key === "excluded_by_reason" && value && typeof value === "object") {
+      for (const [reason, n] of Object.entries(value as Record<string, number>)) if (typeof n === "number") facts.push(`excluded as ${reason.replaceAll("_", " ")} ${n}`);
+    } else if (key === "by_language" && value && typeof value === "object") {
       for (const [lang, v] of Object.entries(value as Record<string, { files?: number; parsed?: number }>)) {
         if (v && typeof v.files === "number") facts.push(`${lang} ${v.parsed ?? 0}/${v.files}`);
       }
@@ -212,6 +214,8 @@ export function QualityView({ hash, summary, onOpenEntity }: { hash: string; sum
 
       <ImportBreakdown rows={summary.coverage.filter((c) => c.domain === "import_resolution")} />
 
+      <Exclusions hash={hash} />
+
       <section className="panel">
         <h3>
           Unknowns <span className="section-count">{summary.unknowns.length}</span>
@@ -243,15 +247,23 @@ export function QualityView({ hash, summary, onOpenEntity }: { hash: string; sum
         <h3>
           Conflicts <span className="section-count">{summary.conflicts.length}</span>
         </h3>
+        {summary.conflicts.length > 0 && (
+          <ul className="cause-list" aria-label="Conflicts by type">
+            {Object.entries(summary.conflicts.reduce<Record<string, number>>((m, c) => ({ ...m, [c.conflict_type]: (m[c.conflict_type] ?? 0) + 1 }), {})).map(([type, n]) => (
+              <li key={type}><Badge tone="candidate" title={CONFLICT_TYPES[type]}>{type}</Badge> {n}</li>
+            ))}
+          </ul>
+        )}
         {summary.conflicts.length === 0 ? (
           <p className="group-note">No conflicts were recorded in this snapshot.</p>
         ) : (
           <ul className="conflict-list">
             {summary.conflicts.map((c) => (
               <li key={c.id}>
-                <Badge tone="candidate">{c.conflict_type}</Badge>
+                <Badge tone="candidate" title={CONFLICT_TYPES[c.conflict_type]}>{c.conflict_type}</Badge>
                 <div>
                   <p>{displayValue(c.basis)}</p>
+                  {CONFLICT_TYPES[c.conflict_type] && <p className="group-note">{CONFLICT_TYPES[c.conflict_type]}{c.preferred ? "; one value is preferred under precedence (open the entity to see which, or to choose as the owner)." : "."}</p>}
                   <ul className="link-list">
                     {(c.subject_ids ?? []).map((id) => (
                       <li key={id}>
@@ -265,6 +277,55 @@ export function QualityView({ hash, summary, onOpenEntity }: { hash: string; sum
           </ul>
         )}
       </section>
+    </section>
+  );
+}
+
+const EXCLUSION_TEXT: Record<string, string> = {
+  submodule: "Git submodule (not followed)",
+  symlink: "Symbolic link (recorded, not followed)",
+  vendored_or_generated_dir: "In a vendored or build-output directory",
+  binary: "Binary file",
+  generated: "Marked linguist-generated in .gitattributes",
+  vendored: "Marked linguist-vendored in .gitattributes",
+  repository_policy: "Excluded by the repository's .rkp/exclude",
+};
+
+interface ExclusionsResponse {
+  available: boolean;
+  exclusions: { path: string; reason: string; detail?: { rule?: string; escapes_root?: boolean } }[];
+  policy_digest: string | null;
+  total: number;
+  truncated: boolean;
+}
+
+/** Files this snapshot did not read, and why (GI-005). Loaded on request. */
+function Exclusions({ hash }: { hash: string }) {
+  const [open, setOpen] = useState(false);
+  const { data, error, loading, reload } = useApi<ExclusionsResponse>(open ? snapshotPath(hash, "exclusions") : null);
+  const groups = useMemo(() => {
+    const m = new Map<string, ExclusionsResponse["exclusions"]>();
+    for (const x of data?.exclusions ?? []) m.set(x.reason, [...(m.get(x.reason) ?? []), x]);
+    return [...m.entries()].sort((a, b) => b[1].length - a[1].length);
+  }, [data]);
+  return (
+    <section className="panel">
+      <h3>Excluded files {data && <span className="section-count">{data.total}</span>}</h3>
+      <p className="group-note">The exclusion policy is pinned with the commit: built-in vendored and binary rules, then <code>.gitattributes</code>, then the repository&apos;s own <code>.rkp/exclude</code>. Excluded files are never downloaded or read.</p>
+      {!open && <button type="button" className="link-btn" onClick={() => setOpen(true)}>Show excluded files</button>}
+      {loading && <Loading label="Loading excluded files" />}
+      {error && <ErrorNote error={error} onRetry={reload} what="excluded files" />}
+      {data && !data.available && <p className="group-note">The file list for this snapshot is no longer stored, so its exclusions are unknown.</p>}
+      {data?.available && data.total === 0 && <p className="group-note">Nothing was excluded.</p>}
+      {groups.map(([reason, rows]) => (
+        <details key={reason}>
+          <summary>{EXCLUSION_TEXT[reason] ?? reason} <span className="section-count">{rows.length}</span></summary>
+          <ul className="lineage-list">
+            {rows.map((x) => <li key={x.path}><code>{x.path}</code>{x.detail?.rule && <span className="muted">rule <code>{x.detail.rule}</code></span>}{x.detail?.escapes_root && <Badge tone="candidate">points outside the repository</Badge>}</li>)}
+          </ul>
+        </details>
+      ))}
+      {data?.truncated && <p className="group-note">Only the first {data.exclusions.length} of {data.total} are listed.</p>}
     </section>
   );
 }

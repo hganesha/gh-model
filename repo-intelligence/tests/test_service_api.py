@@ -75,6 +75,11 @@ def test_connect_compile_and_read_a_repository(client, f01):
     assert {"IMPLEMENTS", "WRITES_TO", "DEFINED_IN", "TESTED_BY"} <= predicates
     assert all(a["subject"] in detail["neighbours"] and a["object"] in detail["neighbours"] for a in detail["assertions"])
 
+    excluded = c.get(f"/v1/snapshots/{h}/exclusions", headers=AUTH).json()
+    assert excluded["available"] is True and excluded["total"] == len(excluded["exclusions"]) and excluded["truncated"] is False
+    assert all({"path", "reason"} <= set(x) for x in excluded["exclusions"])
+    assert c.get("/v1/snapshots/sha256:" + "0" * 64 + "/exclusions", headers=AUTH).status_code == 404
+
     decisions = c.get(f"/v1/snapshots/{h}/decisions", headers=AUTH).json()["decisions"]
     assert {d["spec"].split("@")[0] for d in decisions} == {"dm.component-kind", "dm.primary-stack", "dm.repository-topology", "dm.dependency-capability"}
     deps = c.get(f"/v1/snapshots/{h}/entities", headers=AUTH, params={"kind": "ExternalDependency"}).json()["entities"]

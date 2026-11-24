@@ -19,6 +19,8 @@ import { BusinessMapView } from "./business-map-view";
 import { SettingsView } from "./settings-view";
 import { isPlaced, type SnapshotPlacements } from "@/lib/workspace";
 import { Badge, ErrorNote, Loading } from "./ui";
+import { RetractedNote, SnapshotActions, SnapshotStateBadge, snapshotState } from "./snapshot-actions";
+import { RefOpener } from "./ref-opener";
 import { PREDICATES } from "@/lib/planes";
 import { commitDates, orderPair } from "@/lib/snapshots";
 
@@ -131,7 +133,8 @@ export function Explorer() {
   const repositories = useMemo(() => repos.data?.repositories ?? [], [repos.data]);
   const repo = repositories.find((r) => r.repository_id === repoId) ?? repositories[0] ?? null;
   const snapshots = useMemo(() => (repo ? sortedSnapshots(repo) : []), [repo]);
-  const snapshot = snapshots.find((s) => s.rkp_hash === hashChoice) ?? snapshots[0] ?? null;
+  // By default open the newest readable snapshot; a retracted or quarantined one only when chosen.
+  const snapshot = snapshots.find((s) => s.rkp_hash === hashChoice) ?? snapshots.find((s) => !snapshotState(s)) ?? snapshots[0] ?? null;
   const hash = snapshot?.rkp_hash ?? null;
 
   const placements = useApi<SnapshotPlacements>(hash && !workspace ? snapshotPath(hash, "placements") : null);
@@ -311,13 +314,13 @@ export function Explorer() {
                 const selected = s.rkp_hash === hash;
                 return (
                   <li key={s.rkp_hash}>
-                    <button type="button" className={`snapshot-item ${selected ? "is-selected" : ""}`} aria-current={selected ? "true" : undefined} onClick={() => selectSnapshot(s.rkp_hash)}>
+                    <button type="button" className={`snapshot-item ${selected ? "is-selected" : ""} ${s.retracted ? "is-retracted" : ""}`} aria-current={selected ? "true" : undefined} onClick={() => selectSnapshot(s.rkp_hash)}>
                       <GitCommitHorizontal size={13} aria-hidden="true" />
                       <code>{shortSha(s.commit_sha)}</code>
-                      <span className="snapshot-ref">{s.ref}</span>
+                      <span className="snapshot-ref">{s.ref}<SnapshotStateBadge snapshot={s} /></span>
                       <time dateTime={new Date(s.compiled_at * 1000).toISOString()}>{now === null ? "" : relativeTime(s.compiled_at, now)}</time>
                     </button>
-                    {!selected && (
+                    {!selected && !s.retracted && (
                       <button type="button" className="snapshot-compare" onClick={() => compareWith(s)} aria-label={`Compare ${shortSha(s.commit_sha)} ${s.ref} with the selected snapshot`} title="Compare with the selected snapshot">
                         <GitCompareArrows size={13} aria-hidden="true" />
                         <span>Compare</span>
@@ -327,6 +330,7 @@ export function Explorer() {
                 );
               })}
             </ul>
+            <RefOpener repo={repo} onOpen={(next) => { repos.reload(); selectSnapshot(next); }} onPending={repos.reload} />
           </div>
         )}
 
@@ -350,9 +354,10 @@ export function Explorer() {
                   {snapshot.ref}
                   <code>{shortSha(snapshot.commit_sha)}</code>
                 </span>
-                <Badge tone={status === "complete" ? "verified" : status ? "candidate" : "neutral"}>{summary.loading ? "loading" : (status ?? "status unknown")}</Badge>
+                <Badge tone={status === "complete" ? "verified" : status === "retracted" || snapshot.retracted ? "danger" : status ? "candidate" : "neutral"}>{summary.loading ? "loading" : (status ?? (snapshot.retracted ? "retracted" : "status unknown"))}</Badge>
               </p>
             )}
+            {!workspace && snapshot && repo && <div className="topbar-actions"><SnapshotActions repo={repo} snapshot={snapshot} snapshots={snapshots} onChanged={(next) => { repos.reload(); if (next) selectSnapshot(next); summary.reload(); }} /></div>}
           </div>
           {!workspace && <div className="view-switch" role="tablist" aria-label="View">
             {VIEWS.map((v) => (
@@ -399,7 +404,9 @@ export function Explorer() {
           )}
 
           {hash && summary.loading && <Loading label="Loading snapshot" />}
-          {hash && summary.error && <ErrorNote error={summary.error} onRetry={summary.reload} what="this snapshot" />}
+          {hash && summary.error && (summary.error.code === "retracted"
+            ? <RetractedNote error={summary.error} snapshots={snapshots} onOpen={selectSnapshot} />
+            : <ErrorNote error={summary.error} onRetry={summary.reload} what="this snapshot" />)}
 
           {hash && summary.data && (
             <>
@@ -434,7 +441,7 @@ export function Explorer() {
                 />
               )}
               {view === "quality" && <QualityView hash={hash} summary={summary.data} onOpenEntity={openEntity} />}
-              {view === "decisions" && <DecisionsView hash={hash} onOpenEntity={openEntity} />}
+              {view === "decisions" && <DecisionsView hash={hash} repositoryId={repo?.repository_id ?? null} onOpenEntity={openEntity} />}
             </>
           )}
           </>}
@@ -444,6 +451,7 @@ export function Explorer() {
       {drawerOpen && shownHash && (
         <EntityDrawer
           hash={shownHash}
+          repositoryId={repo?.repository_id ?? null}
           onPlacementChanged={() => { setPlacementRevision((n) => n + 1); placements.reload(); }}
           snapshotLabel={shownSnapshot ? `${shortSha(shownSnapshot.commit_sha)} · ${shownSnapshot.ref}` : "unknown snapshot"}
           otherSnapshot={shownHash !== hash}

@@ -665,3 +665,24 @@ button.neighbour:hover { background: var(--green-soft); }
 .account form { display: contents; }
 .account-name { font-size: 13px; color: var(--ink-2); max-width: 16ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 640px) { .account-name { display: none; } }
+
+/* Snapshot lifecycle, ref tracking, lineage and maintenance (M2/M3 surfaces) */
+.badge-danger { border: 1px solid color-mix(in srgb, var(--red) 40%, transparent); color: var(--red); background: var(--red-soft); }
+.btn-danger { background: var(--red); color: #fff; }
+.btn-danger:hover:not(:disabled) { background: color-mix(in srgb, var(--red) 85%, black); }
+.snapshot-actions { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-left: 8px; }
+.snapshot-item.is-retracted { opacity: 0.6; }
+.snapshot-ref .badge { margin-left: 6px; }
+.cause-list { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; padding: 0; list-style: none; }
+.lineage-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.lineage-list li { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; font-size: 12.5px; }
+.metric-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.metric-table th, .metric-table td { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--line); }
+.metric-table td.num, .metric-table th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.danger-zone { border: 1px solid color-mix(in srgb, var(--red) 35%, var(--line)); border-radius: 8px; padding: 12px; display: grid; gap: 10px; }
+.override-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.topbar-actions .snapshot-actions { margin: 4px 0 0; }
+.work-tool-panel h4 { margin: 10px 0 4px; font-size: 12.5px; font-weight: 650; }
+.ref-opener { display: grid; grid-template-columns: 1fr auto; gap: 6px; margin-top: 8px; }
+.ref-opener input { min-width: 0; padding: 5px 8px; border: 1px solid var(--sidebar-line, var(--line)); border-radius: 6px; background: transparent; color: var(--sidebar-ink, var(--ink)); font-size: 12px; }
+.ref-opener .side-note { grid-column: 1 / -1; }

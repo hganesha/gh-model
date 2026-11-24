@@ -1,6 +1,0 @@
-{
- "method": "GET",
- "path": "/v1/snapshots/sha256:c0ce440cff3b164b993511c51d2615d807fb54fd4047df460945d6ff078d7720/entities?plane=deployment&kind=BuildTarget&limit=60",
- "status": 200,
- "body": "{\"entities\":[{\"id\":\"ent_pviuqw3g2oxanpkqft5i3q427k\",\"kind\":\"BuildTarget\",\"name\":\"Dockerfile\",\"attributes\":{\"stages\":1,\"base_images\":[\"python:3.12-slim\"],\"has_entrypoint\":true},\"natural_key\":{\"path\":\"Dockerfile\"},\"evidence_ids\":[\"ev_p3a76uoywwpfv4rtkgr5dzkkjn\"]}],\"truncated\":false}"
-}

@@ -437,3 +437,14 @@ def test_store_touch_and_sweep(tmp_path):
     store.index_get("step_cache", "k")
     assert path.stat().st_mtime > 1, "reading a cache entry records its use"
     assert [k for k, _, _ in store.list_index("step_cache")] == ["k"] and store.index_delete("step_cache", "k")
+
+
+def test_business_map_reads_neither_retracted_nor_quarantined_snapshots():
+    from repo_intel import business_graph
+    repo = {"default_branch": "main", "snapshots": [
+        {"rkp_hash": "a", "ref": "main", "compiled_at": 1},
+        {"rkp_hash": "b", "ref": "main", "compiled_at": 2, "quarantined": True},
+        {"rkp_hash": "c", "ref": "main", "compiled_at": 3, "retracted": True},
+    ]}
+    assert [s["rkp_hash"] for _, s in business_graph.latest([repo])] == ["a"]
+    assert business_graph.latest([{**repo, "snapshots": repo["snapshots"][1:]}]) == []

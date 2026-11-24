@@ -11,7 +11,8 @@ import { record, recordDir, replay, replayDir } from "@/lib/replay";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const API_ROOTS = new Set(["repositories", "compilations", "snapshots", "knowledge", "evidence", "business-maps", "settings"]);
+const API_ROOTS = new Set(["repositories", "compilations", "snapshots", "knowledge", "evidence", "business-maps", "settings", "entities", "step-metrics", "maintenance", "workspace"]);
+const BODY_METHODS = new Set(["POST", "PUT"]);
 const SAFE_SEGMENT = /^[A-Za-z0-9._:@~-]+$/;
 const MAX_BODY_BYTES = 384 * 1024;
 
@@ -61,7 +62,7 @@ async function forward(req: NextRequest, ctx: Context): Promise<Response> {
 
   const replaying = replayDir();
   if (replaying) {
-    const text = req.method === "POST" ? await req.text() : undefined;
+    const text = BODY_METHODS.has(req.method) ? await req.text() : undefined;
     const hit = await replay(replaying, req.method, apiPath, text);
     if (!hit) return problem(404, "not_recorded", "This Explorer replays recorded responses, and this request was not recorded.");
     return new Response(hit.body, { status: hit.status, headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" } });
@@ -81,9 +82,9 @@ async function forward(req: NextRequest, ctx: Context): Promise<Response> {
     headers["X-RKP-Role"] = user.role;
   }
   let body: string | undefined;
-  if (req.method === "POST") {
+  if (BODY_METHODS.has(req.method)) {
     if (!(req.headers.get("content-type") ?? "").toLowerCase().startsWith("application/json")) {
-      return problem(415, "unsupported_media_type", "POST bodies must be application/json");
+      return problem(415, "unsupported_media_type", "request bodies must be application/json");
     }
     body = await req.text();
     if (Buffer.byteLength(body) > MAX_BODY_BYTES) return problem(413, "too_large", "request body is too large");
@@ -137,5 +138,13 @@ export function GET(req: NextRequest, ctx: Context) {
 }
 
 export function POST(req: NextRequest, ctx: Context) {
+  return forward(req, ctx);
+}
+
+export function PUT(req: NextRequest, ctx: Context) {
+  return forward(req, ctx);
+}
+
+export function DELETE(req: NextRequest, ctx: Context) {
   return forward(req, ctx);
 }

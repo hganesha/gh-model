@@ -269,6 +269,19 @@ def create_app(conninfo: str, tenant_id: str, dev_token: str | None, store: Obje
     def snapshot_summary(rkp_hash: str, tenant: Tenant) -> dict[str, Any]:
         return svc().summary(snapshot(rkp_hash, tenant))
 
+    @app.get("/v1/snapshots/{rkp_hash}/exclusions")
+    def snapshot_exclusions(rkp_hash: str, tenant: Tenant, limit: int = 500) -> dict[str, Any]:
+        """Files the snapshot did not read, each with its reason and the rule that excluded it (GI-005)."""
+        manifest = snapshot(rkp_hash, tenant)
+        s = svc()
+        d = s.store.index_get("path_manifests", manifest["source_tree_hash"])
+        if d is None or not s.store.has(d):
+            return {"available": False, "exclusions": [], "policy_digest": None, "total": 0, "truncated": False}
+        pm = s.store.get_json(d)
+        rows = pm.get("exclusions", [])
+        limit = max(1, min(limit, 2000))
+        return {"available": True, "exclusions": rows[:limit], "policy_digest": pm.get("exclusion_policy"), "total": len(rows), "truncated": len(rows) > limit}
+
     @app.get("/v1/snapshots/{rkp_hash}/entities")
     def snapshot_entities(rkp_hash: str, tenant: Tenant, plane: str | None = None, kind: str | None = None, q: str | None = None, limit: int = 200) -> dict[str, Any]:
         snapshot(rkp_hash, tenant)
