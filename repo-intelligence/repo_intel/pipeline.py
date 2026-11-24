@@ -62,10 +62,20 @@ def _executor_name(runner: StepRunner | None = None) -> str:
     return default() if default else "inprocess"
 
 
+def _all_steps() -> list[Any]:
+    """Every pure step. Area C's registry finds each module-level `Step` itself; until it is
+    merged, the list is spelled out."""
+    from . import buildgraph
+    registry = getattr(buildgraph, "registry", None)
+    if registry is not None:
+        return list(registry().values())
+    return [FILE_EXTRACT, dm_component.FEATURES_BUILD, dm_component.FEATURES_REEXTRACT, dm_linking.TABLE_REQUESTS, dm_behavior.FEATURES_BUILD, *STEPS]
+
+
 def _toolchain_manifest(gateway: Gateway | None, catalogue_hash: str, policy: CompileSettings | None = None, step_executor: str | None = None) -> dict[str, Any]:
     """Workspace-wide: a repository's own egress narrowing is not part of it (it is part of
     each decision's key instead), so one repository's policy never changes another's toolchain."""
-    steps = {s.name: s.version for s in [FILE_EXTRACT, dm_component.FEATURES_BUILD, dm_component.FEATURES_REEXTRACT, dm_linking.TABLE_REQUESTS, dm_behavior.FEATURES_BUILD, *STEPS]}
+    steps = {s.name: s.version for s in _all_steps() if not s.name.startswith("selfcheck.")}
     specs = {s.id: s.version for s in SPECS.values()}
     specs[dm_dependency.SPEC_ID] = dm_dependency.SPEC_VERSION
     return {
