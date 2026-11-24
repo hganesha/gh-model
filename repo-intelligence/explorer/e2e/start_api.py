@@ -4,6 +4,7 @@ import atexit
 import os
 import signal
 import socket
+import subprocess
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -14,7 +15,9 @@ data = TemporaryDirectory(prefix="rkp-browser-test-")
 atexit.register(data.cleanup)
 root = Path(data.name)
 fixture = root / "Orders fixture"
-materialize("F01-python-api", fixture)
+orders_commits = materialize("F01-python-api", fixture)
+# A second ref, so the browser suite can compile and then retract a snapshot that nothing else uses.
+subprocess.run(["git", "-C", str(fixture), "tag", "v0", orders_commits[0]], check=True)
 monorepo = root / "Storefront fixture"
 materialize("F02-ts-monorepo", monorepo)
 config = root / "data"

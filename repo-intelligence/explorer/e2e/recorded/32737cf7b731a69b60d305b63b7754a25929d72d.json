@@ -1,0 +1,6 @@
+{
+ "method": "GET",
+ "path": "/v1/knowledge/diff?from=sha256%3A98c9134f1a62d412b353c519555bfe135c109729718e9f25550c9440aa9e36a4&to=sha256%3A3327f59c9ba9dbc31ade7a273624ddd2fda3bce5ed87464c0bbe9c92a8533dde",
+ "status": 410,
+ "body": "{\"code\":\"retracted\",\"message\":\"This snapshot was retracted.\",\"retryable\":false,\"details\":{\"reason\":\"compiler_defect\",\"replacement\":null}}"
+}

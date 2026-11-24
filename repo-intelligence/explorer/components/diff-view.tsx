@@ -14,9 +14,28 @@ type Open = (id: string, hash: string) => void;
 const CAUSE_TEXT: Record<string, string> = {
   none: "These two snapshots describe the same knowledge.",
   source_change: "Only the code changed between these two compiles; the compiler was the same.",
-  toolchain_change: "The code is the same in both; the compiler changed, so every difference comes from the compiler.",
+  toolchain_change: "The code is the same in both; several parts of the compiler changed, so every difference comes from the compiler.",
+  extractor_change: "The code is the same in both; an extractor changed, so every difference comes from what it reads.",
+  decision_change: "The code is the same in both; a decision spec, model or threshold changed.",
+  override_change: "The code is the same in both; an owner override changed.",
+  policy_change: "The code is the same in both; the compile policy changed.",
+  mixed: "Both the code and the compiler changed. Each row below says which one it comes from.",
   undetermined: "Both the code and the compiler changed, so a difference cannot be attributed to either one.",
 };
+
+export const CAUSE_LABEL: Record<string, string> = {
+  source_change: "code",
+  extractor_change: "extractor",
+  decision_change: "decision",
+  override_change: "owner override",
+  policy_change: "policy",
+};
+
+/** A row's cause, shown only when it is not plain code change. */
+function CauseBadge({ cause }: { cause?: string }) {
+  if (!cause || cause === "source_change") return null;
+  return <Badge tone="class" title={`Caused by a ${CAUSE_LABEL[cause] ?? cause} change`}>{CAUSE_LABEL[cause] ?? cause}</Badge>;
+}
 
 function planeTitle(plane: string | null): string {
   if (plane === "files") return "Files";
@@ -114,7 +133,7 @@ const ENTITY_SECTIONS: { change: string; title: string; hint: string }[] = [
   { change: "added", title: "Added", hint: "Exists in the newer snapshot only." },
   { change: "removed", title: "Removed", hint: "Exists in the older snapshot only. Rows open in the older snapshot." },
   { change: "changed", title: "Changed", hint: "Same thing in both snapshots, with different recorded facts." },
-  { change: "moved", title: "Moved", hint: "The same thing at a new location, established from identical content rather than from its name." },
+  { change: "moved", title: "Moved", hint: "The same thing at a new location, established from identical content or from Git's rename detection, never from its name alone." },
 ];
 
 function EntityRow({ entity, hash, onOpen }: { entity: DiffEntity; hash: string; onOpen: Open }) {
@@ -143,6 +162,7 @@ function EntityRow({ entity, hash, onOpen }: { entity: DiffEntity; hash: string;
           ))}
         </span>
       )}
+      <CauseBadge cause={entity.cause} />
     </li>
   );
 }
@@ -273,6 +293,7 @@ function AssertionRow({ a, fromHash, toHash, onOpen }: { a: DiffAssertion; fromH
         ) : (
           <SupportBadges support={a.change === "removed" ? a.before : a.after} />
         )}
+        <CauseBadge cause={a.cause} />
       </span>
     </li>
   );
@@ -413,6 +434,7 @@ function Impact({ diff, toHash, onOpen }: { diff: DiffResponse; toHash: string; 
                             <li key={i} className={r.certainty === "candidate" ? "is-candidate" : ""}>
                               <span className="muted">— via</span> <span className="predicate">{r.via}</span> <span className="muted">— because</span>{" "}
                               <EntityButton entity={r.because} hash={toHash} onOpen={onOpen} /> <span className="impact-why">({WHY[r.because_change] ?? r.because_change})</span>
+                              {(r.hops ?? 1) > 1 && <span className="muted"> — {r.hops} hops{r.through ? <>, through <EntityButton entity={r.through} hash={toHash} onOpen={onOpen} /></> : null}</span>}
                               {r.certainty === "candidate" && <Badge tone="candidate">candidate</Badge>}
                             </li>
                           )}
@@ -532,14 +554,20 @@ export function DiffView({ from, to, sameCommit, basis, onOpenEntity }: { from: 
             : `${n(e.added)} added, ${n(e.removed)} removed, ${n(e.changed)} changed, ${n(e.moved)} moved; ${n(e.evidence_changed)} more are in files that were edited.`}
         </h2>
         {!nothing && <p>{CAUSE_TEXT[data.cause] ?? `Cause: ${data.cause}`}</p>}
+        {!nothing && data.toolchain_changes && Object.keys(data.toolchain_changes).length > 0 && (
+          <ul className="cause-list" aria-label="What changed in the compiler">
+            {Object.entries(data.toolchain_changes).flatMap(([cause, parts]) => parts.map((part) => (
+              <li key={`${cause}:${part}`}><Badge tone="class" title={CAUSE_TEXT[cause]}>{CAUSE_LABEL[cause] ?? cause}</Badge> <code>{part}</code></li>
+            )))}
+          </ul>
+        )}
         <p className="group-note">
           {basis === "commit"
             ? "“From” is the older commit, by commit date."
             : sameCommit
               ? "Both were compiled from the same commit; “from” is the earlier compile."
               : "A commit date is missing for one of these, so “from” is the older compile, not necessarily the older commit."}{" "}
-          {n(data.summary.impacted)} things are one relationship away from
-          a change.
+          {n(data.summary.impacted)} things are affected by a change, up to three relationships away (a test of an affected thing counts).
         </p>
         {data.truncated && <p className="notice notice-warn">Truncated: the server returned only part of this comparison. Counts in the summary are complete; the lists below are not.</p>}
       </header>

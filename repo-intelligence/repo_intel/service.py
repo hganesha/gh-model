@@ -905,6 +905,7 @@ class Service:
             "author": author[0] if author else None, "updated_at": author[1] if author else None,
             # The GitHub CLI connection only works where `gh` is installed (not in the container image).
             "github_cli": shutil.which("gh") is not None, "credential_store": self.secrets.writable,
+            "coverage_domains": list(settings.COVERAGE_DOMAINS), "providers": list(settings.PROVIDERS),
             "extractors": [{
                 "id": e.id, "version": e.version,
                 "tier": "inventory" if e.id in {"manifest.maven", "manifest.go"} else ("A" if e.id in {"python.source", "typescript.source", "contract.openapi"} else "B"),

@@ -188,3 +188,76 @@ test("components stay inside their capability card at phone width", async ({ pag
   expect(overflow).toEqual([]);
   expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(0);
 });
+
+test("decisions take owner overrides, quality lists exclusions, and settings run maintenance", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.goto("/");
+  await page.getByRole("button", { name: /Orders fixture/ }).click();
+
+  // Excluded files are listed with their reason, on request.
+  await page.getByRole("tab", { name: "Quality" }).click();
+  await page.getByRole("button", { name: "Show excluded files" }).click();
+  const excluded = page.locator("section.panel").filter({ has: page.getByRole("heading", { name: /Excluded files/ }) });
+  await expect(excluded.getByText(/Nothing was excluded|\(not followed\)|Binary file|vendored|generated|\.rkp\/exclude/).first()).toBeVisible();
+
+  // An owner overrides a decision; the override is listed and can be removed.
+  await page.getByRole("tab", { name: "Decisions" }).click();
+  const row = page.locator("tr").filter({ hasText: "dm.component-kind" }).first();
+  await row.getByRole("button", { name: "Override" }).click();
+  await page.getByLabel("Owner label").fill("service");
+  await page.getByLabel("Reason").fill("It runs as a web service.");
+  await page.getByRole("button", { name: "Save override" }).click();
+  await expect(row.getByText("owner: service")).toBeVisible();
+  const panel = page.locator("section.panel").filter({ has: page.getByRole("heading", { name: /Owner overrides/ }) });
+  await expect(panel).toContainText("It runs as a web service.");
+  await panel.getByRole("button", { name: "Remove" }).click();
+  await expect(panel).toContainText("No overrides are set for this repository.");
+
+  // Settings: compile profile, retention, ref tracking options, the build cache and maintenance.
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  for (const text of ["Compile profile", "Retention and parity", "Maintenance"]) {
+    await expect(page.getByRole("heading", { name: text, exact: true })).toBeVisible();
+  }
+  await expect(page.locator("table.metric-table").getByText("Total")).toBeVisible();
+  await page.getByLabel("Compile trigger").first().selectOption("push");
+  await expect(page.getByLabel("Pull requests").first()).toHaveValue("lazy");
+  await expect(page.getByLabel("Compile pushed tags").first()).toBeChecked();
+  // Push tracking needs a webhook connection, which a local repository has not, so go back before saving.
+  await page.getByLabel("Compile trigger").first().selectOption("manual");
+  await page.getByLabel("Webhook delivery IDs (days)").fill("10");
+  await page.getByRole("button", { name: "Save settings" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Workspace settings saved" })).toBeVisible();
+  await page.reload();
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await expect(page.getByLabel("Webhook delivery IDs (days)")).toHaveValue("10");
+  await page.getByRole("button", { name: "Run garbage collection" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Garbage collection removed" })).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test("a retracted snapshot is marked and points nowhere it cannot go", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  const fixture = await readFile(path.join("test-results", "fixture-path"), "utf8");
+  const start = await page.request.post("/api/rkp/repositories", { data: { local_path: fixture, ref: "v0" } });
+  const { id } = await start.json();
+  await expect.poll(async () => (await (await page.request.get(`/api/rkp/compilations/${id}`)).json()).status).toBe("complete");
+
+  await page.goto("/");
+  await page.getByRole("button", { name: /Orders fixture/ }).click();
+  const v0 = page.getByRole("button", { name: /v0/ }).first();
+  await v0.click();
+  await page.getByRole("button", { name: "Retract…" }).click();
+  const dialog = page.getByRole("dialog", { name: "Retract snapshot" });
+  await dialog.getByLabel("Reason").selectOption("compiler_defect");
+  await dialog.getByRole("button", { name: "Retract snapshot" }).click();
+  await expect(page.locator(".snapshot-list").getByText("retracted")).toBeVisible();
+  // The newest readable snapshot opens by default; the business map keeps working.
+  await page.reload();
+  await page.getByRole("button", { name: /Orders fixture/ }).click();
+  await expect(page.locator(".topbar-repo .badge").first()).toHaveText("complete");
+  await page.goto("/?workspace=business");
+  await expect(page.getByRole("heading", { name: "Commerce value chain" })).toBeVisible();
+  expect(errors).toEqual([]);
+});

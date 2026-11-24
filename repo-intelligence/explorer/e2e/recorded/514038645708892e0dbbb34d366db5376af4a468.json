@@ -1,0 +1,6 @@
+{
+ "method": "GET",
+ "path": "/v1/repositories/local/66dc5a79b847/overrides",
+ "status": 200,
+ "body": "{\"repository_id\":\"local/66dc5a79b847\",\"version\":0,\"override_set_hash\":\"sha256:8438d8c9790796e926fbf86b899832c8601cc95b8860e466ef43fe165ca13eae\",\"decisions\":[],\"preferences\":[],\"history\":[]}"
+}

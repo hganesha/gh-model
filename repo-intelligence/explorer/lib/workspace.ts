@@ -90,6 +90,35 @@ export interface Tracking {
   refs: string[];
   trigger: "manual" | "push" | "poll";
   interval_minutes: number;
+  /** null inherits the workspace's providers; a list narrows them for this repository. */
+  allowed_providers?: string[] | null;
+  /** Push-tracked repositories: tags compile eagerly; pull requests lazily, eagerly or not at all. */
+  tags?: boolean;
+  pull_requests?: "off" | "lazy" | "eager";
+}
+
+export interface RetentionPolicy {
+  branch_days: number;
+  pull_request_days_after_close: number;
+  tag_days: number | null;
+  blob_cache_days: number;
+  step_cache_days: number;
+  mirror_days: number;
+  webhook_delivery_days: number;
+}
+
+export interface ParityPolicy {
+  shadow_rate: number;
+  nightly_head: boolean;
+}
+
+export interface StepMetrics {
+  run_id: string;
+  executor: string;
+  started_at: number;
+  updated_at: number;
+  steps: Record<string, { executed: number; hits: number; seconds: number }>;
+  totals: { executed: number; hits: number; seconds: number };
 }
 
 export interface SettingsDocument {
@@ -101,6 +130,9 @@ export interface SettingsDocument {
     default_model: string | null;
     model_functions: Record<string, ModelSelection>;
     decision_budget: number;
+    behavior_candidates?: boolean;
+    required_coverage?: string[];
+    repository_egress?: Record<string, string[]>;
   };
   business_map: {
     auto_place: boolean;
@@ -108,6 +140,8 @@ export interface SettingsDocument {
     component_kinds: string[];
     embedding_provider: "local" | "openai-embeddings";
   };
+  retention?: RetentionPolicy;
+  parity?: ParityPolicy;
 }
 
 export interface SettingsView {
@@ -125,6 +159,9 @@ export interface SettingsView {
   github_cli?: boolean;
   /** Where device sign-in keeps its token: Azure Key Vault when hosted, else the OS keychain. */
   credential_store?: "vault" | "keychain";
+  /** Coverage domains a compile profile can require, and the model providers egress can name. */
+  coverage_domains?: string[];
+  providers?: string[];
 }
 
 export function placementLabel(placement: Placement): string {

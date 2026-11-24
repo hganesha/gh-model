@@ -1,6 +1,0 @@
-{
- "method": "GET",
- "path": "/v1/snapshots/sha256:89cb9ee89581de6a35063144f2044edc287b9e2ec0ce8faceacf5f32945c4f02/entities?plane=data&kind=Table&limit=60",
- "status": 200,
- "body": "{\"entities\":[{\"id\":\"ent_i2qmg2f7qhbobvkoim2fs22xvm\",\"kind\":\"Table\",\"name\":\"orders\",\"attributes\":{\"orm\":\"prisma\",\"model\":\"Order\"},\"natural_key\":{\"name\":\"orders\",\"datastore\":\"default\"},\"evidence_ids\":[\"ev_5zleeolmjf7wiza4vcyrtg2tgq\",\"ev_k4vch7t6cmhma6koev7vsfjbhm\"]}],\"truncated\":false}"
-}
