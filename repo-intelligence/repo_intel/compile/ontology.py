@@ -33,6 +33,16 @@ class EntityKind(StrEnum):
     OWNER = "Owner"
     EXTERNAL_DEPENDENCY = "ExternalDependency"
     TECHNICAL_CAPABILITY = "TechnicalCapability"
+    # Data and ML work (spec §8.1, added 2026-11-24).
+    JOB = "Job"
+    TASK = "Task"
+    DATASET = "Dataset"
+    NOTEBOOK = "Notebook"
+    ML_MODEL = "MLModel"
+    # Legacy code by platform (spec §8.1): a COBOL program, SAS macro, CFML component,
+    # Teradata or T-SQL procedure. Legacy repositories rarely have a manifest, so each
+    # declares its own unit of code. Natural key {platform, name}.
+    PROGRAM = "Program"
     FEATURE = "Feature"  # DM08 behaviour hypotheses only, behind a flag that is off by default
     # Reserved for DM09; not emitted in v1.
     REQUIREMENT = "Requirement"
@@ -45,6 +55,8 @@ class ComponentKind(StrEnum):
     CLI = "cli"
     LIBRARY = "library"
     TOOLING = "tooling"
+    DATA_PIPELINE = "data_pipeline"
+    ML_TRAINING = "ml_training"
     UNKNOWN = "unknown"
 
 
@@ -97,10 +109,16 @@ class Predicate(StrEnum):
     TESTED_BY = "TESTED_BY"
     OWNED_BY = "OWNED_BY"
     ALIAS_OF = "ALIAS_OF"
+    RUNS = "RUNS"
+    DERIVED_FROM = "DERIVED_FROM"
+    PRODUCES = "PRODUCES"
+    SERVES = "SERVES"
 
 
 K = EntityKind
-_CODE = {K.COMPONENT, K.PACKAGE, K.SYMBOL}
+_CODE = {K.COMPONENT, K.PACKAGE, K.SYMBOL, K.NOTEBOOK, K.PROGRAM}
+_WORK = {K.JOB, K.TASK}  # scheduled or triggered batch work
+_DATA = {K.TABLE, K.STORAGE_RESOURCE, K.DATA_SCHEMA, K.DATASET}
 _ANY = set(K)
 
 
@@ -118,31 +136,36 @@ def _r(subjects, objects, functional=False, weakest=EvidenceClass.E5) -> Relatio
 
 P = Predicate
 RELATIONS: dict[Predicate, RelationSchema] = {
-    P.CONTAINS: _r({K.REPOSITORY, K.PACKAGE, K.COMPONENT, K.DATA_SCHEMA, K.TABLE, K.INTERFACE}, _ANY, weakest=EvidenceClass.E3),
+    P.CONTAINS: _r({K.REPOSITORY, K.PACKAGE, K.COMPONENT, K.DATA_SCHEMA, K.TABLE, K.INTERFACE, K.JOB}, _ANY, weakest=EvidenceClass.E3),
     # DEFINED_IN carries the class of the declaration it comes from, so a heuristically
     # read entity (a namespace taken as an environment) is not presented as supported.
     P.DEFINED_IN: _r(_ANY - {K.REPOSITORY, K.ARTIFACT}, {K.ARTIFACT}),
     # Component IMPLEMENTS Feature is a DM08 behaviour hypothesis, never more than inferred.
-    P.IMPLEMENTS: _r({K.SYMBOL, K.COMPONENT}, {K.ENDPOINT, K.INTERFACE, K.FEATURE}),
-    P.EXPOSES: _r({K.COMPONENT}, {K.INTERFACE, K.ENDPOINT}),
+    P.IMPLEMENTS: _r({K.SYMBOL, K.COMPONENT, K.PROGRAM}, {K.ENDPOINT, K.INTERFACE, K.FEATURE}),
+    P.EXPOSES: _r({K.COMPONENT, K.PROGRAM}, {K.INTERFACE, K.ENDPOINT}),
     P.CONSUMES: _r(_CODE | {K.AI_COMPONENT}, {K.INTERFACE, K.ENDPOINT, K.MODEL_ENDPOINT}),
-    P.CALLS: _r({K.SYMBOL}, {K.SYMBOL}),
-    P.DEPENDS_ON: _r(_CODE, {K.PACKAGE, K.COMPONENT, K.EXTERNAL_DEPENDENCY}),
+    P.CALLS: _r({K.SYMBOL, K.PROGRAM}, {K.SYMBOL, K.PROGRAM}),
+    P.DEPENDS_ON: _r(_CODE | _WORK, {K.PACKAGE, K.COMPONENT, K.EXTERNAL_DEPENDENCY, K.TASK, K.JOB, K.DATA_SCHEMA, K.PROGRAM}),
     P.PROVIDES: _r({K.EXTERNAL_DEPENDENCY}, {K.TECHNICAL_CAPABILITY}, weakest=EvidenceClass.E3),
-    P.READS_FROM: _r(_CODE, {K.TABLE, K.STORAGE_RESOURCE, K.DATA_SCHEMA}),
-    P.WRITES_TO: _r(_CODE, {K.TABLE, K.STORAGE_RESOURCE, K.DATA_SCHEMA}),
+    P.READS_FROM: _r(_CODE | _WORK, _DATA | {K.ML_MODEL}),
+    P.WRITES_TO: _r(_CODE | _WORK, _DATA),
     P.PUBLISHES_TO: _r(_CODE, {K.EVENT_TOPIC}),
     P.SUBSCRIBES_TO: _r(_CODE, {K.EVENT_TOPIC}),
     P.CONFIGURED_BY: _r({K.COMPONENT, K.DEPLOYMENT_UNIT, K.PACKAGE}, {K.ARTIFACT, K.CONFIG_KEY}),
-    P.REFERENCES_CONFIG: _r(_CODE | {K.DEPLOYMENT_UNIT, K.INFRASTRUCTURE_RESOURCE}, {K.CONFIG_KEY}),
+    P.REFERENCES_CONFIG: _r(_CODE | _WORK | {K.DEPLOYMENT_UNIT, K.INFRASTRUCTURE_RESOURCE}, {K.CONFIG_KEY}),
     P.MIGRATES: _r({K.MIGRATION}, {K.TABLE, K.FIELD, K.DATA_SCHEMA}),
     P.BUILT_BY: _r({K.COMPONENT, K.DEPLOYMENT_UNIT}, {K.BUILD_TARGET, K.PIPELINE}),
     P.DEPLOYED_AS: _r({K.COMPONENT}, {K.DEPLOYMENT_UNIT}),
-    P.DEPLOYED_TO: _r({K.DEPLOYMENT_UNIT}, {K.ENVIRONMENT, K.INFRASTRUCTURE_RESOURCE}),
-    P.TESTED_BY: _r(_CODE | {K.ENDPOINT}, {K.TEST}),
+    P.DEPLOYED_TO: _r({K.DEPLOYMENT_UNIT, K.JOB}, {K.ENVIRONMENT, K.INFRASTRUCTURE_RESOURCE}),
+    P.TESTED_BY: _r(_CODE | {K.ENDPOINT, K.DATASET}, {K.TEST}),
     P.OWNED_BY: _r(_ANY - {K.OWNER}, {K.OWNER}),
     # An alias names exactly one canonical entity: two targets for one alias is a conflict.
     P.ALIAS_OF: _r(_ANY, _ANY, functional=True),
+    # Data and ML work (spec §8.2).
+    P.RUNS: _r(_WORK | {K.NOTEBOOK}, {K.NOTEBOOK, K.ARTIFACT, K.PACKAGE, K.SYMBOL, K.JOB, K.PROGRAM}),
+    P.DERIVED_FROM: _r({K.DATASET, K.TABLE}, {K.DATASET, K.TABLE}),
+    P.PRODUCES: _r(_CODE | _WORK, {K.ML_MODEL}),
+    P.SERVES: _r({K.DEPLOYMENT_UNIT, K.COMPONENT}, {K.ML_MODEL}),
 }
 assert set(RELATIONS) == set(Predicate)
 FUNCTIONAL: frozenset[Predicate] = frozenset(p for p, schema in RELATIONS.items() if schema.functional)

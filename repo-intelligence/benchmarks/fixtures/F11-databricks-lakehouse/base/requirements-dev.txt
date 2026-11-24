@@ -1,0 +1,3 @@
+# development only
+pytest>=8
+databricks-connect>=15.1

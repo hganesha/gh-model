@@ -1,0 +1,11 @@
+$schema: https://azuremlschemas.azureedge.net/latest/commandJob.schema.json
+display_name: churn-train
+experiment_name: churn
+code: ..
+command: python -m churn.train --data ${{inputs.training_data}}
+inputs:
+  training_data:
+    type: uri_file
+    path: azureml:churn-raw:1
+environment: azureml:churn-env:3
+compute: azureml:cpu-cluster

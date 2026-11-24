@@ -28,6 +28,12 @@
         "Owner",
         "ExternalDependency",
         "TechnicalCapability",
+        "Job",
+        "Task",
+        "Dataset",
+        "Notebook",
+        "MLModel",
+        "Program",
         "Feature",
         "Requirement"
       ],

@@ -33,8 +33,12 @@ LANGUAGES = {
     ".py": "python", ".ts": "typescript", ".tsx": "typescript", ".js": "javascript", ".jsx": "javascript", ".mjs": "javascript", ".cjs": "javascript",
     ".toml": "toml", ".json": "json", ".yaml": "yaml", ".yml": "yaml", ".md": "markdown", ".sql": "sql", ".prisma": "prisma",
     ".java": "java", ".go": "go", ".tf": "terraform", ".rb": "ruby", ".sh": "shell", ".xml": "xml", ".ini": "ini",
+    # Data and ML work, and legacy platforms (spec §8.1).
+    ".ipynb": "jupyter", ".scala": "scala", ".r": "r", ".cfg": "ini",
+    ".cbl": "cobol", ".cob": "cobol", ".cobol": "cobol", ".cpy": "cobol", ".jcl": "jcl", ".prc": "jcl", ".proc": "jcl",
+    ".sas": "sas", ".cfm": "cfml", ".cfc": "cfml", ".bteq": "bteq", ".btq": "bteq", ".tpt": "tpt",
 }
-BASENAMES = {"Dockerfile": "dockerfile", "pyproject.toml": "pyproject", "package.json": "npm-manifest", "pom.xml": "maven-manifest", "go.mod": "go-manifest"}
+BASENAMES = {"Dockerfile": "dockerfile", "pyproject.toml": "pyproject", "package.json": "npm-manifest", "pom.xml": "maven-manifest", "go.mod": "go-manifest", "MLproject": "yaml"}
 
 
 def detect_language(path: str) -> str | None:

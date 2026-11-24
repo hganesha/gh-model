@@ -1,6 +1,6 @@
 import { expect, type Page } from "@playwright/test";
 
-export const PLANE_TITLES = ["Architecture", "Contracts", "Data", "AI integrations", "Tests", "Deployment"];
+export const PLANE_TITLES = ["Architecture", "Contracts", "Data", "Jobs", "AI integrations", "Tests", "Deployment"];
 
 /** Resolves once no request to the API proxy has been in flight for a moment. */
 export function apiSettled(page: Page): () => Promise<void> {

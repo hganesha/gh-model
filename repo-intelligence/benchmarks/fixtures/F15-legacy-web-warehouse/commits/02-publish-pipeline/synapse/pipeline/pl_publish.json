@@ -1,0 +1,26 @@
+{
+    "name": "pl_publish",
+    "properties": {
+        "activities": [
+            {
+                "name": "export",
+                "type": "Copy",
+                "typeProperties": {
+                    "source": {
+                        "type": "SqlDWSource",
+                        "sqlReaderQuery": "SELECT * FROM dbo.sales_agg"
+                    },
+                    "sink": {
+                        "type": "ParquetSink"
+                    }
+                },
+                "outputs": [
+                    {
+                        "referenceName": "ds_raw_sales",
+                        "type": "DatasetReference"
+                    }
+                ]
+            }
+        ]
+    }
+}

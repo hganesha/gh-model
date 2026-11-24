@@ -1,0 +1,11 @@
+       IDENTIFICATION DIVISION.
+       PROGRAM-ID. CUSTRPT.
+       DATA DIVISION.
+       WORKING-STORAGE SECTION.
+           COPY CUSTREC.
+       PROCEDURE DIVISION.
+           EXEC SQL
+               DECLARE C1 CURSOR FOR
+                 SELECT CUST_ID, CUST_NAME FROM CUSTOMER
+           END-EXEC.
+           GOBACK.

@@ -1,0 +1,1 @@
+{"message": "Fold customers into orders", "delete": ["analytics/models/staging/stg_customers.sql", "analytics/models/marts/dim_customers.sql"]}

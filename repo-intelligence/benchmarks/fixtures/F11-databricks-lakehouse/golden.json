@@ -1,0 +1,809 @@
+{
+ "fixture": "F11-databricks-lakehouse",
+ "description": "Databricks Asset Bundle: a scheduled job of notebook, Python-file and pipeline tasks, a DLT pipeline, Spark and %sql lineage, widgets and secrets as config keys, and a setup.py that replaces the weak declaration of requirements-dev.txt. 'since' names the milestone whose compiler must produce the item.",
+ "entities": [
+  {
+   "kind": "Package",
+   "natural_key": {
+    "ecosystem": "pypi",
+    "name": "lakehouse",
+    "manifest_dir": ""
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "Component",
+   "natural_key": {
+    "root": ""
+   },
+   "since": "M2",
+   "attributes": {
+    "component_kind": "data_pipeline"
+   }
+  },
+  {
+   "kind": "Job",
+   "natural_key": {
+    "framework": "databricks",
+    "name": "orders_daily"
+   },
+   "since": "M0",
+   "attributes": {
+    "kind": "job",
+    "schedule": "0 0 2 * * ?"
+   }
+  },
+  {
+   "kind": "Job",
+   "natural_key": {
+    "framework": "databricks",
+    "name": "orders_dlt"
+   },
+   "since": "M0",
+   "attributes": {
+    "kind": "pipeline"
+   }
+  },
+  {
+   "kind": "Task",
+   "natural_key": {
+    "framework": "databricks",
+    "job": "orders_daily",
+    "name": "ingest"
+   },
+   "since": "M0",
+   "attributes": {
+    "type": "notebook_task"
+   }
+  },
+  {
+   "kind": "Task",
+   "natural_key": {
+    "framework": "databricks",
+    "job": "orders_daily",
+    "name": "transform"
+   },
+   "since": "M0",
+   "attributes": {
+    "type": "spark_python_task"
+   }
+  },
+  {
+   "kind": "Task",
+   "natural_key": {
+    "framework": "databricks",
+    "job": "orders_daily",
+    "name": "refresh"
+   },
+   "since": "M0",
+   "attributes": {
+    "type": "pipeline_task"
+   }
+  },
+  {
+   "kind": "Notebook",
+   "natural_key": {
+    "path": "src/ingest_orders.py"
+   },
+   "since": "M0",
+   "attributes": {
+    "format": "databricks"
+   }
+  },
+  {
+   "kind": "Notebook",
+   "natural_key": {
+    "path": "src/common/config.py"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "Notebook",
+   "natural_key": {
+    "path": "src/dlt_orders.py"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "Dataset",
+   "natural_key": {
+    "name": "main.silver.orders"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "Dataset",
+   "natural_key": {
+    "name": "main.bronze.orders"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "Dataset",
+   "natural_key": {
+    "name": "main.ref.countries"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "Dataset",
+   "natural_key": {
+    "name": "main.gold.daily_revenue"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "Dataset",
+   "natural_key": {
+    "name": "main.gold.customers"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "Dataset",
+   "natural_key": {
+    "name": "abfss://landing@lakehousedata.dfs.core.windows.net/orders"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "Dataset",
+   "natural_key": {
+    "name": "{catalog}.bronze.orders"
+   },
+   "since": "M0",
+   "attributes": {
+    "parameterized": true
+   }
+  },
+  {
+   "kind": "Dataset",
+   "natural_key": {
+    "name": "/Volumes/main/landing/orders"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "Dataset",
+   "natural_key": {
+    "name": "orders_raw"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "Dataset",
+   "natural_key": {
+    "name": "orders_clean"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "ConfigKey",
+   "natural_key": {
+    "name": "catalog"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "ConfigKey",
+   "natural_key": {
+    "name": "lakehouse/landing-sas"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "Environment",
+   "natural_key": {
+    "name": "dev"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "Environment",
+   "natural_key": {
+    "name": "prod"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "ExternalDependency",
+   "natural_key": {
+    "ecosystem": "pypi",
+    "name": "pyspark"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "ExternalDependency",
+   "natural_key": {
+    "ecosystem": "pypi",
+    "name": "delta-spark"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "ExternalDependency",
+   "natural_key": {
+    "ecosystem": "pypi",
+    "name": "databricks-connect"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "ExternalDependency",
+   "natural_key": {
+    "ecosystem": "pypi",
+    "name": "pytest"
+   },
+   "since": "M0"
+  }
+ ],
+ "edges": [
+  {
+   "subject": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "databricks",
+     "name": "orders_daily"
+    }
+   },
+   "predicate": "CONTAINS",
+   "object": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "databricks",
+     "job": "orders_daily",
+     "name": "ingest"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "databricks",
+     "job": "orders_daily",
+     "name": "transform"
+    }
+   },
+   "predicate": "DEPENDS_ON",
+   "object": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "databricks",
+     "job": "orders_daily",
+     "name": "ingest"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "databricks",
+     "job": "orders_daily",
+     "name": "refresh"
+    }
+   },
+   "predicate": "DEPENDS_ON",
+   "object": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "databricks",
+     "job": "orders_daily",
+     "name": "transform"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "databricks",
+     "job": "orders_daily",
+     "name": "ingest"
+    }
+   },
+   "predicate": "RUNS",
+   "object": {
+    "kind": "Notebook",
+    "natural_key": {
+     "path": "src/ingest_orders.py"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "databricks",
+     "job": "orders_daily",
+     "name": "transform"
+    }
+   },
+   "predicate": "RUNS",
+   "object": {
+    "kind": "Artifact",
+    "natural_key": {
+     "path": "src/transform.py"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "databricks",
+     "job": "orders_daily",
+     "name": "refresh"
+    }
+   },
+   "predicate": "RUNS",
+   "object": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "databricks",
+     "name": "orders_dlt"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "databricks",
+     "name": "orders_dlt"
+    }
+   },
+   "predicate": "RUNS",
+   "object": {
+    "kind": "Notebook",
+    "natural_key": {
+     "path": "src/dlt_orders.py"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Notebook",
+    "natural_key": {
+     "path": "src/ingest_orders.py"
+    }
+   },
+   "predicate": "RUNS",
+   "object": {
+    "kind": "Notebook",
+    "natural_key": {
+     "path": "src/common/config.py"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Notebook",
+    "natural_key": {
+     "path": "src/ingest_orders.py"
+    }
+   },
+   "predicate": "READS_FROM",
+   "object": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "abfss://landing@lakehousedata.dfs.core.windows.net/orders"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Notebook",
+    "natural_key": {
+     "path": "src/ingest_orders.py"
+    }
+   },
+   "predicate": "WRITES_TO",
+   "object": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "{catalog}.bronze.orders"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Notebook",
+    "natural_key": {
+     "path": "src/ingest_orders.py"
+    }
+   },
+   "predicate": "READS_FROM",
+   "object": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "main.bronze.orders"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Notebook",
+    "natural_key": {
+     "path": "src/ingest_orders.py"
+    }
+   },
+   "predicate": "READS_FROM",
+   "object": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "main.ref.countries"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Notebook",
+    "natural_key": {
+     "path": "src/ingest_orders.py"
+    }
+   },
+   "predicate": "WRITES_TO",
+   "object": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "main.silver.orders"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Notebook",
+    "natural_key": {
+     "path": "src/ingest_orders.py"
+    }
+   },
+   "predicate": "REFERENCES_CONFIG",
+   "object": {
+    "kind": "ConfigKey",
+    "natural_key": {
+     "name": "lakehouse/landing-sas"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Notebook",
+    "natural_key": {
+     "path": "src/ingest_orders.py"
+    }
+   },
+   "predicate": "REFERENCES_CONFIG",
+   "object": {
+    "kind": "ConfigKey",
+    "natural_key": {
+     "name": "catalog"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Package",
+    "natural_key": {
+     "ecosystem": "pypi",
+     "name": "lakehouse",
+     "manifest_dir": ""
+    }
+   },
+   "predicate": "READS_FROM",
+   "object": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "main.silver.orders"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Package",
+    "natural_key": {
+     "ecosystem": "pypi",
+     "name": "lakehouse",
+     "manifest_dir": ""
+    }
+   },
+   "predicate": "WRITES_TO",
+   "object": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "main.gold.daily_revenue"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Package",
+    "natural_key": {
+     "ecosystem": "pypi",
+     "name": "lakehouse",
+     "manifest_dir": ""
+    }
+   },
+   "predicate": "WRITES_TO",
+   "object": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "main.gold.customers"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Notebook",
+    "natural_key": {
+     "path": "src/dlt_orders.py"
+    }
+   },
+   "predicate": "READS_FROM",
+   "object": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "/Volumes/main/landing/orders"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Notebook",
+    "natural_key": {
+     "path": "src/dlt_orders.py"
+    }
+   },
+   "predicate": "READS_FROM",
+   "object": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "orders_raw"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Notebook",
+    "natural_key": {
+     "path": "src/dlt_orders.py"
+    }
+   },
+   "predicate": "WRITES_TO",
+   "object": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "orders_clean"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Package",
+    "natural_key": {
+     "ecosystem": "pypi",
+     "name": "lakehouse",
+     "manifest_dir": ""
+    }
+   },
+   "predicate": "DEPENDS_ON",
+   "object": {
+    "kind": "ExternalDependency",
+    "natural_key": {
+     "ecosystem": "pypi",
+     "name": "pytest"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Package",
+    "natural_key": {
+     "ecosystem": "pypi",
+     "name": "lakehouse",
+     "manifest_dir": ""
+    }
+   },
+   "predicate": "DEPENDS_ON",
+   "object": {
+    "kind": "ExternalDependency",
+    "natural_key": {
+     "ecosystem": "pypi",
+     "name": "databricks-connect"
+    }
+   },
+   "since": "M0"
+  },
+  {
+   "subject": {
+    "kind": "Component",
+    "natural_key": {
+     "root": ""
+    }
+   },
+   "predicate": "WRITES_TO",
+   "object": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "main.silver.orders"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Component",
+    "natural_key": {
+     "root": ""
+    }
+   },
+   "predicate": "WRITES_TO",
+   "object": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "main.gold.daily_revenue"
+    }
+   },
+   "since": "M2"
+  }
+ ],
+ "absent_entities": [
+  {
+   "kind": "Package",
+   "natural_key": {
+    "ecosystem": "pypi",
+    "name": "root",
+    "manifest_dir": ""
+   },
+   "why": "requirements-dev.txt names no package; setup.py's declaration replaces its inferred one"
+  },
+  {
+   "kind": "Dataset",
+   "natural_key": {
+    "name": "main.gold.{extra_table}"
+   },
+   "why": "assigned to a variable that nothing reads"
+  },
+  {
+   "kind": "Notebook",
+   "natural_key": {
+    "path": "src/transform.py"
+   },
+   "why": "a Python file without the notebook header is not a notebook"
+  }
+ ],
+ "exclusions": [],
+ "forbidden_kinds": [],
+ "expected_unknowns": [
+  {
+   "since": "M2",
+   "detail": "src/transform.py reads a table named by spark.conf at run time: counted as unresolved in data_lineage, not guessed"
+  }
+ ],
+ "expected_conflicts": [],
+ "commits": [
+  {
+   "dir": "01-train-task",
+   "expect": "A training notebook, run by a new task, registers a model",
+   "added_entities": [
+    {
+     "kind": "Notebook",
+     "natural_key": {
+      "path": "src/train_churn.ipynb"
+     },
+     "since": "M0"
+    },
+    {
+     "kind": "Task",
+     "natural_key": {
+      "framework": "databricks",
+      "job": "orders_daily",
+      "name": "train"
+     },
+     "since": "M0"
+    },
+    {
+     "kind": "MLModel",
+     "natural_key": {
+      "name": "main.ml.churn"
+     },
+     "since": "M0"
+    }
+   ],
+   "removed_entities": []
+  },
+  {
+   "dir": "02-serving-endpoint",
+   "expect": "A serving endpoint serves the registered model",
+   "added_entities": [
+    {
+     "kind": "DeploymentUnit",
+     "natural_key": {
+      "kind": "databricks.ServingEndpoint",
+      "namespace": "databricks",
+      "name": "churn_endpoint"
+     },
+     "since": "M0"
+    }
+   ],
+   "removed_entities": []
+  },
+  {
+   "dir": "03-retire-dlt",
+   "expect": "The DLT pipeline, its notebook, the task that ran it and the datasets only it named are gone",
+   "added_entities": [],
+   "removed_entities": [
+    {
+     "kind": "Job",
+     "natural_key": {
+      "framework": "databricks",
+      "name": "orders_dlt"
+     },
+     "since": "M0"
+    },
+    {
+     "kind": "Notebook",
+     "natural_key": {
+      "path": "src/dlt_orders.py"
+     },
+     "since": "M0"
+    },
+    {
+     "kind": "Task",
+     "natural_key": {
+      "framework": "databricks",
+      "job": "orders_daily",
+      "name": "refresh"
+     },
+     "since": "M0"
+    },
+    {
+     "kind": "Dataset",
+     "natural_key": {
+      "name": "orders_raw"
+     },
+     "since": "M0"
+    },
+    {
+     "kind": "Dataset",
+     "natural_key": {
+      "name": "orders_clean"
+     },
+     "since": "M0"
+    },
+    {
+     "kind": "Dataset",
+     "natural_key": {
+      "name": "/Volumes/main/landing/orders"
+     },
+     "since": "M0"
+    }
+   ]
+  }
+ ],
+ "decision_cases": []
+}

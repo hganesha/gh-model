@@ -1,0 +1,1 @@
+{"message": "Stop tracking data with DVC", "delete": ["dvc.yaml", "data/raw.csv.dvc"]}

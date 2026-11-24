@@ -1,0 +1,12 @@
+{
+    "name": "sales_by_region",
+    "properties": {
+        "type": "SqlQuery",
+        "content": {
+            "query": "INSERT INTO rpt.sales_by_region SELECT region, SUM(amount) FROM dbo.sales_agg GROUP BY region",
+            "metadata": {
+                "language": "sql"
+            }
+        }
+    }
+}

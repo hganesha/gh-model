@@ -1,0 +1,1 @@
+{"message": "Retire the DLT pipeline", "delete": ["src/dlt_orders.py"]}

@@ -13,16 +13,17 @@ from typing import Any
 from repo_intel.compile.buildgraph import Step, StepInputs
 from repo_intel.compile.contracts import DecisionSpec
 from repo_intel.decisions.runner import RuleResult, verifier
+from repo_intel.extractors.manifests import effective_declarations
 
-SUPPORTED_ECOSYSTEMS = {"pypi", "npm"}
+SUPPORTED_ECOSYSTEMS = {"pypi", "npm", "dbt"}
 
 SPEC = DecisionSpec.model_validate({
-    "id": "dm.component-kind", "version": "1.1.0", "scope": "unit",
+    "id": "dm.component-kind", "version": "1.2.0", "scope": "unit",
     "input_schema": "ComponentKindFeatures.v1", "output_schema": "ComponentKindDecision.v1",
-    "labels": ["service", "frontend_app", "worker", "cli", "library", "tooling", "unknown"],
-    "feature_sources": ["repo.inventory", "repo.dependencies.extract", "repo.interfaces.extract", "repo.deployment.map"],
+    "labels": ["service", "frontend_app", "worker", "cli", "library", "tooling", "data_pipeline", "ml_training", "unknown"],
+    "feature_sources": ["repo.inventory", "repo.dependencies.extract", "repo.interfaces.extract", "repo.deployment.map", "repo.data.extract"],
     "strategy": [
-        {"kind": "rules", "ruleset": "component-kind-rules-v2"},
+        {"kind": "rules", "ruleset": "component-kind-rules-v4"},
         # Thresholds are placeholders until calibrated on the benchmark corpus (spec §7.4).
         {"kind": "decision_model", "when": "ambiguous", "model_ref": "decision-default", "criteria_ref": "criteria/component-kind-v1", "accept_threshold": 0.80, "min_margin": 0.25, "permutations": 2},
     ],
@@ -41,6 +42,14 @@ def verify_kind(f: Mapping[str, Any], label: str) -> str:
         return "rejected"  # it serves requests: shipped, not tooling
     if label == "service" and e.get("http_endpoints_declared_in_code", 0) > 0:
         return "confirmed"
+    if label == "data_pipeline":
+        if not (e.get("dataset_reads_and_writes", 0) or e.get("batch_jobs_declared", 0) or f.get("ecosystem") == "dbt"):
+            return "rejected"  # moves no named data and declares no batch work
+        return "confirmed" if e.get("dataset_reads_and_writes", 0) and (e.get("batch_jobs_declared", 0) or e.get("depends_on_data_processing_framework")) else "unchecked"
+    if label == "ml_training":
+        if not (e.get("model_training_calls_in_code") or e.get("registers_or_logs_models")):
+            return "rejected"  # trains nothing
+        return "confirmed" if e.get("depends_on_ml_training_library") else "unchecked"
     return "unchecked"
 
 CRITERIA = {
@@ -51,23 +60,28 @@ CRITERIA = {
     "cli": "A program run from a command line for a bounded task, then exits.",
     "library": "Code meant to be imported by other packages; it is not run on its own.",
     "tooling": "Build, release, workspace or developer tooling that is not part of the shipped product.",
+    "data_pipeline": "Batch or streaming data work: jobs, notebooks or SQL transformations that read datasets and write others, run on a schedule or by an orchestrator.",
+    "ml_training": "Code that trains, fine-tunes or evaluates machine learning models and records or registers the models it produces.",
 }
 
 
 def _features(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, Any]:
     unit: dict[str, Any] = inputs["unit"]
     summaries: list[dict[str, Any]] = inputs["summaries"]
-    declared = sorted((o for s in summaries for o in s["observations"] if o["kind"] == "package_declaration" and (o["payload"]["manifest_dir"] or ".") == unit["name"]), key=lambda o: (o["payload"]["ecosystem"], o["payload"]["name"]))
+    standing, _ = effective_declarations([(s["path"], o) for s in summaries for o in s["observations"] if o["kind"] == "package_declaration"])
+    declared = sorted((o for _, o in standing if (o["payload"]["manifest_dir"] or ".") == unit["name"]), key=lambda o: (o["payload"]["ecosystem"], o["payload"]["name"]))
     if not declared:
         return {"component": None}
     pkg = declared[0]
     eco = pkg["payload"]["ecosystem"]
     evidence = {pkg["evidence"]["id"]}
     deps: dict[str, str] = {}
+    # A conda environment's conda packages count as the Python package's own dependencies.
+    ecosystems = {eco, "conda"} if eco == "pypi" else {eco}
     for s in summaries:
         for o in s["observations"]:
-            if o["kind"] == "dependency_declaration" and o["payload"]["ecosystem"] == eco and o["payload"]["scope"] == "runtime":
-                deps[o["payload"]["name"]] = o["evidence"]["id"]
+            if o["kind"] == "dependency_declaration" and o["payload"]["ecosystem"] in ecosystems and o["payload"]["scope"] == "runtime":
+                deps.setdefault(o["payload"]["name"], o["evidence"]["id"])
 
     roles = inputs["component_roles"].get(eco, {})
 
@@ -77,6 +91,16 @@ def _features(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, Any]:
         return found
 
     server, frontend, consumer = having("server"), having("frontend"), having("consumer")
+    data_libs, ml_libs = having("data_processing"), having("ml_training")
+    entities = [o for s in summaries for o in s["observations"] if o["kind"] == "entity"]
+    relations = [o for s in summaries for o in s["observations"] if o["kind"] == "relation"]
+    jobs = [o for o in entities if o["payload"]["kind"] == "Job"]
+    notebooks = [o for o in entities if o["payload"]["kind"] == "Notebook"]
+    data_moves = [o for o in relations if o["payload"]["predicate"] in ("READS_FROM", "WRITES_TO") and isinstance(o["payload"]["object"], dict) and o["payload"]["object"]["kind"] in ("Dataset", "Table")]
+    produced = [o for o in relations if o["payload"]["predicate"] == "PRODUCES"]
+    signals = sorted({sig for s in summaries for o in s["observations"] if o["kind"] == "ml_signal" for sig in o["payload"]["signals"]})
+    signal_evidence = [o for s in summaries for o in s["observations"] if o["kind"] == "ml_signal"]
+    evidence.update(o["evidence"]["id"] for o in (jobs + notebooks + data_moves + produced + signal_evidence)[:20])
     endpoints = [o for s in summaries for o in s["observations"] if o["kind"] == "entity" and o["payload"]["kind"] == "Endpoint"]
     evidence.update(o["evidence"]["id"] for o in endpoints[:5])
     builds = [o for s in summaries for o in s["observations"] if o["kind"] == "entity" and o["payload"]["kind"] == "BuildTarget"]
@@ -102,13 +126,21 @@ def _features(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, Any]:
             "declares_importable_library_entry_point": bool(manifest.get("has_library_entry")),
             "declares_start_script": bool(manifest.get("has_start_script")),
             "is_workspace_root_that_only_lists_other_packages": bool(manifest.get("is_workspace_root")),
+            "is_dbt_project": eco == "dbt",
+            "batch_jobs_declared": len(jobs),
+            "notebooks": len(notebooks),
+            "dataset_reads_and_writes": len(data_moves),
+            "depends_on_data_processing_framework": bool(data_libs),
+            "depends_on_ml_training_library": bool(ml_libs),
+            "model_training_calls_in_code": "fit" in signals,
+            "registers_or_logs_models": bool(produced) or "mlflow_log_model" in signals,
         },
-        "named_dependencies": {"http_server_frameworks": server, "web_frontend_frameworks": frontend, "message_consumer_libraries": consumer},
+        "named_dependencies": {"http_server_frameworks": server, "web_frontend_frameworks": frontend, "message_consumer_libraries": consumer, "data_processing_frameworks": data_libs, "ml_training_libraries": ml_libs},
     }
     return {"component": {"features": features, "evidence_ids": sorted(evidence), "package": {k: pkg["payload"][k] for k in ("ecosystem", "name", "manifest_dir")}}}
 
 
-FEATURES_BUILD = Step("features.build", "0.3.0", _features)
+FEATURES_BUILD = Step("features.build", "0.4.0", _features)
 
 
 def _imports(summaries: list[dict[str, Any]], ecosystem: str, names: list[str]) -> list[str]:
@@ -149,12 +181,20 @@ FEATURES_REEXTRACT = Step("features.reextract", "0.1.0", _reextract)
 
 
 def rules(f: Mapping[str, Any]) -> RuleResult:
-    """component-kind-rules-v3. Each branch needs positive evidence; otherwise it is ambiguous."""
+    """component-kind-rules-v4. Each branch needs positive evidence; otherwise it is ambiguous.
+
+    v4 adds data and ML work: a dbt project is a data pipeline; code that trains
+    models with a training library is ML training; batch jobs or a data framework
+    that read and write named datasets are a data pipeline. Serving requests still
+    wins (a model-serving app is a service), and training wins over the data it reads.
+    """
     e = f["evidence"]
     if f["ecosystem"] not in SUPPORTED_ECOSYSTEMS:
         return RuleResult("insufficient_evidence", reason="language_inventory_only")
     if e["is_workspace_root_that_only_lists_other_packages"]:
         return RuleResult("resolved", "tooling")
+    if e.get("is_dbt_project"):
+        return RuleResult("resolved", "data_pipeline")
     serves = e["http_endpoints_declared_in_code"] > 0 or (e["depends_on_http_server_framework"] and e["has_container_build_with_start_command"])
     if e["depends_on_web_frontend_framework"] and e["depends_on_message_queue_or_job_consumer_library"]:
         t = f.get("targeted")
@@ -167,6 +207,14 @@ def rules(f: Mapping[str, Any]) -> RuleResult:
         return RuleResult("resolved", "frontend_app")
     if serves:
         return RuleResult("resolved", "service")
+    trains = e.get("model_training_calls_in_code") or e.get("registers_or_logs_models")
+    if trains and e.get("depends_on_ml_training_library"):
+        return RuleResult("resolved", "ml_training")
+    moves_data = e.get("dataset_reads_and_writes", 0) > 0
+    if moves_data and (e.get("batch_jobs_declared", 0) > 0 or e.get("depends_on_data_processing_framework") or e.get("notebooks", 0) > 0):
+        return RuleResult("resolved", "data_pipeline")
+    if trains or (e.get("depends_on_ml_training_library") and e.get("notebooks", 0) > 0):
+        return RuleResult("ambiguous", candidates=("ml_training", "data_pipeline", "library"))
     if e["depends_on_message_queue_or_job_consumer_library"]:
         return RuleResult("resolved", "worker")
     if e["declares_command_line_entry_point"]:

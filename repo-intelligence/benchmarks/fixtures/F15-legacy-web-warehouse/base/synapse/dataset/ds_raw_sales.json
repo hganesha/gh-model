@@ -1,0 +1,17 @@
+{
+    "name": "ds_raw_sales",
+    "properties": {
+        "type": "Parquet",
+        "linkedServiceName": {
+            "referenceName": "ls_lake",
+            "type": "LinkedServiceReference"
+        },
+        "typeProperties": {
+            "location": {
+                "type": "AzureBlobFSLocation",
+                "fileSystem": "raw",
+                "folderPath": "sales"
+            }
+        }
+    }
+}

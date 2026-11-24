@@ -47,8 +47,9 @@ from repo_intel.storage.store import ObjectStore
 PLANES = {
     "architecture": ["Repository", "Package", "Component", "Symbol", "ExternalDependency"],
     "contracts": ["Interface", "Endpoint", "EventTopic"],
-    "data": ["DataSchema", "Table", "Field", "Migration", "StorageResource"],
-    "ai": ["AIComponent", "ModelEndpoint", "PromptArtifact"],
+    "data": ["DataSchema", "Table", "Dataset", "Field", "Migration", "StorageResource"],
+    "jobs": ["Job", "Task", "Notebook", "Program"],
+    "ai": ["AIComponent", "ModelEndpoint", "PromptArtifact", "MLModel"],
     "tests": ["Test"],
     "deployment": ["BuildTarget", "Pipeline", "DeploymentUnit", "Environment", "InfrastructureResource", "ConfigKey"],
 }

@@ -1,0 +1,84 @@
+{
+    "name": "pl_daily_sales",
+    "properties": {
+        "activities": [
+            {
+                "name": "copy_raw",
+                "type": "Copy",
+                "inputs": [
+                    {
+                        "referenceName": "ds_raw_sales",
+                        "type": "DatasetReference"
+                    }
+                ],
+                "outputs": [
+                    {
+                        "referenceName": "ds_stg_sales",
+                        "type": "DatasetReference"
+                    }
+                ],
+                "typeProperties": {
+                    "source": {
+                        "type": "ParquetSource"
+                    },
+                    "sink": {
+                        "type": "SqlDWSink"
+                    }
+                }
+            },
+            {
+                "name": "clean",
+                "type": "SynapseNotebook",
+                "dependsOn": [
+                    {
+                        "activity": "copy_raw",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    }
+                ],
+                "typeProperties": {
+                    "notebook": {
+                        "referenceName": "nb_clean_sales",
+                        "type": "NotebookReference"
+                    }
+                }
+            },
+            {
+                "name": "aggregate",
+                "type": "SqlPoolStoredProcedure",
+                "dependsOn": [
+                    {
+                        "activity": "clean",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    }
+                ],
+                "typeProperties": {
+                    "storedProcedureName": "[dbo].[usp_aggregate_sales]"
+                }
+            },
+            {
+                "name": "publish",
+                "type": "ExecutePipeline",
+                "dependsOn": [
+                    {
+                        "activity": "aggregate",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    }
+                ],
+                "typeProperties": {
+                    "pipeline": {
+                        "referenceName": "pl_publish",
+                        "type": "PipelineReference"
+                    },
+                    "waitOnCompletion": true
+                }
+            }
+        ],
+        "annotations": []
+    }
+}
