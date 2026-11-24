@@ -282,3 +282,12 @@ def test_deployment_is_declared_never_observed(tmp_path):
             assert e["evidence_ids"] and all(evidence[i]["blob_sha256"] in blobs for i in e["evidence_ids"])
     deployed_as = [a for a in deployment if a["predicate"] == "DEPLOYED_AS"]
     assert all((a["epistemic_status"], a["resolution"]) == ("inferred", "candidate") for a in deployed_as), "a name match is a lead"
+
+
+def test_toolchain_records_extractor_versions_and_the_step_executor(store, f01):
+    from repo_intel.extractors import EXTRACTORS
+    repo, shas = f01
+    m = compile_commit(store, repo, REPO_ID, shas[0]).manifest
+    toolchain = store.get_json(m.toolchain_hash)
+    assert set(toolchain["extractors"]) == {e.id for e in EXTRACTORS}
+    assert toolchain["step_executor"] in ("sandbox-exec", "bwrap", "inprocess")

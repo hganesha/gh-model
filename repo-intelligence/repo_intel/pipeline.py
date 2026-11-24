@@ -45,7 +45,24 @@ class PublishGateError(RuntimeError):
         self.problems = problems
 
 
-def _toolchain_manifest(gateway: Gateway | None, catalogue_hash: str, policy: CompileSettings | None = None) -> dict[str, Any]:
+def _extractor_versions() -> dict[str, str]:
+    """{extractor id: version}, so deltas can attribute `extractor_change` (from area C's runtime)."""
+    from . import extractors
+    versions = getattr(extractors, "extractor_versions", None)
+    return versions() if versions else {e.id: getattr(e, "version", "") for e in extractors.EXTRACTORS}
+
+
+def _executor_name(runner: StepRunner | None = None) -> str:
+    """Which step executor ran: `sandbox-exec`, `bwrap` or `inprocess`."""
+    executor = getattr(runner, "executor", None) if runner is not None else None
+    if executor is not None:
+        return executor.name
+    from . import buildgraph
+    default = getattr(buildgraph, "default_executor_name", None)
+    return default() if default else "inprocess"
+
+
+def _toolchain_manifest(gateway: Gateway | None, catalogue_hash: str, policy: CompileSettings | None = None, step_executor: str | None = None) -> dict[str, Any]:
     """Workspace-wide: a repository's own egress narrowing is not part of it (it is part of
     each decision's key instead), so one repository's policy never changes another's toolchain."""
     steps = {s.name: s.version for s in [FILE_EXTRACT, dm_component.FEATURES_BUILD, dm_component.FEATURES_REEXTRACT, dm_linking.TABLE_REQUESTS, dm_behavior.FEATURES_BUILD, *STEPS]}
@@ -55,6 +72,8 @@ def _toolchain_manifest(gateway: Gateway | None, catalogue_hash: str, policy: Co
         "rkp_schema": RKP_SCHEMA, "policy_version": POLICY_VERSION, "secret_scan": secrets.SCAN_VERSION,
         "steps": steps, "decision_specs": specs, "models": gateway.identifiers() if gateway else {},
         "model_pins": pins_hash(),
+        "extractors": _extractor_versions(),
+        "step_executor": step_executor or _executor_name(),
         "capability_catalogue_hash": catalogue_hash,
         "compile_settings": policy.model_copy(update={"repository_egress": {}}).row() if policy else None,
         "allowed_providers": sorted(gateway.allowed_providers) if gateway else [],
@@ -214,7 +233,7 @@ def stage_compile(store: ObjectStore, repository_id: str, path_manifest_digest: 
     if problems:
         raise PublishGateError(problems)
 
-    tc = store.put_json(_toolchain_manifest(toolchain_gateway, catalogue_ref.digest, policy))
+    tc = store.put_json(_toolchain_manifest(toolchain_gateway, catalogue_ref.digest, policy, _executor_name(runner)))
     provenance_hash = digest({"toolchain_hash": tc, "ledger_entries_ref": ledger_ref, "override_set_hash": overrides.set_hash})
     manifest = Manifest(
         rkp_schema=RKP_SCHEMA, tenant_id=store.tenant_id, repository_id=repository_id, commit_sha=pm["commit_sha"],
@@ -229,6 +248,8 @@ def stage_compile(store: ObjectStore, repository_id: str, path_manifest_digest: 
     store.index_put("rkp", manifest.rkp_hash, manifest_digest)
     store.index_put("snapshots", snapshot_key(repository_id, pm["commit_sha"], tc), manifest_digest)
     store.index_put("latest_snapshot", make_id("repo_commit", repository_id, pm["commit_sha"]), manifest_digest)
+    if hasattr(runner, "flush_metrics"):
+        runner.flush_metrics()
     tell("published", rkp_hash=manifest.rkp_hash, steps_executed=runner.stats.total_executed, steps_reused=sum(runner.stats.hits.values()))
     return CompileResult(manifest, manifest_digest, runner.stats)
 
