@@ -216,6 +216,59 @@
         }
       },
       "since": "M1"
+    },
+    {
+      "subject": {
+        "kind": "Component",
+        "natural_key": {
+          "root": ""
+        }
+      },
+      "predicate": "CONFIGURED_BY",
+      "object": {
+        "kind": "ConfigKey",
+        "natural_key": {
+          "name": "DATABASE_URL"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "DeploymentUnit",
+        "natural_key": {
+          "kind": "k8s.Deployment",
+          "namespace": "prod",
+          "name": "status-api"
+        }
+      },
+      "predicate": "BUILT_BY",
+      "object": {
+        "kind": "Pipeline",
+        "natural_key": {
+          "path": ".github/workflows/deploy.yml",
+          "name": "deploy"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "DeploymentUnit",
+        "natural_key": {
+          "kind": "k8s.Deployment",
+          "namespace": "prod",
+          "name": "status-api"
+        }
+      },
+      "predicate": "BUILT_BY",
+      "object": {
+        "kind": "BuildTarget",
+        "natural_key": {
+          "path": "Dockerfile"
+        }
+      },
+      "since": "M2"
     }
   ],
   "absent_entities": [

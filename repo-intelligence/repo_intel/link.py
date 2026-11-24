@@ -24,10 +24,11 @@ from collections.abc import Mapping
 from typing import Any
 
 from .buildgraph import Step, StepInputs
-from .contracts import CoverageEntry
+from .contracts import Assertion, CoverageEntry
 from .extractors.base import ref
+from .extractors.infrastructure import image_repository
 from .extractors.manifests import normalize_pypi
-from .ontology import EntityKind, EvidenceClass, Predicate
+from .ontology import AssertionKind, EntityKind, EpistemicStatus, EvidenceClass, Predicate
 from .planning import pick_config, probe
 
 ROOT_UNIT = "@root"
@@ -588,6 +589,18 @@ class _Linker:
             pkg = ref(EntityKind.PACKAGE, r["package"], r["package"]["name"])
             self.emit("entity", r["manifest"], {**pkg, "attributes": {"resolved_dependencies": r["versions"], "lockfile": r["lockfile"]}}, r["evidence"], EvidenceClass.E1)
 
+    # -- aliases (GI-016)
+
+    def link_model_aliases(self) -> None:
+        """An ORM model class and the table it maps are one thing under two names."""
+        for path in sorted(self.files):
+            for t in _entities(self.files[path], "Table"):
+                attrs = t["payload"]["attributes"]
+                model = attrs.get("model")
+                if model and model in self.symbols[path]:
+                    table = ref(EntityKind.TABLE, t["payload"]["natural_key"], t["payload"]["name"])
+                    self.relate(path, self.symbol_ref(path, model), Predicate.ALIAS_OF, table, [self.symbols[path][model]["evidence"], t["evidence"]], {"basis": "orm_model", "orm": attrs.get("orm")}, evidence_class=EvidenceClass.E2)
+
     # -- SQL migrations (GI-010)
 
     def link_migrations(self) -> None:
@@ -678,6 +691,7 @@ def _unit_link(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, Any]:
     linker.link_ai()
     linker.link_resolved()
     linker.link_migrations()
+    linker.link_model_aliases()
 
     imp = linker.imports
     total_imports = sum(imp.values())
@@ -695,7 +709,7 @@ def _unit_link(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, Any]:
     return {"unit": unit["name"], "observations": linker.out, "unknowns": linker.unknowns, "coverage": coverage, "exports": linker.exports()}
 
 
-UNIT_LINK = Step("unit.link", "0.9.0", _unit_link)
+UNIT_LINK = Step("unit.link", "0.10.0", _unit_link)
 
 
 # ---------------------------------------------------------------- repo-level
@@ -715,3 +729,80 @@ def match_call(call_path: str, route: str) -> bool:
     call = normalize_route(call_path.replace("{}", "", 1) if call_path.startswith("{}") else call_path)
     target = normalize_route(route)
     return target != "/" and (call == target or call.endswith(target))
+
+
+def link_repo(shards: Mapping[str, Mapping[str, Any]], g: Any) -> list[dict[str, Any]]:
+    """Repo-level links between code and deployment (GI-016), added to the global shard `g`.
+
+    CONFIGURED_BY  a component (or package) is configured by a ConfigKey its code reads
+                   when a deployment unit also supplies that key: the key is the contract
+                   between the two. Names only; values never enter the graph.
+    BUILT_BY       a deployment unit runs an image a workflow builds (same image
+                   repository): BUILT_BY that Pipeline and the Dockerfile it builds from.
+                   A lead, not proof: candidate, E4.
+    ALIAS_OF       deployment units that run the same image repository (candidate, E4).
+    """
+    ents = {e["id"]: e for s in shards.values() for e in s["entities"]}
+    ev = {e["id"]: e for s in shards.values() for e in s["evidence"]}
+    component_of = {(e["natural_key"]["root"] or "."): e["id"] for e in ents.values() if e["kind"] == EntityKind.COMPONENT}
+    package_of = {(e["natural_key"]["manifest_dir"] or "."): e["id"] for e in sorted(ents.values(), key=lambda e: e["id"]) if e["kind"] == EntityKind.PACKAGE}
+
+    def cite(ids: list[str]) -> list[str]:
+        return [g.cite(ev[i]) for i in ids[:1] if i in ev]
+
+    def assert_(subject: str, predicate: Predicate, obj: str, evidence: list[str], qualifiers: dict[str, Any], strong: bool) -> None:
+        g.assertion(Assertion.make(subject, predicate, obj, qualifiers=qualifiers, assertion_kind=AssertionKind.DERIVED_RELATION,
+                                   epistemic_status=EpistemicStatus.SUPPORTED if strong else EpistemicStatus.INFERRED,
+                                   evidence_class=EvidenceClass.E3 if strong else EvidenceClass.E4, evidence_ids=sorted(set(evidence)), resolution="exact" if strong else "candidate"))
+
+    coverage: list[dict[str, Any]] = []
+    # CONFIGURED_BY
+    code: dict[str, list[tuple[str, str, list[str]]]] = {}  # key -> [(unit, subject, evidence ids)]
+    supplied: dict[str, list[tuple[str, list[str]]]] = {}  # key -> [(deployment unit, evidence ids)]
+    for unit in sorted(shards):
+        for a in shards[unit]["assertions"]:
+            if a["predicate"] != Predicate.REFERENCES_CONFIG or a["subject"] not in ents:
+                continue
+            kind = ents[a["subject"]]["kind"]
+            if kind == EntityKind.DEPLOYMENT_UNIT:
+                supplied.setdefault(a["object"], []).append((a["subject"], a["evidence_ids"]))
+            elif kind != EntityKind.INFRASTRUCTURE_RESOURCE:
+                code.setdefault(a["object"], []).append((unit, a["subject"], a["evidence_ids"]))
+    for key in sorted(code):
+        units = supplied.get(key, [])
+        if not units:
+            continue
+        by = sorted({ents[d]["name"] for d, _ in units})
+        deploy_ev = [i for _, ids in sorted(units) for i in cite(ids)]
+        for unit, subject, ids in sorted(code[key]):
+            owner = component_of.get(unit) or (subject if ents[subject]["kind"] in (EntityKind.PACKAGE, EntityKind.COMPONENT) else package_of.get(unit))
+            if owner is not None:
+                assert_(owner, Predicate.CONFIGURED_BY, key, cite(ids) + deploy_ev, {"basis": "shared_config_key", "supplied_by": by}, True)
+    if code and supplied:
+        coverage.append(CoverageEntry(domain="config_supply", scope="@repo", numerator=sum(1 for k in code if k in supplied), denominator=len(code),
+                                      detail={"unsupplied": sorted(ents[k]["name"] for k in code if k not in supplied)[:50]}).row())
+
+    # images: deployment units, the pipelines that build them, and each other
+    units = sorted((e for e in ents.values() if e["kind"] == EntityKind.DEPLOYMENT_UNIT and e["evidence_ids"]), key=lambda e: e["id"])
+    runs: dict[str, list[str]] = {}  # image repository -> deployment unit ids
+    for du in units:
+        images = list(du["attributes"].get("images") or []) + ([du["attributes"]["image"]] if du["attributes"].get("image") else [])
+        for repo in dict.fromkeys(image_repository(i) for i in images if isinstance(i, str) and i):
+            runs.setdefault(repo, []).append(du["id"])
+    targets = {e["natural_key"]["path"]: e for e in ents.values() if e["kind"] == EntityKind.BUILD_TARGET}
+    built: set[str] = {a["subject"] for s in shards.values() for a in s["assertions"] if a["predicate"] == Predicate.BUILT_BY}
+    for p in sorted((e for e in ents.values() if e["kind"] == EntityKind.PIPELINE), key=lambda e: e["id"]):
+        for b in p["attributes"].get("image_builds") or []:
+            for du in runs.get(b["image"], []):
+                built.add(du)
+                evidence = cite(ents[du]["evidence_ids"]) + cite(p["evidence_ids"])
+                assert_(du, Predicate.BUILT_BY, p["id"], evidence, {"basis": "same_image", "image": b["image"]}, False)
+                target = targets.get(b.get("dockerfile") or "")
+                if target is not None:
+                    assert_(du, Predicate.BUILT_BY, target["id"], evidence + cite(target["evidence_ids"]), {"basis": "same_image", "image": b["image"], "pipeline": p["name"]}, False)
+    for repo, ids in sorted(runs.items()):
+        for other in ids[1:]:
+            assert_(other, Predicate.ALIAS_OF, ids[0], cite(ents[other]["evidence_ids"]) + cite(ents[ids[0]]["evidence_ids"]), {"basis": "same_image", "image": repo}, False)
+    if units:
+        coverage.append(CoverageEntry(domain="build_provenance", scope="@repo", numerator=sum(1 for du in units if du["id"] in built), denominator=len(units)).row())
+    return coverage

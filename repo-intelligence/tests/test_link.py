@@ -391,3 +391,47 @@ def test_f02_prisma_migrations_migrate_the_schema(graphs):
     assert after["edges"][("20261120090000_order_note", "MIGRATES", "note")]["qualifiers"] == {"op": "add_column", "column": "note", "type": "TEXT"}
     assert after["edges"][("orders", "CONTAINS", "note")]["evidence_class"] in ("E1", "E2")
     assert ("20261120090000_order_note", "MIGRATES", "orders") in after["edges"] and not any(k[0] == "20261101090000_init" for k in before["edges"])
+
+
+def test_f06_configuration_and_build_links_between_code_and_deployment(graphs):
+    """GI-016 / acceptance test 4: code and deployment meet at a ConfigKey name and an image repository."""
+    g = graphs("F06-iac-heavy")[0]
+    configured = g["edges"][("status-api", "CONFIGURED_BY", "DATABASE_URL")]
+    assert (configured["resolution"], configured["evidence_class"]) == ("exact", "E3")
+    assert configured["qualifiers"] == {"basis": "shared_config_key", "supplied_by": ["api", "status-api"]}
+    assert len(configured["evidence_ids"]) == 3, "the code read and each deployment unit that supplies the key"
+    built = g["edges"][("status-api", "BUILT_BY", "deploy")]
+    assert (built["resolution"], built["evidence_class"], built["epistemic_status"]) == ("candidate", "E4", "inferred")
+    assert g["edges"][("status-api", "BUILT_BY", "Dockerfile")]["qualifiers"]["pipeline"] == "deploy"
+    assert g["edges"][("api", "BUILT_BY", "Dockerfile")]["resolution"] == "exact"  # compose `build: .`
+    assert g["coverage"][("build_provenance", "@repo")]["numerator"] == 2  # db runs a public image nobody here builds
+    assert g["coverage"][("config_supply", "@repo")]["numerator"] == 1
+    names = {e["name"] for e in g["entities"].values()}
+    assert "status-db" not in names and not any("postgresql://" in repr(a["qualifiers"]) for a in g["edges"].values())
+
+
+def test_f01_orm_model_class_is_an_alias_of_its_table(graphs):
+    a = graphs("F01-python-api")[0]["edges"][("Customer", "ALIAS_OF", "customers")]
+    assert (a["resolution"], a["evidence_class"], a["qualifiers"]) == ("exact", "E2", {"basis": "orm_model", "orm": "sqlalchemy"})
+
+
+def test_deployment_units_running_one_image_are_candidate_aliases():
+    from repo_intel.link import link_repo
+
+    class G:
+        def __init__(self):
+            self.assertions = []
+
+        def cite(self, ev):
+            return ev["id"]
+
+        def assertion(self, a):
+            self.assertions.append(a)
+
+    ev = [_ev(i) for i in range(3)]
+    du = lambda i, name, attrs: {"id": f"du{i}", "kind": "DeploymentUnit", "name": name, "natural_key": {"name": name}, "attributes": attrs, "evidence_ids": [ev[i]["id"]]}
+    shards = {"@root": {"entities": [du(0, "api", {"image": "ghcr.io/acme/api:1"}), du(1, "api-prod", {"images": ["ghcr.io/acme/api:2", "busybox"]}), du(2, "db", {"image": "postgres:17"})], "assertions": [], "evidence": ev}}
+    g = G()
+    coverage = link_repo(shards, g)
+    assert [(a.subject, a.predicate, a.object, a.qualifiers, a.resolution) for a in g.assertions] == [("du1", "ALIAS_OF", "du0", {"basis": "same_image", "image": "ghcr.io/acme/api"}, "candidate")]
+    assert [(c["domain"], c["numerator"], c["denominator"]) for c in coverage] == [("build_provenance", 0, 3)]

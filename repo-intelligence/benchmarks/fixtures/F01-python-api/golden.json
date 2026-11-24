@@ -247,6 +247,24 @@
         }
       },
       "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Symbol",
+        "natural_key": {
+          "package": "orders-api",
+          "qualified_name": "app.models.Customer"
+        }
+      },
+      "predicate": "ALIAS_OF",
+      "object": {
+        "kind": "Table",
+        "natural_key": {
+          "datastore": "default",
+          "name": "customers"
+        }
+      },
+      "since": "M2"
     }
   ],
   "absent_entities": [

@@ -19,7 +19,7 @@ from .contracts import Assertion, Conflict, CoverageEntry, DecisionResult, Entit
 from .decisions import dependency as dm_dependency
 from .decisions.component import TOPOLOGY_SPEC, topology_rules
 from .hashing import digest
-from .link import match_call, normalize_route
+from .link import link_repo, match_call, normalize_route
 from .ontology import AssertionKind, EntityKind, EpistemicStatus, EvidenceClass, Predicate
 from .planning import plan_units
 
@@ -411,6 +411,7 @@ def _repo_compile(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, An
                 row = Unknown.make(du["id"], "DEPLOYED_AS", "unknown", f"{len(hits)} components match this deployment unit by name", "deployment_refs:@repo").row()
                 g.unknowns[row["id"]] = row
     coverage.append(CoverageEntry(domain="deployment_refs", scope="@repo", numerator=deploy_resolved, denominator=deploy_refs).row())
+    coverage += link_repo(shards, g)  # GI-016: CONFIGURED_BY, image BUILT_BY and ALIAS_OF
 
     dependency_decisions, dependency_coverage = _dependency_capabilities(
         repo, shards, g, inputs["capability_catalogue"],
@@ -444,7 +445,7 @@ def _repo_compile(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, An
     return {"global_shard": g.rows(), "coverage": coverage, "conflicts": conflicts, "decisions": [topology, *dependency_decisions], "workspace_exports": workspace_exports}
 
 
-REPO_COMPILE = Step("repo.compile", "0.5.0", _repo_compile)
+REPO_COMPILE = Step("repo.compile", "0.6.0", _repo_compile)
 
 from .link import UNIT_LINK  # noqa: E402
 
