@@ -23,7 +23,7 @@ _SHA = re.compile(r"^[0-9a-f]{40}$")
 
 
 class GitHubError(RuntimeError):
-    pass
+    oauth_error: str | None = None  # the OAuth `error` code a refusal carried, when there was one
 
 
 @dataclass(frozen=True)

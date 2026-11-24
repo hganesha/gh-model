@@ -8,6 +8,7 @@ refs, webhooks) is `workflows.py` plus M3 work and replaces this later.
 
 from __future__ import annotations
 
+import shutil
 import threading
 import time
 import uuid
@@ -120,8 +121,8 @@ class Service:
         cfg, _ = self._connection(connection_id)
         if cfg is None or cfg.mode != "github_device":
             raise KeyError(connection_id)
-        if cfg.credential_ref and not cfg.credential_ref.startswith("keychain:"):
-            raise github.GitHubError("Device sign-in requires an OS keychain reference.")
+        if cfg.credential_ref and not cfg.credential_ref.startswith(f"{self.secrets.writable}:"):
+            raise github.GitHubError(f"Device sign-in stores its token in {'Key Vault' if self.secrets.writable == 'vault' else 'the OS keychain'}: leave the credential reference empty or use a {self.secrets.writable}: reference.")
         state = connectors.begin_device(cfg)
         state["configuration"] = cfg
         with self.device_lock:
@@ -334,6 +335,8 @@ class Service:
             "available_models": gateway.describe() if gateway else {},
             "repositories": repositories, "checks": checks, "last_webhook": hooks,
             "author": author[0] if author else None, "updated_at": author[1] if author else None,
+            # The GitHub CLI connection only works where `gh` is installed (not in the container image).
+            "github_cli": shutil.which("gh") is not None, "credential_store": self.secrets.writable,
             "extractors": [{
                 "id": e.id, "version": e.version,
                 "tier": "inventory" if e.id in {"manifest.maven", "manifest.go"} else ("A" if e.id in {"python.source", "typescript.source", "contract.openapi"} else "B"),

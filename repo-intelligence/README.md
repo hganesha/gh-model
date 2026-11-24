@@ -10,7 +10,7 @@ Repository knowledge compiler for the GitHub Intelligence Engine. Design: `../Gi
 | GI-002 fixtures | Done: F01–F10 with goldens tagged by milestone. Items due by M1 are checked on every test run |
 | GI-003 walking skeleton | Done: compile, PostgreSQL projection, query API, Temporal workflow |
 | GI-004 build-graph runtime | Step cache and declared-input enforcement at the API level. OS-level sandboxing of steps not started |
-| GI-005 GitHub ingestion | GitHub CLI, App, token, and device-flow connectors are available. GitLab and plain Git use the same ingestion interface. The GitHub CLI, GitHub REST token and plain Git over HTTPS connectors were checked live against a private GitHub repository (describe, resolve, fetch), and plain Git against a public GitLab repository; a missing ref and an invalid token are refused. Not checked live: GitHub App, device sign-in, GitLab token and push webhooks, which need their own credentials. The Explorer uses in-process compile jobs |
+| GI-005 GitHub ingestion | GitHub CLI, App, token, and device-flow connectors are available. GitLab and plain Git use the same ingestion interface. The GitHub CLI, GitHub REST token and plain Git over HTTPS connectors were checked live against a private GitHub repository (describe, resolve, fetch), and plain Git against a public GitLab repository; a missing ref and an invalid token are refused. GitHub device sign-in was checked live on the Azure deployment: token stored in Key Vault, repositories listed, and a private repository fetched and compiled. Not checked live: GitHub App, GitLab token and push webhooks, which need their own credentials. The Explorer uses in-process compile jobs |
 | GI-006 secret scan | Done: scan at admission, masked evidence endpoint, publish gate rejects leaked values. No blob-cache TTL yet |
 | GI-007 manifests and unit planning | Done: pyproject, package.json, pom.xml, go.mod; workspace dependencies link to sibling packages |
 | GI-008 Python | Extraction and linking done: FastAPI routes, SQLAlchemy tables and fields, Alembic migrations, config keys; imports, symbols, route-to-handler, ORM call sites to tables, tests to symbols (candidate), Kafka topics published and subscribed to (literal topics and topics passed as a string constant; a topic computed at run time is recorded as an unknown). Not done: router prefixes across files, call graph, method-level symbols beyond ORM use |
@@ -102,28 +102,54 @@ After changing a contract, regenerate the schemas:
 `deploy/azure/deploy.sh` puts the API and the Explorer on Azure with a small footprint. Run it from `repo-intelligence/`, signed in with `az login`:
 
 ~~~bash
-deploy/azure/deploy.sh -g rkp --providers-file ../.rkp-store/providers.env --github-token-from-gh
+deploy/azure/deploy.sh -g rkp --entra --providers-file ../.rkp-store/providers.env --github-token-from-gh
 ~~~
 
 | Piece | Azure resource | Size |
 |---|---|---|
-| Explorer | Container App, public HTTPS, IP allow-list, scales to zero | 0.25 vCPU, 0.5 GiB |
+| Explorer | Container App, public HTTPS, Entra/OIDC sign-in and/or IP allow-list, scales to zero | 0.25 vCPU, 0.5 GiB |
 | API | Container App, internal ingress only, one replica (compile jobs run in-process) | 0.5 vCPU, 1 GiB |
 | Projection | PostgreSQL Flexible Server, reachable from Azure services only, TLS | Burstable B1ms, 32 GB |
 | Object store, git mirrors, `providers.env` | Azure Files share mounted at `/data` | Standard LRS |
 | Images | Container Registry | Basic |
-| Identity | One user-assigned managed identity: pulls images, signs in to Azure model deployments | |
+| Identity | One user-assigned managed identity: pulls images, signs in to Azure model deployments and Key Vault | |
+| Credentials | Key Vault (RBAC only): tokens from GitHub device sign-in | Standard |
 
 Expect roughly USD 40–60 a month, mostly the API replica and PostgreSQL. Model calls are billed separately by use.
 
-- **Access.** The Explorer has no sign-in of its own, so by default only your current public IP may open it (the script asks a public IP-lookup service once). Add addresses with `--allow-ip CIDR`, or open it with `--allow-any`. The API is never exposed outside the environment.
-- **Secrets.** Every run generates new PostgreSQL passwords and a new Explorer-to-API token and passes them as Container App secrets; nothing is written locally. Data is kept across runs.
+- **Access.** With `--entra` (or `--oidc-issuer`, see [Sign-in](#sign-in)) people sign in and the Explorer is open to the internet unless you also pass `--allow-ip`. Without sign-in, only your current public IP may open it (the script asks a public IP-lookup service once); add addresses with `--allow-ip CIDR`, or open it with `--allow-any`. The API is never exposed outside the environment.
+- **Entra app registration.** `--entra` creates or updates `<prefix>-explorer-<group>` in your current tenant: redirect URIs `<url>/auth/callback` and `<url>/auth/signed-out`, app roles `RKP.Admin` and `RKP.Viewer`, user assignment required, and `RKP.Admin` for you. Give others access under Enterprise applications → the app → Users and groups. `az group delete` does not remove the registration; delete it with `az ad app delete`.
+- **Secrets.** Every run generates new PostgreSQL passwords, a new Explorer-to-API token and, with sign-in, a new client secret and session key (everyone signs in again), and passes them as Container App secrets; nothing is written locally. Data is kept across runs.
 - **Models.** `--providers-file` uploads a `providers.env` (the same file used locally). `azure-cli` sign-in becomes `managed-identity`, and the identity is granted "Cognitive Services User" on each Azure AI resource named in the file.
-- **Repositories.** The container has no `gh`. `--github-token-from-gh` mounts your GitHub token for the API; in Settings, add a GitHub token connection with credential reference `managed:github-token`. Local paths cannot be compiled in the hosted API.
+- **Repositories.** The container has no `gh`, so the GitHub CLI connection is hidden there. Sign in to GitHub from the web app instead:
+  1. Create a GitHub OAuth App once (GitHub → Settings → Developer settings → **OAuth Apps** → New, not GitHub Apps). Use the Explorer URL as both homepage and callback URL; device sign-in never redirects, but the form requires one. Tick **Enable Device Flow** and click **Update application** to save it. The client ID is not a secret, and no client secret is needed.
+  2. In the Explorer, Settings → Connections → Add connection: Authentication **GitHub device sign-in**, the client ID, credential reference empty. **Save settings** (the sign-in buttons stay disabled until the connection is saved).
+  3. **Start device sign-in**, open the GitHub link and enter the code. GitHub asks for the `repo` scope: read and write access to your repositories, the narrowest OAuth scope that covers private ones. Click **Grant** next to any organization whose repositories you want to compile, then **Authorize**.
+  4. **Check authorization**. RKP asks GitHub at most every 5 seconds, so a check right after approving can still say pending; check again. The token is stored in the deployment's Key Vault by the app's identity and never shown again. **Test connection** should then say *connected* and count your repositories.
+
+  If GitHub refuses, Settings says why: *Enable Device Flow* is not saved on the app, or the client ID is wrong. Only the app's identity can read the vault, so `az keyvault secret list` with your own account is refused; that is intended. To sign in again, or to change account, run **Start device sign-in** again and the stored token is replaced.
+
+  For read-only access, a **GitHub App** connection with only *Contents: Read* and *Metadata: Read* also works. On Azure, its private key must go into the Key Vault: grant yourself *Key Vault Secrets Officer* on the vault first, then use a `vault:<name>` reference. This has not been checked live. Alternatively `--github-token-from-gh` mounts your current `gh` token for a GitHub token connection with credential reference `managed:github-token`. Local paths cannot be compiled in the hosted API.
 - **Images** are built in the registry (`az acr build`), so local Docker is not needed. `Dockerfile` and `explorer/Dockerfile` also build locally.
-- **Remove everything** with `az group delete -n rkp`.
+- **Region.** Everything goes to `-l` (default eastus2). If PostgreSQL fails with `SkuNotAvailable`, the small tier is not offered to your subscription there; pass `--db-location centralus` (or another region) for the database only.
+- **Remove everything** with `az group delete -n rkp`. Key Vault keeps a deleted vault for 7 days; to redeploy into the same group sooner, purge it first (`az keyvault purge -n <vault name>`).
 
 The API runs against the hosted database through `RKP_DATABASE_URL` (owner connection, used to apply the schema) and `RKP_APP_DB_PASSWORD` (the restricted role it then connects as, so row-level security still applies). `RKP_API_HOST=0.0.0.0` makes it listen inside the container.
+
+## Sign-in
+
+The Explorer can require sign-in with Microsoft Entra ID or any OpenID Connect provider. It is the only public part of RKP, so the login lives there. It uses the authorization code flow with PKCE, a nonce and a signed state cookie. The ID token is verified against the provider's published keys, issuer, audience and lifetime. The session is an HttpOnly, HMAC-signed cookie (8 hours). The Explorer's proxy then tells the internal API who is acting (`X-RKP-Actor`) and with which role (`X-RKP-Role`). The browser cannot set these headers, and the API accepts them only together with the Explorer's token. Reviews and map edits are recorded under the user's sign-in name instead of `local-admin`.
+
+| Variable (Explorer) | |
+|---|---|
+| `RKP_ENTRA_TENANT_ID` | Entra tenant; sets the issuer to `https://login.microsoftonline.com/<tenant>/v2.0` and the user id to tenant + object id |
+| `RKP_OIDC_ISSUER` | any other OIDC issuer (https) |
+| `RKP_OIDC_CLIENT_ID`, `RKP_OIDC_CLIENT_SECRET` | the app registration |
+| `RKP_PUBLIC_URL` | the Explorer's public origin; register `<url>/auth/callback` and `<url>/auth/signed-out` |
+| `RKP_SESSION_SECRET` | at least 32 characters |
+| `RKP_OIDC_ADMIN_ROLES` | optional comma-separated app roles (Entra `roles` claim) or group IDs (`groups`) that may change things; everyone else is read-only. Empty: every signed-in user can |
+
+With neither issuer variable set, sign-in is off and nothing changes locally. A half-configured sign-in refuses every request rather than run open. Read-only users can browse everything. Connecting or compiling repositories, editing the map, reviewing placements and opening Settings return 403. For Entra, prefer app roles over groups: a user in many groups gets a group-overage reference instead of the list.
 
 ## Layout
 
@@ -179,7 +205,7 @@ GitHub CLI remains available by default. Settings also supports GitHub App, toke
 .venv/bin/python -m keyring set repo-intelligence github-read
 ~~~
 
-Use `keychain:github-read` in the credential reference field. On a hosted single-administrator instance, mount the secret-manager values as files under `RKP_MANAGED_SECRET_DIR` and use `managed:<name>`. For SSH, set up the host key for the API’s operating-system user. For GitHub device sign-in, enable device flow on the OAuth application and enter its client ID in Settings. For an App, provide the App ID, installation ID, private key reference, and webhook secret reference.
+Use `keychain:github-read` in the credential reference field. On a hosted single-administrator instance, mount the secret-manager values as files under `RKP_MANAGED_SECRET_DIR` and use `managed:<name>`. For SSH, set up the host key for the API’s operating-system user. For GitHub device sign-in, enable device flow on the OAuth application and enter its client ID in Settings; leave the credential reference empty and the token goes to the OS keychain, or to Key Vault (`vault:`) when `RKP_KEY_VAULT_URL` is set, as on Azure (see [Deploy to Azure](#deploy-to-azure)). For an App, provide the App ID, installation ID, private key reference, and webhook secret reference.
 
 Webhooks use `/v1/webhooks/<connection-id>`. Set the repository’s trigger to **On push** and specify its tracked refs. The local API binds to loopback. A provider needs a reachable HTTPS endpoint for live delivery. The local development token represents one workspace administrator. Sharing service credentials with additional users requires per-principal repository authorization under GI-022.
 

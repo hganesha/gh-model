@@ -50,11 +50,11 @@
 .business-depends a { color: var(--green); text-underline-offset: 3px; }
 .business-empty { font-size: 12px; color: var(--faint); border: 1px dashed var(--line-strong); border-radius: 8px; padding: .5rem; text-align: center; }
 .business-subjects { min-width: 0; }
-.business-subject { min-width: 0; padding: .55rem .6rem; border: 1px solid var(--line); border-radius: 8px; display: grid; gap: .35rem; background: var(--paper); }
+.business-subject { min-width: 0; padding: .55rem .6rem; border: 1px solid var(--line); border-radius: 8px; display: grid; grid-template-columns: minmax(0, 1fr); gap: .35rem; background: var(--paper); }
 .business-subject.is-ai { border-style: dashed; }
 .business-subject[draggable="true"] { cursor: grab; }
 .business-subject-meta { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: .25rem; min-width: 0; }
-.business-subject-meta span { font-size: .8rem; opacity: .75; }
+.business-subject-meta span { font-size: .8rem; opacity: .75; min-width: 0; overflow-wrap: anywhere; }
 .business-subject .badge { justify-self: start; }
 .business-subject p { margin: 0; }
 .business-subject-controls { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; min-width: 0; }

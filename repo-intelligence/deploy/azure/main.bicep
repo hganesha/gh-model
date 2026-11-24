@@ -1,9 +1,10 @@
 // RKP on Azure, small footprint.
 //
-//   Explorer (Container App, public, IP allow-list, scales to zero)
+//   Explorer (Container App, public, optional Entra/OIDC sign-in and IP allow-list, scales to zero)
 //     -> API (Container App, internal only, one replica)
 //          -> PostgreSQL Flexible Server (Burstable B1ms)
 //          -> Azure Files share mounted at /data (object store, git mirrors, providers.env)
+//          -> Key Vault (GitHub device sign-in tokens)
 //   One user-assigned identity pulls images from ACR and signs in to Azure model deployments.
 //
 // Deployed twice by deploy.sh: first with deployApps=false (infrastructure, so images
@@ -16,6 +17,8 @@ targetScope = 'resourceGroup'
 @maxLength(8)
 param prefix string = 'rkp'
 param location string = resourceGroup().location
+@description('Region for PostgreSQL; defaults to location. Burstable servers are sometimes not offered to a subscription in a region.')
+param postgresLocation string = location
 
 @description('Create the two container apps. False on the first pass, before images exist.')
 param deployApps bool = false
@@ -38,6 +41,18 @@ param apiToken string
 @description('Optional GitHub token, mounted for the API as /secrets/github-token (credential reference managed:github-token).')
 param githubToken string = ''
 
+@description('Sign-in for the Explorer: an Entra tenant ID (sets the issuer), or any OIDC issuer URL. Both empty: no sign-in, and the IP allow-list is the only protection.')
+param entraTenantId string = ''
+param oidcIssuer string = ''
+param oidcClientId string = ''
+@secure()
+param oidcClientSecret string = ''
+@secure()
+@description('Signs Explorer session cookies. deploy.sh generates a new one on every run, which signs everyone out.')
+param sessionSecret string = ''
+@description('Comma-separated app roles or group IDs that may change things; everyone else signs in read-only.')
+param oidcAdminRoles string = ''
+
 param apiCpu string = '0.5'
 param apiMemory string = '1Gi'
 
@@ -49,12 +64,14 @@ var names = {
   storage: toLower(take('${prefix}st${suffix}', 24))
   share: 'rkp-data'
   postgres: '${prefix}-pg-${suffix}'
+  vault: take('${prefix}kv${suffix}', 24)
   environment: '${prefix}-env'
   api: '${prefix}-api'
   explorer: '${prefix}-explorer'
 }
 var postgresAdmin = 'rkpadmin'
 var acrPullRole = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')
+var vaultSecretsOfficerRole = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b86a8fe4-44ce-4948-aee5-eccb2c155cd7')
 
 resource identity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
   name: names.identity
@@ -104,9 +121,32 @@ resource share 'Microsoft.Storage/storageAccounts/fileServices/shares@2023-05-01
   properties: { shareQuota: 100 }
 }
 
+// Credentials the app obtains itself (GitHub device sign-in). Access is by role only;
+// the app's identity may read and write secrets, nothing else.
+resource vault 'Microsoft.KeyVault/vaults@2023-07-01' = {
+  name: names.vault
+  location: location
+  properties: {
+    tenantId: subscription().tenantId
+    sku: { family: 'A', name: 'standard' }
+    enableRbacAuthorization: true
+    softDeleteRetentionInDays: 7
+  }
+}
+
+resource vaultSecrets 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(vault.id, identity.id, vaultSecretsOfficerRole)
+  scope: vault
+  properties: {
+    roleDefinitionId: vaultSecretsOfficerRole
+    principalId: identity.properties.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
 resource postgres 'Microsoft.DBforPostgreSQL/flexibleServers@2022-12-01' = {
   name: names.postgres
-  location: location
+  location: postgresLocation
   sku: {
     name: 'Standard_B1ms'
     tier: 'Burstable'
@@ -169,6 +209,9 @@ var registryLogin = [
   }
 ]
 var hasGithubToken = !empty(githubToken)
+var signIn = !empty(entraTenantId) || !empty(oidcIssuer)
+// Known before the Explorer exists, so the app registration's redirect URIs can be set first.
+var explorerUrl = 'https://${names.explorer}.${environment.properties.defaultDomain}'
 
 resource api 'Microsoft.App/containerApps@2024-03-01' = if (deployApps) {
   name: names.api
@@ -213,6 +256,7 @@ resource api 'Microsoft.App/containerApps@2024-03-01' = if (deployApps) {
             { name: 'RKP_DATA_DIR', value: '/data' }
             { name: 'RKP_MANAGED_SECRET_DIR', value: '/secrets' }
             { name: 'AZURE_CLIENT_ID', value: identity.properties.clientId }
+            { name: 'RKP_KEY_VAULT_URL', value: vault.properties.vaultUri }
           ]
           volumeMounts: concat([ { volumeName: 'data', mountPath: '/data' } ], hasGithubToken ? [ { volumeName: 'secrets', mountPath: '/secrets' } ] : [])
           probes: [
@@ -246,7 +290,7 @@ resource api 'Microsoft.App/containerApps@2024-03-01' = if (deployApps) {
       ] : [])
     }
   }
-  dependsOn: [ acrPull, postgresFromAzure ]
+  dependsOn: [ acrPull, postgresFromAzure, vaultSecrets ]
 }
 
 resource explorer 'Microsoft.App/containerApps@2024-03-01' = if (deployApps) {
@@ -272,7 +316,10 @@ resource explorer 'Microsoft.App/containerApps@2024-03-01' = if (deployApps) {
         }]
       }
       registries: registryLogin
-      secrets: [ { name: 'api-token', value: apiToken } ]
+      secrets: concat([ { name: 'api-token', value: apiToken } ], signIn ? [
+        { name: 'oidc-client-secret', value: oidcClientSecret }
+        { name: 'session-secret', value: sessionSecret }
+      ] : [])
     }
     template: {
       containers: [
@@ -283,10 +330,17 @@ resource explorer 'Microsoft.App/containerApps@2024-03-01' = if (deployApps) {
             cpu: json('0.25')
             memory: '0.5Gi'
           }
-          env: [
+          env: concat([
             { name: 'RKP_API_URL', value: 'http://${names.api}' }
             { name: 'RKP_DEV_TOKEN', secretRef: 'api-token' }
-          ]
+          ], signIn ? [
+            { name: empty(entraTenantId) ? 'RKP_OIDC_ISSUER' : 'RKP_ENTRA_TENANT_ID', value: empty(entraTenantId) ? oidcIssuer : entraTenantId }
+            { name: 'RKP_OIDC_CLIENT_ID', value: oidcClientId }
+            { name: 'RKP_OIDC_CLIENT_SECRET', secretRef: 'oidc-client-secret' }
+            { name: 'RKP_SESSION_SECRET', secretRef: 'session-secret' }
+            { name: 'RKP_PUBLIC_URL', value: explorerUrl }
+            { name: 'RKP_OIDC_ADMIN_ROLES', value: oidcAdminRoles }
+          ] : [])
         }
       ]
       scale: {
@@ -304,4 +358,5 @@ output storageAccount string = storage.name
 output shareName string = names.share
 output identityPrincipalId string = identity.properties.principalId
 output postgresServer string = postgres.name
-output explorerUrl string = deployApps ? 'https://${explorer!.properties.configuration.ingress.fqdn}' : ''
+output vaultName string = vault.name
+output explorerUrl string = explorerUrl

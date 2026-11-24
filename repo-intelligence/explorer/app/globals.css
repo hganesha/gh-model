@@ -659,3 +659,9 @@ button.neighbour:hover { background: var(--green-soft); }
 .commit-main .compile-time { flex-basis: 100%; font-size: 11px; }
 .commit-row.is-nested .compile-time { flex-basis: auto; }
 .diff-label { flex: 0 1 auto; min-width: 0; max-width: min(46ch, 100%); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); font-size: 11px; color: var(--muted); }
+
+/* Signed-in user (only when sign-in is configured) */
+.account { display: flex; align-items: center; gap: 6px; min-width: 0; flex-shrink: 1; }
+.account form { display: contents; }
+.account-name { font-size: 13px; color: var(--ink-2); max-width: 16ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 640px) { .account-name { display: none; } }

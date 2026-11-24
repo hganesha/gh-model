@@ -7,6 +7,7 @@ principals, GitHub permission checks and path scopes are GI-022.
 
 
 import hmac
+import re
 from typing import Annotated, Any
 
 import asyncio
@@ -49,6 +50,9 @@ class QueryRequest(BaseModel):
         return self
 
 
+ACTOR = re.compile(r"[\x20-\x7e]{1,200}")
+
+
 def _error(status: int, code: str, message: str, retryable: bool = False) -> JSONResponse:
     return JSONResponse({"code": code, "message": message, "retryable": retryable, "details": {}}, status_code=status)
 
@@ -64,9 +68,21 @@ def create_app(conninfo: str, tenant_id: str, dev_token: str | None, store: Obje
 
     Tenant = Annotated[str, Depends(principal_tenant)]
 
-    # The only configured principal in the local deployment owns this workspace.
-    def administrator(tenant: Tenant) -> tuple[str, str]:
-        return tenant, "local-admin"
+    # The token holder is the Explorer. With sign-in on it names the signed-in user and
+    # their role; without, the one local principal owns the workspace. Only callers that
+    # already hold the token can set these headers, and the Explorer builds them itself.
+    def administrator(
+        tenant: Tenant,
+        x_rkp_actor: Annotated[str | None, Header()] = None,
+        x_rkp_role: Annotated[str | None, Header()] = None,
+    ) -> tuple[str, str]:
+        if x_rkp_actor is None:
+            return tenant, "local-admin"
+        if not ACTOR.fullmatch(x_rkp_actor):
+            raise HTTPException(400, "the acting user is not valid")
+        if x_rkp_role != "admin":
+            raise HTTPException(403, "You are signed in read-only; ask an administrator to give you the RKP admin role.")
+        return tenant, x_rkp_actor
 
     Admin = Annotated[tuple[str, str], Depends(administrator)]
 
@@ -77,7 +93,7 @@ def create_app(conninfo: str, tenant_id: str, dev_token: str | None, store: Obje
 
     @app.exception_handler(HTTPException)
     async def _http(_: Request, exc: HTTPException) -> JSONResponse:
-        return _error(exc.status_code, {401: "unauthenticated", 404: "not_found"}.get(exc.status_code, "error"), str(exc.detail))
+        return _error(exc.status_code, {401: "unauthenticated", 403: "forbidden", 404: "not_found"}.get(exc.status_code, "error"), str(exc.detail))
 
     @app.get("/v1/repositories/{repository_id:path}/rkp")
     def get_rkp(repository_id: str, commit_sha: str, tenant: Tenant, toolchain_hash: str | None = None) -> dict[str, Any]:
@@ -139,7 +155,7 @@ def create_app(conninfo: str, tenant_id: str, dev_token: str | None, store: Obje
         return {"repositories": svc().repositories(), "planes": PLANES}
 
     @app.post("/v1/repositories")
-    def connect_repository(body: ConnectRequest, tenant: Tenant) -> dict[str, Any]:
+    def connect_repository(body: ConnectRequest, admin: Admin) -> dict[str, Any]:
         try:
             return public(svc().connect(body.url, body.ref, body.local_path, body.connection_id))
         except KeyError as exc:
@@ -148,7 +164,7 @@ def create_app(conninfo: str, tenant_id: str, dev_token: str | None, store: Obje
             raise HTTPException(400, str(exc)) from exc
 
     @app.post("/v1/repositories/{repository_id:path}/compilations")
-    def compile_repository(repository_id: str, body: ConnectRequest, tenant: Tenant) -> dict[str, Any]:
+    def compile_repository(repository_id: str, body: ConnectRequest, admin: Admin) -> dict[str, Any]:
         try:
             return public(svc().recompile(repository_id, body.ref))
         except KeyError as exc:

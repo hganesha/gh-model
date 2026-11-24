@@ -87,6 +87,27 @@ def test_optimistic_map_write_and_tenant_isolation(workspace):
             business_map.save(conn, "tenant-a", business_map.BusinessMap(id="second"), "intruder")
 
 
+def test_signed_in_user_is_recorded_and_viewers_cannot_change_anything(workspace):
+    """With sign-in on, the Explorer names the user (X-RKP-Actor) and their role (X-RKP-Role)."""
+    client, _, _ = workspace
+    as_user = lambda role, actor="ada@example.test": AUTH | {"X-RKP-Actor": actor, "X-RKP-Role": role}
+    body = {"expected_version": 0, "title": "Value chain"}
+    saved = client.post("/v1/business-maps", headers=as_user("admin"), json=body)
+    assert saved.status_code == 200 and saved.json()["map"]["author"] == "ada@example.test"
+
+    for role in ("viewer", "", "owner"):
+        refused = client.post("/v1/business-maps", headers=as_user(role), json={**body, "expected_version": 1})
+        assert refused.status_code == 403 and refused.json()["code"] == "forbidden"
+    for path in ("repositories", "repositories/x/compilations"):
+        assert client.post(f"/v1/{path}", headers=as_user("viewer"), json={"local_path": "/nowhere"}).status_code == 403
+    assert client.get("/v1/settings", headers=as_user("viewer")).status_code == 403
+    # Viewers still read everything else.
+    assert client.get("/v1/business-maps", headers=as_user("viewer")).status_code == 200
+    # Actor names are printable and bounded; without the token the headers mean nothing.
+    assert client.post("/v1/business-maps", headers=as_user("admin", "x" * 201), json={**body, "expected_version": 1}).status_code == 400
+    assert client.post("/v1/business-maps", headers={"X-RKP-Actor": "ada@example.test", "X-RKP-Role": "admin"}, json=body).status_code == 401
+
+
 def test_placement_confirmation_and_rkp_independence(workspace, tmp_path):
     client, service, model = workspace
     repo = tmp_path / "fixture-repo"
@@ -407,6 +428,75 @@ def test_github_token_connection_browse_and_compile(workspace, f01, monkeypatch,
     job = _post(client, "repositories", {"connection_id": "github", "url": listed["selector"], "ref": "main"})
     assert job["repository_id"] == "github.com/88" and _finish(client, job["id"])["status"] == "complete"
     assert token not in json.dumps(_get(client, "settings"))
+
+
+def test_device_sign_in_explains_why_github_refused(monkeypatch):
+    """GitHub refuses a device-code request with HTTP 400 and an OAuth error code; the user is told what to fix."""
+    import io
+    from urllib.error import HTTPError
+
+    from repo_intel import connectors
+    from repo_intel.settings import Connection
+
+    cfg = Connection(id="gh", name="GitHub", mode="github_device", host="github.com", client_id="Ov23exampleClient")
+
+    def refuse(code):
+        def open_(request, timeout):
+            body = io.BytesIO(json.dumps({"error": code, "error_description": "from GitHub"}).encode())
+            raise HTTPError(request.full_url, 400, "Bad Request", {}, body)
+        monkeypatch.setattr(connectors, "build_opener", lambda *a: type("Opener", (), {"open": staticmethod(open_)})())
+
+    refuse("device_flow_disabled")
+    with pytest.raises(connectors.ConnectorError, match="Enable Device Flow"):
+        connectors.begin_device(cfg)
+    refuse("incorrect_client_credentials")
+    with pytest.raises(connectors.ConnectorError, match="Client ID"):
+        connectors.begin_device(cfg)
+    refuse("something_new")
+    with pytest.raises(connectors.ConnectorError, match="HTTP 400"):
+        connectors.begin_device(cfg)
+
+
+def test_hosted_device_sign_in_keeps_the_token_in_key_vault():
+    """Hosted, a device sign-in token goes to Key Vault with the app's identity, not to an OS keychain."""
+    import httpx
+
+    from repo_intel import connectors
+
+    vault, seen = {}, []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        seen.append((request.method, request.url.path, request.headers["Authorization"]))
+        name = request.url.path.rsplit("/", 1)[-1]
+        assert request.url.params["api-version"] == "7.4"
+        if request.method == "PUT":
+            vault[name] = json.loads(request.content)["value"]
+            return httpx.Response(200, json={"id": name})
+        return httpx.Response(200, json={"value": vault[name]}) if name in vault else httpx.Response(404, json={})
+
+    class Credential:
+        scopes = []
+        def get_token(self, scope):
+            self.scopes.append(scope)
+            return type("Token", (), {"token": "vault-access", "expires_on": 4_000_000_000})()
+
+    credential = Credential()
+    secrets = connectors.SecretReferences("https://rkp-kv.vault.azure.net/", credential, httpx.Client(transport=httpx.MockTransport(handle)))
+    reference = secrets.device_reference("github_main")
+    assert secrets.writable == "vault" and reference == "vault:github-device-github-main"
+    secrets.put_device_token(reference, "gho_device_token")
+    assert secrets.get(reference) == "gho_device_token"
+    assert [m for m, *_ in seen] == ["PUT", "GET"] and all(auth == "Bearer vault-access" for *_, auth in seen)
+    assert credential.scopes == ["https://vault.azure.net/.default"]  # one token, reused
+    with pytest.raises(connectors.ConnectorError, match="no value"):
+        secrets.get("vault:github-device-other")
+    with pytest.raises(connectors.ConnectorError, match="letters, digits"):
+        secrets.get("vault:bad_name")
+    # Without a vault, device sign-in keeps using the OS keychain, and vault references fail clearly.
+    local = connectors.SecretReferences("")
+    assert local.device_reference("github") == "keychain:github-device-github"
+    with pytest.raises(connectors.ConnectorError, match="No Key Vault"):
+        local.get("vault:github-device-github")
 
 
 def test_installation_token_signs_app_jwt_and_caches_credential(monkeypatch):
