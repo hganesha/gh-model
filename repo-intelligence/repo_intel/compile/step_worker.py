@@ -122,6 +122,19 @@ def serve(inputs_dir: str, confine: bool = False) -> int:
     return 0
 
 
+# bwrap hides what it does not grant instead of denying it: an undeclared path is
+# not mounted, /tmp is an empty tmpfs and the network namespace has nothing
+# listening. So under bwrap these probes fail as missing or refused rather than
+# with PermissionError. Only these errors, only for these probes, only under
+# bwrap; and the host-side checks in `selfcheck` (the file is really there, no
+# file was written, no connection arrived) still have to pass.
+_BWRAP_ERRORS = {
+    "selfcheck.read_file": "FileNotFoundError",
+    "selfcheck.write_file": "FileNotFoundError",
+    "selfcheck.network": "ConnectionRefusedError",
+}
+
+
 def selfcheck() -> int:
     """Run the probes under the default sandbox; exit 1 if any of them succeeds."""
     import tempfile
@@ -135,19 +148,23 @@ def selfcheck() -> int:
     with tempfile.TemporaryDirectory() as tmp:
         secret = Path(tmp) / "undeclared.txt"
         secret.write_text("not a declared input")
+        written = Path(tmp) / "written.txt"
         os.environ["RKP_SELFCHECK_PROBE"] = "visible"
         listener = socket.socket()
         listener.bind(("127.0.0.1", 0))
         listener.listen(1)
-        runner = StepRunner(ObjectStore(Path(tmp) / "store", "selfcheck"), use_cache=False, executor=SandboxExecutor(timeout=30))
+        executor = SandboxExecutor(timeout=30)
+        runner = StepRunner(ObjectStore(Path(tmp) / "store", "selfcheck"), use_cache=False, executor=executor)
         probes = [  # each must fail with the error the sandbox causes, not with any error
             (probe.PROBE_READ_FILE, {"path": str(secret)}, "PermissionError"),
-            (probe.PROBE_WRITE_FILE, {"path": str(Path(tmp) / "written.txt")}, "PermissionError"),
+            (probe.PROBE_WRITE_FILE, {"path": str(written)}, "PermissionError"),
             (probe.PROBE_ENV, {"name": "RKP_SELFCHECK_PROBE"}, "KeyError"),
             (probe.PROBE_NETWORK, {"host": "127.0.0.1", "port": listener.getsockname()[1]}, "PermissionError"),
         ]
         failures = 0
         for step, config, expected in probes:
+            if executor.name == "bwrap":
+                expected = _BWRAP_ERRORS.get(step.name, expected)
             try:
                 runner.run(step, {}, config)
                 print(f"FAIL {step.name}: the sandbox allowed it")
@@ -158,7 +175,21 @@ def selfcheck() -> int:
                 else:
                     print(f"FAIL {step.name}: failed with {exc.error_type}, not {expected}: {exc}")
                     failures += 1
+        # Host-side: a "missing" or "refused" error must not mean the probe missed its target.
+        checks = [
+            ("the undeclared file exists on the host", secret.is_file()),
+            ("no file was written on the host", not written.exists()),
+        ]
+        listener.setblocking(False)
+        try:
+            listener.accept()[0].close()
+            checks.append(("no connection reached the host listener", False))
+        except BlockingIOError:
+            checks.append(("no connection reached the host listener", True))
         listener.close()
+        for label, held in checks:
+            print(f"{'ok  ' if held else 'FAIL'} host: {label}")
+            failures += 0 if held else 1
     print(f"sandbox: {runner.executor.name}")
     return 1 if failures else 0
 
