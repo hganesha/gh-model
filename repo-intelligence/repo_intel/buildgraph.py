@@ -33,6 +33,7 @@ import importlib
 import inspect
 import json
 import os
+import re
 import selectors
 import shutil
 import subprocess
@@ -325,19 +326,35 @@ class Step:
 
 # ------------------------------------------------------------------ registry
 
-STEP_MODULES = (
-    f"{PACKAGE}.extractors",
-    f"{PACKAGE}.compiler",
-    f"{PACKAGE}.link",
-    f"{PACKAGE}.decisions.component",
-    f"{PACKAGE}.step_worker",
-)
+_STEP_ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*\s*(?::[^=\n]+)?=\s*Step\(", re.MULTILINE)
+
+
+@functools.cache
+def step_modules() -> tuple[str, ...]:
+    """Every repo_intel module that defines a module-level `NAME = Step(...)`.
+
+    Found from source text, so a new step module is registered without editing a
+    list, and modules without steps (the API, the service) are never imported.
+    """
+    root = Path(importlib.import_module(PACKAGE).__file__ or "").parent
+    found = []
+    for path in sorted(root.rglob("*.py")):
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        if _STEP_ASSIGNMENT.search(text):
+            parts = path.relative_to(root).with_suffix("").parts
+            parts = parts[:-1] if parts[-1] == "__init__" else parts
+            found.append(".".join((PACKAGE, *parts)))
+    return tuple(found)
+
 _REGISTRY: dict[str, Step] | None = None
 _REGISTRY_LOCK = threading.Lock()
 
 
 def registry() -> dict[str, Step]:
-    """Every registered step, by name: the module-level `Step` objects of `STEP_MODULES`.
+    """Every registered step, by name: the module-level `Step` objects of `step_modules()`.
 
     A registered step's function must be an importable top-level function, so a
     worker process resolves the same code from the step name alone.
@@ -346,7 +363,7 @@ def registry() -> dict[str, Step]:
     with _REGISTRY_LOCK:
         if _REGISTRY is None:
             found: dict[str, Step] = {}
-            for module_name in STEP_MODULES:
+            for module_name in step_modules():
                 module = importlib.import_module(module_name)
                 for value in vars(module).values():
                     if not isinstance(value, Step):

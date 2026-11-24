@@ -79,6 +79,18 @@ def test_registry_holds_every_pipeline_step():
         assert name in steps
     for step in steps.values():
         assert step.fn.__qualname__ == step.fn.__name__, f"{step.name} must be a top-level function"
+    modules = buildgraph.step_modules()
+    assert "repo_intel.extractors" in modules and "repo_intel.decisions.component" in modules
+    assert "repo_intel.api" not in modules and "repo_intel.buildgraph" not in modules
+
+
+def test_step_modules_are_found_from_source():
+    """A new step module needs no list edit: any module-level `NAME = Step(...)` is picked up."""
+    found = buildgraph._STEP_ASSIGNMENT.search
+    assert found('TABLE_REQUESTS = Step("features.orm_tables", "0.1.0", _table_requests)\n')
+    assert found('x = 1\nFEATURES: Step = Step("features.behavior", "0.1.0", _features)\n')
+    assert not found('    inner = Step("s", "1", fn)\n')  # local steps cannot run in a worker
+    assert not found('"""Docs mention Step(name, version, fn)."""\n')
 
 
 # ------------------------------------------------------------------ API-level isolation (both executors)
