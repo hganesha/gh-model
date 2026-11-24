@@ -7,7 +7,7 @@ principals, GitHub permission checks and path scopes are GI-022.
 
 
 import hmac
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 import asyncio
 import json
@@ -17,7 +17,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from . import business_map, projection, settings
+from . import business_map, lineage, projection, settings
 from .contracts import Manifest
 from .delta import knowledge_delta
 from .pipeline import render_evidence
@@ -49,8 +49,21 @@ class QueryRequest(BaseModel):
         return self
 
 
-def _error(status: int, code: str, message: str, retryable: bool = False) -> JSONResponse:
-    return JSONResponse({"code": code, "message": message, "retryable": retryable, "details": {}}, status_code=status)
+def _error(status: int, code: str, message: str, retryable: bool = False, details: dict[str, Any] | None = None) -> JSONResponse:
+    return JSONResponse({"code": code, "message": message, "retryable": retryable, "details": details or {}}, status_code=status)
+
+
+class Retracted(Exception):
+    """A read of a retracted snapshot: refused, with a pointer to its replacement (spec §4.4)."""
+
+    def __init__(self, record: dict[str, Any]):
+        self.record = record
+
+
+class RetractRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    reason: Literal["compiler_defect", "leaked_secret", "policy_violation", "other"]
+    replacement: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
 
 
 def create_app(conninfo: str, tenant_id: str, dev_token: str | None, store: ObjectStore | None = None, service: Service | None = None) -> FastAPI:
@@ -75,22 +88,62 @@ def create_app(conninfo: str, tenant_id: str, dev_token: str | None, store: Obje
         errors = exc.errors()
         return _error(422, "invalid_request", errors[0]["msg"] if errors else "Invalid request.")
 
+    @app.exception_handler(Retracted)
+    async def _retracted(_: Request, exc: Retracted) -> JSONResponse:
+        return _error(410, "retracted", "This snapshot was retracted.", details={"reason": exc.record.get("reason"), "replacement": exc.record.get("replacement")})
+
+    def readable(conn: Any, tenant: str, manifest: dict[str, Any] | None) -> dict[str, Any] | None:
+        """Every read goes through here: a retracted snapshot is never served."""
+        if manifest is not None and manifest["status"] == "retracted":
+            raise Retracted(projection.retraction(conn, tenant, manifest["rkp_hash"]) or {})
+        return manifest
+
     @app.exception_handler(HTTPException)
     async def _http(_: Request, exc: HTTPException) -> JSONResponse:
         return _error(exc.status_code, {401: "unauthenticated", 404: "not_found"}.get(exc.status_code, "error"), str(exc.detail))
 
     @app.get("/v1/repositories/{repository_id:path}/rkp")
-    def get_rkp(repository_id: str, commit_sha: str, tenant: Tenant, toolchain_hash: str | None = None) -> dict[str, Any]:
+    def get_rkp(repository_id: str, tenant: Tenant, commit_sha: str | None = None, ref: Annotated[str | None, Query(max_length=200)] = None, toolchain_hash: str | None = None):
+        """By commit, or by tracked ref; with `ref`, also says whether the ref view is `current` or `stale`.
+        Asking for a stale pull request's ref starts its (debounced) compile."""
+        if (commit_sha is None) == (ref is None):
+            raise HTTPException(422, "give exactly one of commit_sha or ref")
+        if ref is None:
+            with projection.connect(conninfo, tenant) as conn:
+                return readable(conn, tenant, projection.get_snapshot(conn, tenant, repository_id=repository_id, commit_sha=commit_sha, toolchain_hash=toolchain_hash)) or _missing()
+        from . import registry
+        if service is not None:
+            view = service.request_ref(repository_id, ref)
+        else:
+            with projection.connect(conninfo, tenant) as conn:
+                view = registry.tracked_ref(conn, tenant, repository_id, ref)
+        if view is None:
+            raise HTTPException(404, "not found")
+        ref_view = {"ref": ref, "kind": view["kind"], "state": view["state"], "head_sha": view["head_sha"], "commit_sha": view["published_sha"], "closed": view["closed_at"] is not None}
+        if not view["rkp_hash"]:
+            return JSONResponse({"status": "pending", "ref_view": ref_view}, status_code=202)
         with projection.connect(conninfo, tenant) as conn:
-            manifest = projection.get_snapshot(conn, tenant, repository_id=repository_id, commit_sha=commit_sha, toolchain_hash=toolchain_hash)
+            manifest = readable(conn, tenant, projection.get_snapshot(conn, tenant, rkp_hash=view["rkp_hash"]))
         if manifest is None:
             raise HTTPException(404, "not found")
-        return manifest
+        return manifest | {"ref_view": ref_view}
+
+    def _missing():
+        raise HTTPException(404, "not found")
+
+    @app.get("/v1/entities/{entity_id}/lineage")
+    def entity_lineage(entity_id: str, tenant: Tenant) -> dict[str, Any]:
+        """Cross-revision history of the logical entity this snapshot ID belongs to."""
+        with projection.connect(conninfo, tenant) as conn:
+            found = lineage.history(conn, tenant, entity_id)
+        if found is None:
+            raise HTTPException(404, "not found")
+        return found
 
     @app.post("/v1/knowledge/query")
     def query(body: QueryRequest, tenant: Tenant) -> dict[str, Any]:
         with projection.connect(conninfo, tenant) as conn:
-            manifest = projection.get_snapshot(conn, tenant, rkp_hash=body.rkp_hash)
+            manifest = readable(conn, tenant, projection.get_snapshot(conn, tenant, rkp_hash=body.rkp_hash))
             if manifest is None or manifest["status"] != "complete":
                 raise HTTPException(404, "not found")
             seeds = body.seed_entities if body.seed_entities is not None else projection.find_entities(conn, tenant, body.rkp_hash, body.seed_selector.kind, body.seed_selector.name)
@@ -104,7 +157,7 @@ def create_app(conninfo: str, tenant_id: str, dev_token: str | None, store: Obje
         if store is None or store.tenant_id != tenant:
             raise HTTPException(404, "not found")
         with projection.connect(conninfo, tenant) as conn:
-            manifest = projection.get_snapshot(conn, tenant, rkp_hash=rkp_hash)
+            manifest = readable(conn, tenant, projection.get_snapshot(conn, tenant, rkp_hash=rkp_hash))
             row = projection.get_evidence(conn, tenant, rkp_hash, evidence_id) if manifest else None
         if row is None:
             raise HTTPException(404, "not found")
@@ -119,7 +172,7 @@ def create_app(conninfo: str, tenant_id: str, dev_token: str | None, store: Obje
 
     def snapshot(rkp_hash: str, tenant: str) -> dict[str, Any]:
         with projection.connect(conninfo, tenant) as conn:
-            manifest = projection.get_snapshot(conn, tenant, rkp_hash=rkp_hash)
+            manifest = readable(conn, tenant, projection.get_snapshot(conn, tenant, rkp_hash=rkp_hash))
         if manifest is None:
             raise HTTPException(404, "not found")
         return manifest
@@ -176,7 +229,7 @@ def create_app(conninfo: str, tenant_id: str, dev_token: str | None, store: Obje
                 while sent < len(job["events"]):
                     yield f"data: {json.dumps(job['events'][sent])}\n\n"
                     sent += 1
-                if job["status"] in ("complete", "failed"):
+                if job["status"] in ("complete", "failed", "cancelled", "superseded"):
                     yield f"event: done\ndata: {json.dumps(public(job))}\n\n"
                     return
                 await asyncio.sleep(0.25)
@@ -385,6 +438,49 @@ def create_app(conninfo: str, tenant_id: str, dev_token: str | None, store: Obje
         if gateway.aliases[alias].provider not in gateway.allowed_providers:
             raise HTTPException(403, "provider egress is disabled")
         return {"results": run_check(gateway, alias)}
+
+    # ---- lifecycle: retraction, promotion, retention and deletion (GI-019, GI-021)
+
+    @app.post("/v1/repositories/{repository_id:path}/snapshots/{rkp_hash}/retract")
+    def retract_snapshot(repository_id: str, rkp_hash: str, body: RetractRequest, admin: Admin):
+        _, actor = admin
+        try:
+            return svc().retract(repository_id, rkp_hash, body.reason, actor, body.replacement)
+        except KeyError:
+            raise HTTPException(404, "not found") from None
+
+    @app.post("/v1/repositories/{repository_id:path}/snapshots/{rkp_hash}/promote")
+    def promote_snapshot(repository_id: str, rkp_hash: str, admin: Admin):
+        _, actor = admin
+        try:
+            return svc().promote(repository_id, rkp_hash, actor)
+        except KeyError:
+            raise HTTPException(404, "not found") from None
+
+    @app.delete("/v1/repositories/{repository_id:path}")
+    def delete_repository(repository_id: str, admin: Admin):
+        _, actor = admin
+        try:
+            return svc().delete_repository(repository_id, actor)
+        except KeyError:
+            raise HTTPException(404, "not found") from None
+
+    @app.delete("/v1/workspace")
+    def delete_workspace(admin: Admin, confirm: Annotated[str, Query(max_length=200)]):
+        tenant, actor = admin
+        if confirm != tenant:
+            raise HTTPException(422, "confirm with the workspace's tenant ID")
+        return svc().delete_tenant(actor)
+
+    @app.post("/v1/maintenance/gc")
+    def collect_garbage(admin: Admin):
+        _, actor = admin
+        return svc().collect_garbage(actor)
+
+    @app.post("/v1/maintenance/secret-rescan")
+    def rescan_secrets(admin: Admin):
+        _, actor = admin
+        return {"retracted": svc().rescan_secrets(actor)}
 
     @app.post("/v1/webhooks/{connection_id}", status_code=202)
     async def push_webhook(connection_id: str, request: Request):
