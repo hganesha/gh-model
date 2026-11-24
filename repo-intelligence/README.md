@@ -9,7 +9,7 @@ Repository knowledge compiler for the GitHub Intelligence Engine. Design: `../Gi
 | GI-001 ontology, contracts, hashing | Done |
 | GI-002 fixtures | Done: F01–F10 with goldens tagged by milestone. Items due by M1 are checked on every test run |
 | GI-003 walking skeleton | Done: compile, PostgreSQL projection, query API, Temporal workflow |
-| GI-004 build-graph runtime | Step cache and declared-input enforcement at the API level. OS-level sandboxing of steps not started |
+| GI-004 build-graph runtime | Done. Steps are listed in a registry (`buildgraph.registry()`). Each step's version is its declared version plus a digest of its code, so a code change invalidates its cache without a manual bump. `file.extract` keys each file on the versions of only the extractors that apply to it (`extractors.extractor_versions()`). By default, steps run in a reused worker (`python -m repo_intel.step_worker`) under `sandbox-exec` (macOS) or `bwrap` (Linux). The worker gets read-only access to only the current step's declared inputs, with no network, no store and an empty environment, under a time limit. `RKP_STEP_EXECUTOR=inprocess` is a dev/test-only fallback. Per-step hits, executions and seconds are kept in the store index `step_metrics` and served at `GET /v1/step-metrics`. `python -m repo_intel.step_worker --selfcheck` checks that the sandbox blocks file, environment, network and write access. Not yet done: the hosted Azure container has no sandbox (see GI-004 notes in the PR) |
 | GI-005 GitHub ingestion | GitHub CLI, App, token, and device-flow connectors are available. GitLab and plain Git use the same ingestion interface. The GitHub CLI, GitHub REST token and plain Git over HTTPS connectors were checked live against a private GitHub repository (describe, resolve, fetch), and plain Git against a public GitLab repository; a missing ref and an invalid token are refused. Not checked live: GitHub App, device sign-in, GitLab token and push webhooks, which need their own credentials. The Explorer uses in-process compile jobs |
 | GI-006 secret scan | Done: scan at admission, masked evidence endpoint, publish gate rejects leaked values. No blob-cache TTL yet |
 | GI-007 manifests and unit planning | Done: pyproject, package.json, pom.xml, go.mod; workspace dependencies link to sibling packages |
@@ -131,7 +131,8 @@ The API runs against the hosted database through `RKP_DATABASE_URL` (owner conne
 - `repo_intel/ontology.py` — entity kinds, relations and their schemas
 - `repo_intel/contracts.py` — typed rows; IDs re-derive from content on validation
 - `repo_intel/store.py` — per-tenant content-addressed object store (filesystem for now)
-- `repo_intel/buildgraph.py` — memoized step runner
+- `repo_intel/buildgraph.py` — memoized step runner: step registry, code-derived versions, sandbox and in-process executors, per-step cache metrics
+- `repo_intel/step_worker.py` — the sandboxed step worker, and the `selfcheck.*` probe steps
 - `repo_intel/snapshot.py` — commit pinning and path manifest, read from the Git object database
 - `repo_intel/extractors/` — `file.extract` plugins: one module per family, discovered automatically (`base.py` documents the interface)
 - `repo_intel/secrets.py` — secret scanning and masking

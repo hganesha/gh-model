@@ -24,13 +24,17 @@ jobs:
         working-directory: repo-intelligence
         run: |
           sudo apt-get update -q
-          sudo apt-get install -y postgresql
+          sudo apt-get install -y postgresql bubblewrap
+          # Build-graph steps run under bwrap (GI-004). Ubuntu 24.04 restricts unprivileged
+          # user namespaces through AppArmor; allow them so the sandbox can start.
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
           pg_config --bindir >> "$GITHUB_PATH"
           python -m venv .venv
           .venv/bin/pip install -e '.[dev]'
       - name: Run backend suite and goldens
         working-directory: repo-intelligence
         run: |
+          .venv/bin/python -m repo_intel.step_worker --selfcheck
           .venv/bin/python -m pytest -q
           .venv/bin/python -m repo_intel.golden_check
       - name: Run Explorer browser suite

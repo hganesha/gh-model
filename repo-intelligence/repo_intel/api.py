@@ -18,6 +18,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from . import business_map, projection, settings
+from .buildgraph import read_metrics
 from .contracts import Manifest
 from .delta import knowledge_delta
 from .pipeline import render_evidence
@@ -109,6 +110,17 @@ def create_app(conninfo: str, tenant_id: str, dev_token: str | None, store: Obje
         if row is None:
             raise HTTPException(404, "not found")
         return render_evidence(store, Manifest.model_validate(manifest), row)
+
+    @app.get("/v1/step-metrics")
+    def get_step_metrics(tenant: Tenant, run_id: str | None = None) -> dict[str, Any]:
+        """Build-graph cache metrics per step (hits, executed, seconds) for one run; the latest by default."""
+        metrics_store = store or (service.store if service else None)
+        if metrics_store is None or metrics_store.tenant_id != tenant:
+            raise HTTPException(404, "not found")
+        row = read_metrics(metrics_store, run_id)
+        if row is None:
+            raise HTTPException(404, "not found")
+        return row
 
     # ---- repositories, compiles and snapshot reads (used by the Explorer)
 
