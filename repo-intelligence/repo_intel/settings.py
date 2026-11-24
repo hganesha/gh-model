@@ -28,6 +28,9 @@ REF = re.compile(r"^(keychain|managed):[a-zA-Z0-9._-]{1,100}$")
 PROVIDERS = ("jev", "microsoft-decision", "azure-openai", "cohere-rerank", "openai-embeddings")
 EXTRACTOR_IDS = frozenset(e.id for e in EXTRACTORS)
 MODEL_FUNCTIONS = ("dm.component-kind", "dm.capability-placement")
+# Coverage domains every snapshot must report, with denominators (spec §9.2, §14.1).
+COVERAGE_DOMAINS = ("inventory", "parse", "import_resolution", "route_to_handler", "data_access", "contract_match", "deployment_refs", "decisions", "dependency_capability", "event_topics")
+DEFAULT_REQUIRED_COVERAGE = ("inventory", "parse", "contract_match", "deployment_refs", "decisions")
 
 
 class Connection(Model):
@@ -68,6 +71,9 @@ class RepositoryTracking(Model):
     refs: tuple[str, ...] = Field(default=(), max_length=50)
     trigger: Literal["manual", "push", "poll"] = "manual"
     interval_minutes: int = Field(15, ge=1, le=1440)
+    # Providers this repository's excerpts may go to. None inherits the workspace policy;
+    # otherwise the effective set is the intersection with it, so a repository can only narrow.
+    allowed_providers: tuple[str, ...] | None = None
 
     @model_validator(mode="after")
     def valid_refs(self) -> Self:
@@ -77,6 +83,8 @@ class RepositoryTracking(Model):
             for ref in self.refs
         ):
             raise ValueError("Use unique valid Git refs.")
+        if self.allowed_providers is not None and set(self.allowed_providers) - set(PROVIDERS):
+            raise ValueError("Unknown provider.")
         return self
 
 
@@ -99,6 +107,12 @@ class CompileSettings(Model):
     default_model: Key | None = None
     model_functions: dict[str, ModelSelection] = Field(default_factory=dict)
     decision_budget: int = Field(200, ge=0, le=2000)
+    # DM08 behaviour candidates: an LLM writes hypotheses. Experimental, so off by default.
+    behavior_candidates: bool = False
+    # The compile profile: coverage domains the publish gate requires, each with a denominator.
+    required_coverage: tuple[str, ...] = DEFAULT_REQUIRED_COVERAGE
+    # Per-repository egress narrowing, copied from `Settings.repositories` by `effective_compile`.
+    repository_egress: dict[str, tuple[str, ...]] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def known_options(self) -> Self:
@@ -108,7 +122,19 @@ class CompileSettings(Model):
             raise ValueError("Unknown provider.")
         if set(self.model_functions) - set(MODEL_FUNCTIONS):
             raise ValueError("Unknown decision function.")
+        if set(self.required_coverage) - set(COVERAGE_DOMAINS):
+            raise ValueError("Unknown coverage domain.")
         return self
+
+    def for_repository(self, repository_id: str) -> "CompileSettings":
+        """The settings one repository compiles under. Other repositories' egress rules are
+        dropped, so changing one repository's policy never changes another's toolchain."""
+        narrowed = self.repository_egress.get(repository_id)
+        update: dict = {"repository_egress": {}}
+        if narrowed is not None:
+            update["allowed_providers"] = tuple(sorted(set(self.allowed_providers) & set(narrowed)))
+            update["repository_egress"] = {repository_id: tuple(sorted(narrowed))}
+        return self.model_copy(update=update)
 
     def gateway(self, base: Gateway | None) -> Gateway | None:
         if base is None:
@@ -121,7 +147,7 @@ class CompileSettings(Model):
                 aliases.pop("decision-default", None)
         elif aliases.get("decision-default") and aliases["decision-default"].provider in PROVIDERS:
             aliases.pop("decision-default", None)
-        return Gateway(aliases, frozenset(self.allowed_providers) | (base.allowed_providers - set(PROVIDERS)))
+        return Gateway(aliases, frozenset(self.allowed_providers) | (base.allowed_providers - set(PROVIDERS)), base.llms, base.rates)
 
 
 class PlacementPolicy(Model):
@@ -189,4 +215,5 @@ def environment_settings() -> dict:
 
 
 def effective_compile(settings: Settings) -> CompileSettings:
-    return settings.compile.model_copy(update=environment_settings())
+    egress = {repo: tuple(sorted(t.allowed_providers)) for repo, t in sorted(settings.repositories.items()) if t.allowed_providers is not None}
+    return settings.compile.model_copy(update={**environment_settings(), "repository_egress": egress})

@@ -82,8 +82,9 @@ def test_contract_matches_implementation_and_conflict_opens_when_contract_runs_a
 
 def test_orphan_contract_conflict_closes_when_contract_is_removed(graphs):
     commits = graphs("F10-ambiguous-incomplete")
-    assert [len(c["conflicts"]) for c in commits] == [1, 1, 1, 0]
-    assert "GET /users" in commits[0]["conflicts"][0]["basis"]
+    contract = [[x for x in c["conflicts"] if x["conflict_type"] == "declared_vs_implemented"] for c in commits]
+    assert [len(c) for c in contract] == [1, 1, 1, 0]
+    assert "GET /users" in contract[0][0]["basis"]
 
 
 def test_http_consumers_are_candidates_and_prefer_get(graphs):

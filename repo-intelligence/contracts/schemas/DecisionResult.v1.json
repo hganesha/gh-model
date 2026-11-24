@@ -1,4 +1,72 @@
 {
+  "$defs": {
+    "Disagreement": {
+      "additionalProperties": false,
+      "description": "A label another source gave for the same decision, kept when it lost (spec \u00a78.6).",
+      "properties": {
+        "label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Label"
+        },
+        "method": {
+          "enum": [
+            "rules",
+            "decision_model",
+            "llm",
+            "classifier",
+            "owner_override"
+          ],
+          "title": "Method",
+          "type": "string"
+        }
+      },
+      "required": [
+        "method",
+        "label"
+      ],
+      "title": "Disagreement",
+      "type": "object"
+    },
+    "Hypothesis": {
+      "additionalProperties": false,
+      "description": "DM08 output: model-written text, length-limited and never more than a hypothesis (\u00a77.3).",
+      "properties": {
+        "evidence_ids": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Evidence Ids",
+          "type": "array"
+        },
+        "statement": {
+          "maxLength": 280,
+          "minLength": 1,
+          "title": "Statement",
+          "type": "string"
+        },
+        "trust_label": {
+          "const": "untrusted_generated",
+          "default": "untrusted_generated",
+          "title": "Trust Label",
+          "type": "string"
+        }
+      },
+      "required": [
+        "statement",
+        "evidence_ids"
+      ],
+      "title": "Hypothesis",
+      "type": "object"
+    }
+  },
   "additionalProperties": false,
   "properties": {
     "abstain_reason": {
@@ -59,10 +127,19 @@
         "rules",
         "decision_model",
         "llm",
-        "classifier"
+        "classifier",
+        "owner_override"
       ],
       "title": "Decision Method",
       "type": "string"
+    },
+    "disagreements": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/Disagreement"
+      },
+      "title": "Disagreements",
+      "type": "array"
     },
     "evidence_ids": {
       "default": [],
@@ -75,6 +152,14 @@
     "feature_set_hash": {
       "title": "Feature Set Hash",
       "type": "string"
+    },
+    "hypotheses": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/Hypothesis"
+      },
+      "title": "Hypotheses",
+      "type": "array"
     },
     "model_ref": {
       "anyOf": [
@@ -131,6 +216,18 @@
     "spec": {
       "title": "Spec",
       "type": "string"
+    },
+    "verification_ref": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Verification Ref"
     }
   },
   "required": [

@@ -19,6 +19,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from . import business_map, projection, settings
 from .contracts import Manifest
+from .decisions import overrides
 from .delta import knowledge_delta
 from .pipeline import render_evidence
 from .store import ObjectStore
@@ -385,6 +386,28 @@ def create_app(conninfo: str, tenant_id: str, dev_token: str | None, store: Obje
         if gateway.aliases[alias].provider not in gateway.allowed_providers:
             raise HTTPException(403, "provider egress is disabled")
         return {"results": run_check(gateway, alias)}
+
+    # ---- owner overrides (spec §8.6, §10): admin only, versioned, an input to every compile
+
+    def override_store() -> ObjectStore:
+        target = store if store is not None else (service.store if service is not None else None)
+        if target is None:
+            raise HTTPException(404, "not found")
+        return target
+
+    @app.get("/v1/repositories/{repository_id:path}/overrides")
+    def read_overrides(repository_id: str, admin: Admin) -> dict[str, Any]:
+        version, current = overrides.read(override_store(), repository_id)
+        return {"repository_id": repository_id, "version": version, "override_set_hash": current.set_hash, **current.document, "history": overrides.history(override_store(), repository_id)}
+
+    @app.put("/v1/repositories/{repository_id:path}/overrides")
+    def save_overrides(repository_id: str, body: overrides.SaveOverrides, admin: Admin) -> dict[str, Any]:
+        _, actor = admin
+        try:
+            version, set_hash = overrides.save(override_store(), repository_id, body, actor)
+        except overrides.StaleOverrides as exc:
+            raise HTTPException(409, str(exc)) from exc
+        return {"repository_id": repository_id, "version": version, "override_set_hash": set_hash}
 
     @app.post("/v1/webhooks/{connection_id}", status_code=202)
     async def push_webhook(connection_id: str, request: Request):

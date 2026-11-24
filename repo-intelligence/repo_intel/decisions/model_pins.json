@@ -1,0 +1,9 @@
+{
+  "comment": "Floating model names resolve here, never from the environment at start-up (spec §7.4). Changing a pin is a toolchain change.",
+  "pins": {
+    "jev": {"jev-latest": "jev-1.13.0"},
+    "microsoft-decision": {},
+    "azure-openai": {},
+    "cohere-rerank": {}
+  }
+}

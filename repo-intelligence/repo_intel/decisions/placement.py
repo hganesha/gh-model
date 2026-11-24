@@ -19,7 +19,7 @@ from ..hashing import canonical, digest
 from ..settings import ModelSelection, PlacementPolicy
 from ..store import ObjectStore
 from .gateway import Gateway
-from .runner import Budget, Ledger, RuleResult, evaluate
+from .runner import Budget, Ledger, RuleResult, evaluate, verifier
 
 DIMENSIONS = 384
 TOKEN = re.compile(r"[a-z0-9]+")
@@ -236,3 +236,9 @@ def place(
         if not store.index_get("ledger", result.decision_id):
             store.index_put("placement_attempts", result.decision_id, ledger.used[result.decision_id])
     return tuple(rows[key] for key in sorted(rows))
+
+
+@verifier("vfy.capability-placement-v1")
+def _verify_placement(features: Any, label: str) -> str:
+    """A placement is checked by its owner in review, not by a deterministic rule."""
+    return "unchecked"

@@ -145,7 +145,7 @@ def test_jev_request_and_response_shape():
     a = jev("k-test", transport=_transport(sent)).choose({"x": 1}, "Which?", {"service": "serves", "library": "imported"})
     req = sent[0]
     assert str(req.url) == "https://api.typesafe.ai/v1/systemone" and req.headers["authorization"] == "Bearer k-test"
-    assert json.loads(req.content) == {"model": "jev-latest", "state": {"x": 1}, "questions": {"decision": {"type": "choice", "instructions": "Which?", "criteria": {"service": "serves", "library": "imported"}}}}
+    assert json.loads(req.content) == {"model": "jev-1.13.0", "state": {"x": 1}, "questions": {"decision": {"type": "choice", "instructions": "Which?", "criteria": {"service": "serves", "library": "imported"}}}}
     assert (a.choice, a.model, a.input_tokens) == ("service", "jev-1.13.0", 120) and set(a.probabilities) == {"service", "library"}
 
 
@@ -186,7 +186,7 @@ def test_unusable_provider_answers_are_rejected(answer, status):
 
 def test_gateway_from_env_and_default_deny():
     gw = Gateway.from_env(env={"RKP_JEV_API_KEY": "k", "RKP_MSDECISION_ENDPOINT": "https://r", "RKP_MSDECISION_DEPLOYMENT": "d", "RKP_MSDECISION_API_KEY": "k2", "RKP_DECISION_DEFAULT": "jev"})
-    assert gw.describe() == {"decision-default": "jev/jev-latest", "jev": "jev/jev-latest", "microsoft-decision": "microsoft-decision/d"}
+    assert gw.describe() == {"decision-default": "jev/jev-1.13.0", "jev": "jev/jev-1.13.0", "microsoft-decision": "microsoft-decision/d"}
     assert "k2" not in repr(gw.describe())
     with pytest.raises(EgressDenied):
         gw.resolve("jev")

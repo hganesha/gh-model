@@ -33,8 +33,8 @@ class EntityKind(StrEnum):
     OWNER = "Owner"
     EXTERNAL_DEPENDENCY = "ExternalDependency"
     TECHNICAL_CAPABILITY = "TechnicalCapability"
-    # Reserved for DM08/DM09; not emitted in v1.
-    FEATURE = "Feature"
+    FEATURE = "Feature"  # DM08 behaviour hypotheses only, behind a flag that is off by default
+    # Reserved for DM09; not emitted in v1.
     REQUIREMENT = "Requirement"
 
 
@@ -122,7 +122,8 @@ RELATIONS: dict[Predicate, RelationSchema] = {
     # DEFINED_IN carries the class of the declaration it comes from, so a heuristically
     # read entity (a namespace taken as an environment) is not presented as supported.
     P.DEFINED_IN: _r(_ANY - {K.REPOSITORY, K.ARTIFACT}, {K.ARTIFACT}),
-    P.IMPLEMENTS: _r({K.SYMBOL, K.COMPONENT}, {K.ENDPOINT, K.INTERFACE}),
+    # Component IMPLEMENTS Feature is a DM08 behaviour hypothesis, never more than inferred.
+    P.IMPLEMENTS: _r({K.SYMBOL, K.COMPONENT}, {K.ENDPOINT, K.INTERFACE, K.FEATURE}),
     P.EXPOSES: _r({K.COMPONENT}, {K.INTERFACE, K.ENDPOINT}),
     P.CONSUMES: _r(_CODE | {K.AI_COMPONENT}, {K.INTERFACE, K.ENDPOINT, K.MODEL_ENDPOINT}),
     P.CALLS: _r({K.SYMBOL}, {K.SYMBOL}),
@@ -140,9 +141,11 @@ RELATIONS: dict[Predicate, RelationSchema] = {
     P.DEPLOYED_TO: _r({K.DEPLOYMENT_UNIT}, {K.ENVIRONMENT, K.INFRASTRUCTURE_RESOURCE}),
     P.TESTED_BY: _r(_CODE | {K.ENDPOINT}, {K.TEST}),
     P.OWNED_BY: _r(_ANY - {K.OWNER}, {K.OWNER}),
-    P.ALIAS_OF: _r(_ANY, _ANY),
+    # An alias names exactly one canonical entity: two targets for one alias is a conflict.
+    P.ALIAS_OF: _r(_ANY, _ANY, functional=True),
 }
 assert set(RELATIONS) == set(Predicate)
+FUNCTIONAL: frozenset[Predicate] = frozenset(p for p, schema in RELATIONS.items() if schema.functional)
 
 
 def check_relation(predicate: Predicate, subject: EntityKind, obj: EntityKind, evidence_class: EvidenceClass | str | None = None) -> str | None:
@@ -155,3 +158,12 @@ def check_relation(predicate: Predicate, subject: EntityKind, obj: EntityKind, e
     if evidence_class is not None and evidence_rank(EvidenceClass(evidence_class)) > evidence_rank(schema.weakest_class):
         return f"{predicate}: evidence class {evidence_class} is weaker than the minimum {schema.weakest_class.value}"
     return None
+
+
+def functional_violations(assertions: list[dict]) -> dict[tuple[str, str], list[dict]]:
+    """(predicate, subject) -> the assertions that give a single-valued predicate two or more objects."""
+    by_subject: dict[tuple[str, str], list[dict]] = {}
+    for a in assertions:
+        if a["predicate"] in FUNCTIONAL:
+            by_subject.setdefault((a["predicate"], a["subject"]), []).append(a)
+    return {k: sorted(v, key=lambda a: a["id"]) for k, v in sorted(by_subject.items()) if len({a["object"] for a in v}) > 1}
