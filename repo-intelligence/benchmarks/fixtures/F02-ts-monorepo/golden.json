@@ -606,6 +606,37 @@
         }
       ],
       "removed_entities": []
+    },
+    {
+      "dir": "07-prisma-migrations",
+      "expect": "Prisma migration.sql files become Migrations that MIGRATES the tables and fields they touch; a table created and dropped by the migrations is not declared (GI-010)",
+      "added_entities": [
+        {
+          "kind": "Migration",
+          "natural_key": {
+            "tool": "prisma",
+            "revision": "20261101090000_init"
+          },
+          "since": "M2"
+        },
+        {
+          "kind": "Migration",
+          "natural_key": {
+            "tool": "prisma",
+            "revision": "20261120090000_order_note"
+          },
+          "since": "M2"
+        },
+        {
+          "kind": "Field",
+          "natural_key": {
+            "table": "orders",
+            "name": "note"
+          },
+          "since": "M2"
+        }
+      ],
+      "removed_entities": []
     }
   ]
 }

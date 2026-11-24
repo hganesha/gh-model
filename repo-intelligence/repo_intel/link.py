@@ -67,6 +67,11 @@ def _local_ts_configs(summaries: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return sorted(out, key=lambda c: (c["dir"], c["config"]))
 
 
+def _revision_key(revision: str) -> tuple[Any, ...]:
+    """Order revisions as their tools do: Flyway "1.10" after "1.2"; Prisma timestamps as text."""
+    return tuple((0, int(part), "") if part.isdigit() else (1, 0, part) for part in re.split(r"(\d+)", revision) if part)
+
+
 def _lower_first(name: str) -> str:
     return name[:1].lower() + name[1:]
 
@@ -583,6 +588,49 @@ class _Linker:
             pkg = ref(EntityKind.PACKAGE, r["package"], r["package"]["name"])
             self.emit("entity", r["manifest"], {**pkg, "attributes": {"resolved_dependencies": r["versions"], "lockfile": r["lockfile"]}}, r["evidence"], EvidenceClass.E1)
 
+    # -- SQL migrations (GI-010)
+
+    def link_migrations(self) -> None:
+        """Replay the unit's SQL migrations in revision order and declare the schema that
+        results: a table created by one migration and dropped by a later one is not declared,
+        and a column a later migration adds or renames lands on the table it changed."""
+        steps: dict[str, list[tuple[Any, ...]]] = {}
+        for path in sorted(self.files):
+            for o in _of(self.files[path], "migration_op"):
+                p = o["payload"]
+                steps.setdefault(p["tool"], []).append((_revision_key(p["revision"]), p["seq"], path, p, o["evidence"]))
+        for tool in sorted(steps):
+            tables: dict[str, dict[str, Any]] = {}  # name -> {"path", "evidence", "created", "columns": {name: (path, evidence, type)}}
+            for _, _, path, p, ev in sorted(steps[tool], key=lambda t: t[:3]):
+                op, name = p["op"], p["table"]
+                if op == "create_table":
+                    tables[name] = {"path": path, "evidence": ev, "created": True, "columns": {c: (path, ev, t) for c, t in p.get("columns", {}).items()}}
+                    continue
+                if op == "drop_table":
+                    tables.pop(name, None)
+                    continue
+                state = tables.setdefault(name, {"path": path, "evidence": ev, "created": False, "columns": {}})
+                column = p.get("column")
+                if op == "add_column":
+                    state["columns"][column] = (path, ev, p.get("type"))
+                elif op == "drop_column":
+                    state["columns"].pop(column, None)
+                elif op == "rename_column":
+                    kept = state["columns"].pop(column, (path, ev, None))
+                    state["columns"][p["new_column_name"]] = (path, ev, kept[2])
+                elif op == "alter_column" and column in state["columns"] and p.get("type"):
+                    state["columns"][column] = (*state["columns"][column][:2], p["type"])
+                elif op == "rename_table":
+                    tables[p["new_table_name"]] = tables.pop(name)
+            for name, state in sorted(tables.items()):
+                table = ref(EntityKind.TABLE, {"datastore": "default", "name": name}, name, declare=state["created"])
+                if state["created"]:
+                    self.emit("entity", state["path"], {**table, "attributes": {}}, [state["evidence"]], EvidenceClass.E1)
+                for column, (path, ev, dtype) in sorted(state["columns"].items()):
+                    field = ref(EntityKind.FIELD, {"table": name, "name": column}, column)
+                    self.emit("entity", path, {**field, "attributes": {"type": dtype} if dtype else {}}, [ev], EvidenceClass.E1)
+                    self.relate(path, table, Predicate.CONTAINS, field, [ev], evidence_class=EvidenceClass.E1)
+
     # -- AI integrations (DM06)
 
     def link_ai(self) -> None:
@@ -629,6 +677,7 @@ def _unit_link(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, Any]:
     linker.link_tests()
     linker.link_ai()
     linker.link_resolved()
+    linker.link_migrations()
 
     imp = linker.imports
     total_imports = sum(imp.values())
@@ -646,7 +695,7 @@ def _unit_link(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, Any]:
     return {"unit": unit["name"], "observations": linker.out, "unknowns": linker.unknowns, "coverage": coverage, "exports": linker.exports()}
 
 
-UNIT_LINK = Step("unit.link", "0.8.0", _unit_link)
+UNIT_LINK = Step("unit.link", "0.9.0", _unit_link)
 
 
 # ---------------------------------------------------------------- repo-level

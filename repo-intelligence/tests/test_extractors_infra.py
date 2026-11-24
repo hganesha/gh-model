@@ -1,7 +1,7 @@
 """Infrastructure, contract and SQL extractors, called directly on inline bytes."""
 
 from repo_intel.extractors import EXTRACTORS
-from repo_intel.extractors.contracts_data import OpenAPI, SqlDdl, split_statements
+from repo_intel.extractors.contracts_data import OpenAPI, SqlDdl, migration_identity, split_statements
 from repo_intel.extractors.infrastructure import Compose, Dockerfile, GithubWorkflow, Kubernetes, Terraform
 from repo_intel.hashing import sha256_hex
 from repo_intel.ontology import EntityKind, Predicate, check_relation
@@ -394,6 +394,60 @@ def test_sql_non_ascii_spans_are_byte_offsets():
     r = run(SqlDdl(), "menu.sql", data)
     assert text_of(entities(r, "Table")[0], data) == "CREATE TABLE menu"
     assert text_of(entities(r, "Field")[0], data) == "prix"
+
+
+ALTERS = b"""CREATE TABLE orders (id int, sku text, qty int);
+CREATE TABLE staging (id int);
+ALTER TABLE orders ADD COLUMN note text;
+ALTER TABLE orders DROP COLUMN qty;
+ALTER TABLE orders RENAME COLUMN sku TO product_sku;
+ALTER TABLE orders ALTER COLUMN id TYPE bigint;
+ALTER TABLE staging RENAME TO staging_old;
+DROP TABLE staging_old;
+ALTER TABLE customers ADD COLUMN tier text;
+"""
+
+
+def test_sql_alter_and_drop_replay_to_the_final_schema():
+    """GI-010: a schema file is replayed statement by statement; the graph holds what is left."""
+    r = run(SqlDdl(), "db/schema.sql", ALTERS)
+    assert keys(r, "Table") == [{"datastore": "default", "name": "orders"}]  # staging was renamed then dropped
+    fields = {o.payload["natural_key"]["name"]: o.payload["attributes"] for o in entities(r, "Field") if o.payload["natural_key"]["table"] == "orders"}
+    assert fields == {"id": {"type": "BIGINT"}, "product_sku": {"type": "TEXT"}, "note": {"type": "TEXT"}}
+    # ALTER on a table this file did not create: the column is recorded, the table only referred to
+    (tier,) = [o for o in r.observations if o.kind == "relation" and o.payload["object"]["natural_key"] == {"table": "customers", "name": "tier"}]
+    assert tier.payload["subject"]["declare"] is False
+    assert not [o for o in r.observations if o.kind in ("migration_op",) or (o.kind == "entity" and o.payload["kind"] == "Migration")]
+    assert_relations_fit_ontology(r)
+
+
+def test_sql_migration_identity():
+    assert migration_identity("apps/api/prisma/migrations/20261101090000_init/migration.sql") == ("prisma", "20261101090000_init")
+    assert migration_identity("db/migration/V1_2__add_note.sql") == ("flyway", "1.2")
+    assert migration_identity("db/migrations/0003_orders.sql") == ("sql", "db/migrations/0003_orders.sql")
+    assert migration_identity("sql/schema.sql") is None
+
+
+def test_sql_migration_is_a_migration_that_migrates_without_declaring():
+    """GI-010: one migration cannot know what a later one drops, so it declares no table;
+    it records its operations for the linker to replay."""
+    data = b"CREATE TABLE orders (id SERIAL, sku TEXT);\nALTER TABLE orders ADD COLUMN note TEXT;\nDROP TABLE legacy;\n"
+    r = run(SqlDdl(), "apps/api/prisma/migrations/20261120090000_note/migration.sql", data)
+    assert keys(r, "Table") == [] and keys(r, "Field") == []
+    (m,) = entities(r, "Migration")
+    assert m.payload["natural_key"] == {"tool": "prisma", "revision": "20261120090000_note"} and m.payload["attributes"] == {"operations": 3}
+    migrates = [(o.payload["object"]["natural_key"], o.payload["qualifiers"], o.payload["object"]["declare"]) for o in r.observations if o.kind == "relation"]
+    assert migrates == [
+        ({"datastore": "default", "name": "orders"}, {"op": "create_table"}, False),
+        ({"datastore": "default", "name": "orders"}, {"op": "add_column", "column": "note", "type": "TEXT"}, False),
+        ({"table": "orders", "name": "note"}, {"op": "add_column", "column": "note", "type": "TEXT"}, False),
+        ({"datastore": "default", "name": "legacy"}, {"op": "drop_table"}, False),
+    ]
+    ops = [o.payload for o in r.observations if o.kind == "migration_op"]
+    assert [(p["seq"], p["op"], p["table"]) for p in ops] == [(0, "create_table", "orders"), (1, "add_column", "orders"), (2, "drop_table", "legacy")]
+    assert ops[0]["columns"] == {"id": "SERIAL", "sku": "TEXT"} and ops[1]["type"] == "TEXT"
+    assert text_of(entities(r, "Migration")[0], data) == "CREATE TABLE orders"
+    assert_relations_fit_ontology(r)
 
 
 # --------------------------------------------------------------------------- not ours / broken

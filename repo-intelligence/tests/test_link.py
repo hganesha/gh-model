@@ -354,3 +354,40 @@ def test_f02_api_to_database_chain_and_dynamic_sql_unknown(graphs):
     assert g["edges"][("listOrders", "TESTED_BY", "orders > lists newest first")]["resolution"] == "candidate"
     imports = g["coverage"][("import_resolution", "apps/web")]["detail"]
     assert imports["workspace_bound"] == ["apps/web/app/page.tsx: @acme/shared -> packages/shared/src/index.ts", "apps/web/app/page.tsx: @acme/ui -> packages/design/src/index.ts"]
+
+
+def _sql(path, source):
+    from repo_intel.extractors.contracts_data import SqlDdl
+    out = SqlDdl().extract(path, source.encode(), "cd" * 32)
+    return {"path": path, "observations": [o.model_dump(mode="json") for o in out.observations]}
+
+
+def test_sql_migrations_replay_across_files_in_revision_order():
+    """GI-010: the unit's schema is what is left after every migration ran, in the tool's order."""
+    files = [
+        _sql("db/migration/V1_10__drop_staging.sql", "DROP TABLE staging;\nALTER TABLE orders RENAME COLUMN sku TO product_sku;"),
+        _sql("db/migration/V1_2__note.sql", "ALTER TABLE orders ADD COLUMN note text;\nALTER TABLE orders ALTER COLUMN id TYPE bigint;"),
+        _sql("db/migration/V1__init.sql", "CREATE TABLE orders (id int, sku text);\nCREATE TABLE staging (id int);"),
+    ]
+    linker = _Linker({"name": "."}, files, [])
+    linker.link_migrations()
+    tables = [o["payload"]["natural_key"]["name"] for o in linker.out if o["kind"] == "entity" and o["payload"]["kind"] == "Table"]
+    fields = {o["payload"]["natural_key"]["name"]: (o["path"], o["payload"]["attributes"]) for o in linker.out if o["kind"] == "entity" and o["payload"]["kind"] == "Field"}
+    assert tables == ["orders"], "staging was created by V1 and dropped by V1.10"
+    assert fields == {
+        "id": ("db/migration/V1__init.sql", {"type": "BIGINT"}),
+        "note": ("db/migration/V1_2__note.sql", {"type": "TEXT"}),
+        "product_sku": ("db/migration/V1_10__drop_staging.sql", {"type": "TEXT"}),
+    }
+    contains = [(o["payload"]["subject"]["natural_key"]["name"], o["payload"]["object"]["natural_key"]["name"]) for o in linker.out if o["kind"] == "relation"]
+    assert sorted(contains) == [("orders", "id"), ("orders", "note"), ("orders", "product_sku")]
+
+
+def test_f02_prisma_migrations_migrate_the_schema(graphs):
+    """GI-010 on the monorepo: migrations MIGRATES what they touch; the dropped staging table is gone."""
+    before, after = graphs("F02-ts-monorepo")[6], graphs("F02-ts-monorepo")[7]
+    assert "orders_staging" not in {e["name"] for e in after["entities"].values()}
+    assert after["edges"][("20261101090000_init", "MIGRATES", "orders")]["qualifiers"] == {"op": "create_table"}
+    assert after["edges"][("20261120090000_order_note", "MIGRATES", "note")]["qualifiers"] == {"op": "add_column", "column": "note", "type": "TEXT"}
+    assert after["edges"][("orders", "CONTAINS", "note")]["evidence_class"] in ("E1", "E2")
+    assert ("20261120090000_order_note", "MIGRATES", "orders") in after["edges"] and not any(k[0] == "20261101090000_init" for k in before["edges"])
