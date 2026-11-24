@@ -1,7 +1,9 @@
-"""tsconfig / jsconfig path aliases, for the linker's import resolution.
+"""tsconfig / jsconfig: `extends`, `compilerOptions.baseUrl` and `compilerOptions.paths`.
 
-Only `compilerOptions.baseUrl` and `compilerOptions.paths` are read. `extends`
-is not followed: a file is looked at on its own, like every extractor.
+A file is looked at on its own, like every extractor: one "ts_config"
+observation records what this file declares. `unit.plan` follows `extends`
+chains across files (a package's tsconfig.json extending a root
+tsconfig.base.json) and hands each unit its effective path aliases.
 """
 
 from __future__ import annotations
@@ -48,7 +50,7 @@ def strip_jsonc(text: str) -> str:
 
 class TsConfig:
     id = "manifest.tsconfig"
-    version = "1.0.0"
+    version = "1.1.0"
 
     def matches(self, path: str) -> bool:
         return bool(_NAME.match(posixpath.basename(path)))
@@ -58,14 +60,20 @@ class TsConfig:
             doc = json.loads(strip_jsonc(data.decode("utf-8")))
         except (ValueError, UnicodeDecodeError):
             return Extraction(diagnostics=[diagnostic(self.id, "warning", "unparseable tsconfig")], parsed=False)
-        options = doc.get("compilerOptions") if isinstance(doc, dict) else None
-        paths = options.get("paths") if isinstance(options, dict) else None
-        if not isinstance(paths, dict) or not paths:
-            return Extraction()
-        clean = {str(k): [t for t in v if isinstance(t, str)] for k, v in paths.items() if isinstance(v, list)}
-        base_url = options.get("baseUrl") if isinstance(options.get("baseUrl"), str) else "."
-        at = find_span(data, '"paths"') or whole_file(data)
-        return Extraction([obs("ts_paths", blob, at, {"dir": posixpath.dirname(path), "base_url": base_url, "paths": clean}, EvidenceClass.E1)])
+        if not isinstance(doc, dict):
+            return Extraction(diagnostics=[diagnostic(self.id, "warning", "tsconfig is not an object")], parsed=False)
+        options = doc.get("compilerOptions") if isinstance(doc.get("compilerOptions"), dict) else {}
+        paths = options.get("paths")
+        raw_extends = doc.get("extends")
+        extends = [raw_extends] if isinstance(raw_extends, str) else [e for e in raw_extends if isinstance(e, str)] if isinstance(raw_extends, list) else []
+        payload = {
+            "dir": posixpath.dirname(path),
+            "extends": extends,
+            "base_url": options["baseUrl"] if isinstance(options.get("baseUrl"), str) else None,
+            "paths": {str(k): [t for t in v if isinstance(t, str)] for k, v in paths.items() if isinstance(v, list)} if isinstance(paths, dict) else None,
+        }
+        at = find_span(data, '"paths"') or find_span(data, '"extends"') or find_span(data, '"baseUrl"') or whole_file(data)
+        return Extraction([obs("ts_config", blob, at, payload, EvidenceClass.E1)])
 
 
 EXTRACTORS = [TsConfig()]

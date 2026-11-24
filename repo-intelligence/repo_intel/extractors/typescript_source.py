@@ -1,6 +1,6 @@
 """TypeScript / JavaScript source: Express routes, Next.js App Router handlers,
 process.env config keys, and linker observations (imports, exported symbols,
-fetch calls).
+fetch calls, Prisma client call sites, unsafe raw SQL, test cases).
 
 Parsing is done with tree-sitter only; repository code is never executed.
 Configuration VALUES are never copied: a ConfigKey carries its name, and an
@@ -170,9 +170,22 @@ def _walk(root):
         stack.extend(reversed(node.children))
 
 
+PRISMA_READS = {"findMany", "findUnique", "findUniqueOrThrow", "findFirst", "findFirstOrThrow", "count", "aggregate", "groupBy"}
+PRISMA_WRITES = {"create", "createMany", "createManyAndReturn", "update", "updateMany", "updateManyAndReturn", "upsert", "delete", "deleteMany"}
+PRISMA_UNSAFE = {"$queryRawUnsafe", "$executeRawUnsafe"}
+_PRISMA_MODULE = re.compile(r"(^|/)(prisma|db)(\.[a-z]+)?$|^@prisma/client$")
+_TEST_FILE = re.compile(r"(\.(test|spec)\.[cm]?[jt]sx?$)|(^|/)__tests__/")
+TEST_FRAMEWORKS = {"vitest": "vitest", "@jest/globals": "jest", "node:test": "node:test", "@playwright/test": "playwright", "mocha": "mocha"}
+_FUNCTIONS = ("arrow_function", "function_expression", "function", "function_declaration", "generator_function_declaration", "method_definition")
+
+
+def is_test_file(path: str) -> bool:
+    return bool(_TEST_FILE.search(path))
+
+
 class TypeScriptSource:
     id = "typescript.source"
-    version = "1.1.0"
+    version = "1.2.0"
 
     def matches(self, path: str) -> bool:
         return path.lower().endswith(EXTENSIONS)
@@ -196,12 +209,137 @@ class TypeScriptSource:
         transport = self._messaging(nodes)
         if transport:
             self._topic_uses(nodes, transport, blob, at, out)
+        inline: dict[int, str] = {}  # inline route callback node id -> "METHOD /route"
         if self._uses_express(nodes):
-            self._express(nodes, blob, at, out)
+            self._express(nodes, blob, at, out, inline)
         route = next_route(path)
         if route is not None:
             self._next(root, route, blob, at, out)
+        self._prisma(nodes, blob, at, out, inline)
+        if is_test_file(path):
+            self._tests(nodes, blob, at, out)
         return out
+
+    # -- the function a node is in ---------------------------------------------
+
+    @staticmethod
+    def _enclosing(node, inline: dict[int, str]) -> tuple[str, str]:
+        """(name, kind) of the function `node` is in: a declared function, `Class.method`, a
+        `const f = () => ...`, an inline route callback named after its route, else the module."""
+        current = node.parent
+        while current is not None:
+            if current.type in _FUNCTIONS:
+                if current.id in inline:
+                    return inline[current.id], "route_handler"
+                name = current.child_by_field_name("name")
+                if current.type == "method_definition" and name is not None:
+                    cls = current.parent.parent if current.parent is not None else None
+                    cls_name = cls.child_by_field_name("name") if cls is not None and cls.type in ("class_declaration", "abstract_class_declaration", "class") else None
+                    return (f"{_text(cls_name)}.{_text(name)}" if cls_name is not None else _text(name)), "method"
+                if name is not None and current.type != "arrow_function":
+                    return _text(name), "function"
+                holder = current.parent
+                if holder is not None and holder.type == "variable_declarator" and holder.child_by_field_name("name") is not None and holder.child_by_field_name("name").type == "identifier":
+                    return _text(holder.child_by_field_name("name")), "function"
+            current = current.parent
+        return "<module>", "module"
+
+    # -- Prisma client ------------------------------------------------------------
+
+    def _prisma(self, nodes, blob, at, out, inline):
+        """`prisma.order.findMany(...)` becomes an orm_use of model delegate `order`;
+        `$queryRawUnsafe` / `$executeRawUnsafe` are dynamic SQL. A client is a
+        `new PrismaClient()`, a name imported from a prisma/db module, `this.prisma`,
+        or the callback parameter of `client.$transaction(...)`."""
+        clients: set[str] = set()
+        imports_prisma = False
+        for n in nodes:
+            if n.type == "import_statement":
+                source = _string(n.child_by_field_name("source")) or ""
+                if source == "@prisma/client":
+                    imports_prisma = True
+                if _PRISMA_MODULE.search(source) and source != "@prisma/client":
+                    for c in _walk(n):
+                        if c.type == "identifier" and c.parent is not None and c.parent.type in ("import_clause", "import_specifier", "namespace_import"):
+                            if c.parent.type != "import_specifier" or c == (c.parent.child_by_field_name("alias") or c.parent.child_by_field_name("name")):
+                                clients.add(_text(c))
+            elif n.type == "variable_declarator":
+                value, name = n.child_by_field_name("value"), n.child_by_field_name("name")
+                if value is not None and name is not None and name.type == "identifier" and _text(value).startswith("new PrismaClient"):
+                    clients.add(_text(name))
+        if not clients and not imports_prisma:
+            return
+
+        def is_client(node) -> bool:
+            if node is None:
+                return False
+            if node.type == "identifier":
+                return _text(node) in clients
+            return node.type == "member_expression" and _tail_name(node) in ("prisma", *clients)
+
+        for n in nodes:  # transaction callbacks: `prisma.$transaction(async (tx) => tx.order.create(...))`
+            fn = n.child_by_field_name("function") if n.type == "call_expression" else None
+            if fn is not None and fn.type == "member_expression" and _tail_name(fn) == "$transaction" and is_client(fn.child_by_field_name("object")):
+                for arg in _args(n):
+                    params = arg.child_by_field_name("parameters") if arg.type in ("arrow_function", "function_expression") else None
+                    first = params.named_children[0] if params is not None and params.named_children else (arg.child_by_field_name("parameter") if arg.type == "arrow_function" else None)
+                    ident = first.child_by_field_name("pattern") if first is not None and first.type in ("required_parameter", "optional_parameter") else first
+                    if ident is not None and ident.type == "identifier":
+                        clients.add(_text(ident))
+        seen: set[tuple[str, str, str]] = set()
+        for n in nodes:
+            fn = n.child_by_field_name("function") if n.type == "call_expression" else None
+            if fn is None or fn.type != "member_expression":
+                continue
+            op = _tail_name(fn)
+            receiver = fn.child_by_field_name("object")
+            if op in PRISMA_UNSAFE and is_client(receiver):
+                function, kind = self._enclosing(n, inline)
+                out.observations.append(obs("dynamic_sql", blob, at(n, n), {"function": function, "function_kind": kind}, ast_node_kind=n.type))
+                continue
+            if op not in PRISMA_READS and op not in PRISMA_WRITES or receiver is None or receiver.type != "member_expression":
+                continue
+            delegate = _tail_name(receiver)
+            if not delegate or delegate.startswith("$") or not is_client(receiver.child_by_field_name("object")):
+                continue
+            function, kind = self._enclosing(n, inline)
+            access = "read" if op in PRISMA_READS else "write"
+            if (function, delegate, access) in seen:
+                continue
+            seen.add((function, delegate, access))
+            out.observations.append(obs("orm_use", blob, at(fn, fn), {"function": function, "function_kind": kind, "model": delegate, "access": access, "orm": "prisma"}, ast_node_kind=n.type))
+
+    # -- tests ----------------------------------------------------------------------
+
+    def _tests(self, nodes, blob, at, out):
+        """`it("...")` / `test("...")` cases, named with their `describe` blocks: "Cart > adds"."""
+        framework = "jest"
+        for n in nodes:
+            if n.type == "import_statement" and _string(n.child_by_field_name("source")) in TEST_FRAMEWORKS:
+                framework = TEST_FRAMEWORKS[_string(n.child_by_field_name("source"))]
+                break
+
+        def title(call) -> str | None:
+            fn = call.child_by_field_name("function")
+            head = _text(fn).split(".")[0] if fn is not None and fn.type in ("identifier", "member_expression") else None
+            args = _args(call)
+            if head not in ("it", "test", "describe") or not args or (fn.type == "member_expression" and _tail_name(fn) not in ("only", "skip", "concurrent")):
+                return None
+            return _string(args[0])
+
+        for n in nodes:
+            if n.type != "call_expression":
+                continue
+            fn = n.child_by_field_name("function")
+            name = title(n)
+            if name is None or _text(fn).split(".")[0] == "describe":
+                continue
+            chain, current = [name], n.parent
+            while current is not None:
+                if current.type == "call_expression" and _text(current.child_by_field_name("function")).split(".")[0] == "describe" and title(current):
+                    chain.insert(0, title(current))
+                current = current.parent
+            out.observations.append(obs("test", blob, at(n, n), {"name": " > ".join(chain), "framework": framework}, ast_node_kind=n.type))
 
     # -- imports -----------------------------------------------------------
 
@@ -439,7 +577,8 @@ class TypeScriptSource:
 
     # -- Express ------------------------------------------------------------
 
-    def _express(self, nodes, blob, at, out):
+    def _express(self, nodes, blob, at, out, inline=None):
+        inline = {} if inline is None else inline
         routers: set[str] = set()
         for n in nodes:
             if n.type == "variable_declarator":
@@ -477,6 +616,8 @@ class TypeScriptSource:
                     out.diagnostics.append(diagnostic(self.id, "info", f"line {n.start_point[0] + 1}: express {method} route path is not a string literal; no Endpoint emitted"))
                 elif args:
                     self._endpoint(blob, at(base, base), method, route, "express", handler, out)
+                    if args[-1].type in ("arrow_function", "function_expression", "function"):
+                        inline[args[-1].id] = f"{method} {route}"
                 continue
 
             name = _tail_name(receiver)
@@ -491,6 +632,8 @@ class TypeScriptSource:
             if not known and not route.startswith(("/", "*")):
                 continue  # e.g. cache.get("key", fallback) on something that is not a router
             self._endpoint(blob, at(fn, args[0]), method, route, "express", handler, out)
+            if args[-1].type in ("arrow_function", "function_expression", "function"):
+                inline[args[-1].id] = f"{method} {route}"
 
     # -- Next.js App Router ---------------------------------------------------
 

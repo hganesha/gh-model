@@ -3,7 +3,13 @@
 Parsed with tree-sitter only; repository code is never imported or executed.
 Everything here is local to one file. Cross-file facts (which function calls
 which, which router is mounted where) are left to the linker, which reads the
-"symbol", "import" and "route_handler" observations emitted below.
+"symbol", "import", "call", "router_decl", "router_include" and
+"route_handler" observations emitted below.
+
+A route on a `FastAPI()` app built in this file is an Endpoint here. A route
+on an `APIRouter` (or on an object imported from elsewhere) is not: its path
+depends on the `include_router(prefix=...)` and `mount` calls that put it in an
+application, which may be in other files, so the linker emits that Endpoint.
 
 Configuration VALUES are never copied: a config key contributes its name only.
 """
@@ -37,6 +43,7 @@ PUBLISH_CALLS = {"produce", "send", "send_and_wait"}
 SUBSCRIBE_CALLS = {"subscribe"}
 _TOPIC_NAME = re.compile(r"^[A-Za-z0-9._-]{1,249}$")  # the characters a Kafka topic may contain
 _SECRET_LIKE = re.compile(r"KEY|SECRET|TOKEN|PASSWORD|PASSWD|CREDENTIAL", re.I)
+_BUILTINS = frozenset(dir(__import__("builtins")))
 
 
 def _text(node: Node | None) -> str:
@@ -259,7 +266,7 @@ SQL_CALLS = {"text", "execute", "exec_driver_sql"}
 
 class PythonSource:
     id = "python.source"
-    version = "1.4.0"
+    version = "1.5.0"
 
     def __init__(self) -> None:
         self._parser = Parser(_LANGUAGE)
@@ -285,6 +292,7 @@ class PythonSource:
         nodes = [n for s in statements for n in _walk(s)]
         if run.fastapi:
             run.routes(nodes)
+            run.router_includes(nodes)
         run.models(nodes)
         if run.alembic_op:
             run.migration(statements, nodes)
@@ -295,6 +303,7 @@ class PythonSource:
         base = posixpath.basename(path)
         is_test_file = base.startswith("test_") or base.endswith("_test.py")
         for name, definition in _functions(statements):
+            run.calls(name, definition)
             run.orm_uses(name, definition)
             run.dynamic_sql(name, definition)
             if is_test_file and _last(name).startswith("test_") and ("." not in name or name.startswith("Test")):
@@ -397,12 +406,20 @@ class _Run:
                 self.getenv_names.add(aliases.get("getenv", "getenv"))
 
     def symbols(self, statements: list[Node]) -> None:
+        """Top-level functions and classes, and the methods of top-level classes as `Class.method`."""
         for statement in statements:
             definition = _definition(statement)
             kind = {"function_definition": "function", "class_definition": "class"}.get(definition.type)
             name = definition.child_by_field_name("name")
             if kind and name is not None:
                 self.emit(obs("symbol", self.blob, self.at(name), {"name": _text(name), "symbol_kind": kind}, ast_node_kind=definition.type))
+            if kind == "class" and name is not None:
+                body = definition.child_by_field_name("body")
+                for member in body.named_children if body is not None else []:
+                    method = _definition(member)
+                    method_name = method.child_by_field_name("name") if method.type == "function_definition" else None
+                    if method_name is not None:
+                        self.emit(obs("symbol", self.blob, self.at(method_name), {"name": f"{_text(name)}.{_text(method_name)}", "symbol_kind": "method"}, ast_node_kind=method.type))
 
     def module_assignments(self, statements: list[Node]) -> None:
         for statement in statements:
@@ -414,9 +431,13 @@ class _Run:
                 continue
             callee = _callee(right)
             self.assigned_from[_text(left)] = callee
-            if self._factory(callee) == "APIRouter":
+            factory = self._factory(callee)
+            if factory == "APIRouter":
                 prefix = _args(right)[1].get("prefix")
                 self.router_prefix[_text(left)] = "" if prefix is None else _literal(prefix)
+            if factory:
+                own = self.router_prefix.get(_text(left), "") if factory == "APIRouter" else ""
+                self.emit(obs("router_decl", self.blob, self.at(assignment), {"name": _text(left), "factory": factory, "prefix": own}, ast_node_kind="assignment"))
 
     # -- event topics ------------------------------------------------------------
 
@@ -510,11 +531,41 @@ class _Run:
                     self.note("info", f"route on {handler}: methods are not string literals; no Endpoint recorded")
                     continue
                 route = prefix + path
+                # Final on a FastAPI() app built here; otherwise the linker composes the prefixes.
+                final = self._factory(self.assigned_from.get(owner, "")) == "FastAPI"
                 for method in methods:
                     at = self.at(decorator)
-                    key = {"component_root": UNIT, "protocol": "http", "method": method, "route": route}
-                    self.emit(entity(self.blob, at, EntityKind.ENDPOINT, key, f"{method} {route}", {"framework": "fastapi", "handler": handler}))
-                    self.emit(obs("route_handler", self.blob, at, {"method": method, "route": route, "handler": handler}, ast_node_kind="decorator"))
+                    if final:
+                        key = {"component_root": UNIT, "protocol": "http", "method": method, "route": route}
+                        self.emit(entity(self.blob, at, EntityKind.ENDPOINT, key, f"{method} {route}", {"framework": "fastapi", "handler": handler}))
+                    self.emit(obs("route_handler", self.blob, at, {"method": method, "route": route, "handler": handler, "router": owner}, ast_node_kind="decorator"))
+
+    def router_includes(self, nodes: list[Node]) -> None:
+        """`x.include_router(r, prefix="/p")` and `x.mount("/p", sub_app)`, for the linker.
+
+        A prefix that is not a string literal is recorded as None: the routes
+        under it cannot be placed and are reported, never guessed."""
+        for call in nodes:
+            function = call.child_by_field_name("function") if call.type == "call" else None
+            if function is None or function.type != "attribute":
+                continue
+            verb = _text(function.child_by_field_name("attribute"))
+            owner = _dotted(function.child_by_field_name("object"))
+            positional, keywords = _args(call)
+            if verb == "include_router":
+                target = positional[0] if positional else keywords.get("router")
+                prefix_node = keywords.get("prefix")
+                prefix = "" if prefix_node is None else _literal(prefix_node)
+            elif verb == "mount":
+                target = positional[1] if len(positional) > 1 else keywords.get("app")
+                prefix_node = positional[0] if positional else keywords.get("path")
+                prefix = _literal(prefix_node)
+            else:
+                continue
+            target_name = _dotted(target)
+            if owner is None or target_name is None:
+                continue
+            self.emit(obs("router_include", self.blob, self.at(call), {"owner": ".".join(owner), "target": ".".join(target_name), "prefix": prefix, "via": verb}, ast_node_kind="call"))
 
     @staticmethod
     def _methods(node: Node | None) -> list[str] | None:
@@ -739,6 +790,23 @@ class _Run:
                 assigned = _text(parent.child_by_field_name("left")) if parent is not None and parent.type == "assignment" and parent.child_by_field_name("right") == call else None
                 if call.id in persisted_calls or (assigned and assigned in persisted_names):
                     record(_built_model(call), "write", call)
+
+    def calls(self, function: str, definition: Node) -> None:
+        """Each distinct dotted callee in a function body (`helper`, `services.load`,
+        `self.total`, `Order`), once, at its first call site. The linker decides which
+        of them are calls to symbols of this unit."""
+        body = definition.child_by_field_name("body")
+        seen: set[str] = set()
+        for call in _walk(body) if body is not None else []:
+            if call.type != "call":
+                continue
+            parts = _dotted(call.child_by_field_name("function"))
+            if not parts or len(parts) > 4:
+                continue
+            callee = ".".join(parts)
+            if callee not in seen and not (len(parts) == 1 and parts[0] in _BUILTINS):
+                seen.add(callee)
+                self.emit(obs("call", self.blob, self.at(call.child_by_field_name("function")), {"caller": function, "callee": callee}, ast_node_kind="call"))
 
     def dynamic_sql(self, function: str, definition: Node) -> None:
         body = definition.child_by_field_name("body")

@@ -143,7 +143,7 @@ def test_incremental_equals_cold_on_every_seeded_commit(tmp_path, f01):
 
 def test_seeded_commits_change_what_the_goldens_say(store, f01):
     repo, shas = f01
-    base, add_col, add_dep, moved = (compile_commit(store, repo, REPO_ID, s) for s in shas)
+    base, add_col, add_dep, moved = (compile_commit(store, repo, REPO_ID, s) for s in shas[:4])
     pyd = entity_id(REPO_ID, "ExternalDependency", {"ecosystem": "pypi", "name": "pydantic-settings"})
     deps = lambda m: {e for e, row in _graph(store, m.manifest)[0].items() if row["kind"] == "ExternalDependency"}
     assert deps(base) == deps(add_col) and pyd not in deps(add_col)

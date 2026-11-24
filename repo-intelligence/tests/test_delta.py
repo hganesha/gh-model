@@ -83,7 +83,8 @@ def test_directory_rename_is_reported_as_moved_with_lineage(snaps):
 
 def test_new_endpoint_shows_up_with_its_consumers(snaps):
     d = _d(snaps, "F02-ts-monorepo", 0, 1)
-    assert _ents(d, "added") == {("Endpoint", "DELETE /orders/:id")}
+    # The inline handler touches the orders table, so it is a symbol too (GI-009).
+    assert _ents(d, "added") == {("Endpoint", "DELETE /orders/:id"), ("Symbol", "DELETE /orders/:id")}
     assert ("@acme/api", "EXPOSES", "DELETE /orders/:id") in _edges(d, "added")
     assert d["summary"]["shards"]["unchanged"] >= 4, "untouched packages keep their shards"
 
