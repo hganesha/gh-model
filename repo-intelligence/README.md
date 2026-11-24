@@ -97,6 +97,34 @@ After changing a contract, regenerate the schemas:
 .venv/bin/python -m repo_intel.export_schemas
 ```
 
+## Deploy to Azure
+
+`deploy/azure/deploy.sh` puts the API and the Explorer on Azure with a small footprint. Run it from `repo-intelligence/`, signed in with `az login`:
+
+~~~bash
+deploy/azure/deploy.sh -g rkp --providers-file ../.rkp-store/providers.env --github-token-from-gh
+~~~
+
+| Piece | Azure resource | Size |
+|---|---|---|
+| Explorer | Container App, public HTTPS, IP allow-list, scales to zero | 0.25 vCPU, 0.5 GiB |
+| API | Container App, internal ingress only, one replica (compile jobs run in-process) | 0.5 vCPU, 1 GiB |
+| Projection | PostgreSQL Flexible Server, reachable from Azure services only, TLS | Burstable B1ms, 32 GB |
+| Object store, git mirrors, `providers.env` | Azure Files share mounted at `/data` | Standard LRS |
+| Images | Container Registry | Basic |
+| Identity | One user-assigned managed identity: pulls images, signs in to Azure model deployments | |
+
+Expect roughly USD 40–60 a month, mostly the API replica and PostgreSQL. Model calls are billed separately by use.
+
+- **Access.** The Explorer has no sign-in of its own, so by default only your current public IP may open it (the script asks a public IP-lookup service once). Add addresses with `--allow-ip CIDR`, or open it with `--allow-any`. The API is never exposed outside the environment.
+- **Secrets.** Every run generates new PostgreSQL passwords and a new Explorer-to-API token and passes them as Container App secrets; nothing is written locally. Data is kept across runs.
+- **Models.** `--providers-file` uploads a `providers.env` (the same file used locally). `azure-cli` sign-in becomes `managed-identity`, and the identity is granted "Cognitive Services User" on each Azure AI resource named in the file.
+- **Repositories.** The container has no `gh`. `--github-token-from-gh` mounts your GitHub token for the API; in Settings, add a GitHub token connection with credential reference `managed:github-token`. Local paths cannot be compiled in the hosted API.
+- **Images** are built in the registry (`az acr build`), so local Docker is not needed. `Dockerfile` and `explorer/Dockerfile` also build locally.
+- **Remove everything** with `az group delete -n rkp`.
+
+The API runs against the hosted database through `RKP_DATABASE_URL` (owner connection, used to apply the schema) and `RKP_APP_DB_PASSWORD` (the restricted role it then connects as, so row-level security still applies). `RKP_API_HOST=0.0.0.0` makes it listen inside the container.
+
 ## Layout
 
 - `repo_intel/hashing.py` — RFC 8785 canonical JSON, content IDs, Merkle root

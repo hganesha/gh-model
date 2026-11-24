@@ -87,11 +87,11 @@ def embedding(policy: PlacementPolicy, allowed: tuple[str, ...], store: ObjectSt
     model = os.environ.get("RKP_EMBEDDING_MODEL", "text-embedding-3-small")
     base = os.environ.get("RKP_EMBEDDING_URL", "https://api.openai.com/v1").rstrip("/")
     key = os.environ.get("RKP_EMBEDDING_API_KEY")
-    if os.environ.get("RKP_EMBEDDING_AUTH") == "azure-cli" and not key:
-        # Azure OpenAI v1 (`https://<resource>.openai.azure.com/openai/v1`): the existing `az login` session, no key.
-        from azure.identity import AzureCliCredential
-        from .gateway import ENTRA_SCOPE, bearer
-        authorization = bearer(AzureCliCredential(process_timeout=60), ENTRA_SCOPE)
+    from .gateway import ENTRA_SCOPE, azure_credential, bearer
+    credential = None if key else azure_credential(os.environ.get("RKP_EMBEDDING_AUTH"))
+    if credential is not None:
+        # Azure OpenAI v1 (`https://<resource>.openai.azure.com/openai/v1`): `az login` or the managed identity, no key.
+        authorization = bearer(credential, ENTRA_SCOPE)
     elif key:
         authorization = lambda: {"Authorization": f"Bearer {key}"}
     else:
