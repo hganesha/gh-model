@@ -5,12 +5,21 @@
 
 Sends only hand-written feature sets (no repository content). Prints, per case,
 the choice, the per-option scores and whether the answer survived reshuffling.
+
+    RKP_AZURE_OPENAI_ENDPOINT=... RKP_LLM_DEPLOYMENT=... RKP_AZURE_OPENAI_AUTH=azure-cli \\
+        python -m repo_intel.decisions.live_check llm
+
+checks the LLM adapter end to end: it compiles the synthetic F01 fixture with DM08
+behaviour candidates on, then compiles it again, which must be a ledger hit. Only
+the fixture's route, test and prompt-file names and evidence IDs are sent.
 """
 
 from __future__ import annotations
 
+import json
 import sys
 import tempfile
+from pathlib import Path
 
 from repo_intel.storage.store import ObjectStore
 from repo_intel.decisions import component as dm
@@ -37,6 +46,8 @@ CASES = {
 
 def main() -> int:
     alias = sys.argv[1] if len(sys.argv) > 1 else "decision-default"
+    if alias == "llm":
+        return llm_check()
     gateway = Gateway.from_env()
     if alias not in gateway.aliases:
         print(f"no credentials configured for alias {alias!r}; configured: {sorted(gateway.aliases)}")
@@ -68,6 +79,40 @@ def run_check(gateway: Gateway, alias: str) -> list[dict]:
             ).row()}
             for name, features in CASES.items()
         ]
+
+
+def llm_check() -> int:
+    from repo_intel.compile.fixtures import materialize
+    from repo_intel.compile.pipeline import compile_commit, load_shards
+    from repo_intel.workspace.settings import CompileSettings
+
+    gateway = Gateway.from_env()
+    llm = gateway.llms.get("llm-default")
+    if llm is None:
+        print("no LLM configured: set RKP_AZURE_OPENAI_ENDPOINT, RKP_LLM_DEPLOYMENT and RKP_AZURE_OPENAI_AUTH=azure-cli (or an API key)")
+        return 2
+    gateway = Gateway({}, frozenset({llm.provider}), {"llm-default": llm})  # explicit, for this run only
+    policy = CompileSettings(behavior_candidates=True)
+    with tempfile.TemporaryDirectory() as name:
+        tmp = Path(name)
+        commits = materialize("F01-python-api", tmp / "repo")
+        store = ObjectStore(tmp / "store", "live-check")
+        first = compile_commit(store, tmp / "repo", "local/live-check", commits[0], gateway=gateway, policy=policy)
+        shards = load_shards(store, first.manifest)
+        features = [e for s in shards.values() for e in s["entities"] if e["kind"] == "Feature"]
+        edges = {a["object"]: a for s in shards.values() for a in s["assertions"]}
+        unknowns = [u for s in shards.values() for u in s["unknowns"] if "behavior" in json.dumps(u)]
+        print(f"model {llm.provider}/{llm.model}: {len(features)} behaviour candidate(s)")
+        for f in features:
+            a = edges.get(f["id"], {})
+            print(f"  - {f['attributes']['statement']}\n    trust={f['attributes']['trust_label']} {a.get('assertion_kind')}/{a.get('epistemic_status')}/{a.get('evidence_class')} cites {len(f['evidence_ids'])}")
+        for u in unknowns:
+            print(f"  unknown: {u.get('reason')}")
+        again = compile_commit(store, tmp / "repo", "local/live-check", commits[0], gateway=gateway, policy=policy)
+        replay = again.manifest.rkp_hash == first.manifest.rkp_hash
+        print(f"recompile: {'same snapshot, ledger hit' if replay else 'DIFFERENT snapshot'}")
+        ok = bool(features) and replay and all(edges.get(f["id"], {}).get("assertion_kind") == "hypothesis" for f in features)
+        return 0 if ok else 1
 
 
 if __name__ == "__main__":

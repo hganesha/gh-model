@@ -50,6 +50,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
+from repo_intel.compile import confine
 from repo_intel.storage.hashing import canonical, digest
 from repo_intel.storage.store import ObjectStore
 
@@ -474,9 +475,17 @@ def _seatbelt_profile(inputs_dir: str) -> str:
     ])
 
 
+_SYSTEM_READ = ("/bin", "/lib", "/lib64", "/lib32", "/sbin", "/etc/ld.so.cache", "/etc/alternatives")
+
+
+def landlock_read_roots(inputs_dir: str) -> list[str]:
+    """What a self-confined worker may read: the same as under bwrap."""
+    return ["/usr", *_SYSTEM_READ, *_code_roots(), inputs_dir]
+
+
 def _bwrap_command(bwrap: str, inputs_dir: str) -> list[str]:
     cmd = [bwrap, "--unshare-all", "--die-with-parent", "--new-session", "--clearenv", "--setenv", "PATH", "/usr/bin:/bin", "--dev", "/dev", "--tmpfs", "/tmp", "--ro-bind", "/usr", "/usr"]
-    for path in ("/bin", "/lib", "/lib64", "/lib32", "/sbin", "/etc/ld.so.cache", "/etc/alternatives"):
+    for path in _SYSTEM_READ:
         cmd += ["--ro-bind-try", path, path]
     for root in _code_roots():
         cmd += ["--ro-bind", root, root]
@@ -502,6 +511,8 @@ class _Worker:
         python = [sys.executable, "-I", "-B", "-m", f"{__name__.rsplit('.', 1)[0]}.step_worker", "--inputs", inputs]
         if tool == "sandbox-exec":
             cmd = [tool_path, "-p", _seatbelt_profile(inputs), *python]
+        elif tool == "landlock":
+            cmd = [*python, "--confine"]
         else:
             cmd = [*_bwrap_command(tool_path, inputs), *python]
         self.log_path = self.root / "worker.log"
@@ -603,10 +614,15 @@ class SandboxExecutor:
 
     def __init__(self, timeout: float = 600.0, tool: str | None = None):
         self.timeout = timeout
-        self.tool = tool or ("sandbox-exec" if sys.platform == "darwin" else "bwrap")
-        found = "/usr/bin/sandbox-exec" if self.tool == "sandbox-exec" and os.path.exists("/usr/bin/sandbox-exec") else shutil.which(self.tool)
-        if self.tool not in ("sandbox-exec", "bwrap") or not found:
-            raise SandboxUnavailable(f"no step sandbox on {sys.platform}: install bubblewrap (bwrap), or set {EXECUTOR_ENV}=inprocess for development")
+        self.tool = tool or _sandbox_tool()
+        if self.tool == "sandbox-exec":
+            found = "/usr/bin/sandbox-exec" if os.path.exists("/usr/bin/sandbox-exec") else None
+        elif self.tool == "landlock":
+            found = sys.executable if confine.landlock_abi() >= 1 else None
+        else:
+            found = shutil.which(self.tool) if self.tool == "bwrap" else None
+        if not found:
+            raise SandboxUnavailable(f"no step sandbox on {sys.platform}: install bubblewrap (bwrap) or use a kernel with Landlock, or set {EXECUTOR_ENV}=inprocess for development")
         self.tool_path = found
         self.name = self.tool
 
@@ -650,7 +666,16 @@ def default_executor_name() -> str:
     choice = os.environ.get(EXECUTOR_ENV, "sandbox")
     if choice == "inprocess":
         return InProcessExecutor.name
-    return "sandbox-exec" if sys.platform == "darwin" else "bwrap"
+    return _sandbox_tool()
+
+
+def _sandbox_tool() -> str:
+    """sandbox-exec on macOS; on Linux bwrap where it is installed, else Landlock self-confinement."""
+    if sys.platform == "darwin":
+        return "sandbox-exec"
+    if shutil.which("bwrap") is None and confine.landlock_abi() >= 1:
+        return "landlock"
+    return "bwrap"
 
 
 def default_executor() -> Executor:

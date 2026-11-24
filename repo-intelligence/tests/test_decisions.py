@@ -455,6 +455,7 @@ def test_hosted_embedding_retries_a_dropped_connection(tmp_path, monkeypatch):
 
 
 def test_hosted_deployment_signs_in_with_its_managed_identity():
+    pytest.importorskip("azure.identity", reason="needs the azure extra")
     from azure.identity import AzureCliCredential, ManagedIdentityCredential
     from repo_intel.decisions.gateway import azure_credential
 

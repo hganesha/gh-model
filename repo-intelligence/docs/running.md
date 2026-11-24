@@ -36,6 +36,30 @@ Incremental/cold parity (every seeded commit compiled in a warm store and in a f
 .venv/bin/python -m repo_intel.compile.step_worker --selfcheck
 ```
 
+Live model checks send synthetic data only. They read provider settings from the environment, so load `.rkp-store/providers.env` first (Azure models also need `az login`); the Jev check needs `RKP_JEV_API_KEY`:
+
+```bash
+set -a; . .rkp-store/providers.env; set +a
+```
+
+```bash
+.venv/bin/python -m repo_intel.decisions.live_check microsoft-decision
+```
+
+```bash
+RKP_LLM_DEPLOYMENT=gpt-4-1-mini .venv/bin/python -m repo_intel.decisions.live_check llm
+```
+
+Score every fixture component with a decision model, then see which threshold and margin the labelled results support:
+
+```bash
+.venv/bin/python benchmarks/fixture_eval.py microsoft-decision benchmarks/results/component-kind-<model>-<date>.json
+```
+
+```bash
+.venv/bin/python benchmarks/calibrate.py benchmarks/results/component-kind-<model>-<date>.json
+```
+
 After changing a contract, regenerate the schemas:
 
 ```bash
