@@ -1,9 +1,11 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import type { NextRequest } from "next/server";
+import { actorOf, authConfig, readSession, sessionCookie } from "@/lib/auth";
 
 // Server-side proxy to the RKP API. The bearer token is attached here and never
-// leaves the server: it is not echoed in responses, errors or headers.
+// leaves the server: it is not echoed in responses, errors or headers. Headers are
+// built from scratch, so a browser cannot supply its own X-RKP-Actor or X-RKP-Role.
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -47,6 +49,11 @@ async function forward(req: NextRequest, ctx: Context): Promise<Response> {
   }
   if (!sameOrigin(req)) return problem(403, "forbidden", "cross-origin requests are not allowed");
 
+  // With sign-in on, every call carries the signed-in user; the API records them and refuses writes from viewers.
+  const auth = authConfig();
+  const user = auth ? await readSession(auth, req.cookies.get(sessionCookie(auth))?.value) : null;
+  if (auth && !user) return problem(401, "unauthenticated", "Sign in to use the Explorer.");
+
   const token = await readToken();
   if (!token) {
     return problem(500, "proxy_not_configured", "The explorer has no API token. Set RKP_DEV_TOKEN or create ../.rkp-store/dev-token.");
@@ -58,6 +65,10 @@ async function forward(req: NextRequest, ctx: Context): Promise<Response> {
   const url = `${base}/v1/${upstreamPath}${req.nextUrl.search}`;
 
   const headers: Record<string, string> = { Authorization: `Bearer ${token}` };
+  if (user) {
+    headers["X-RKP-Actor"] = actorOf(user);
+    headers["X-RKP-Role"] = user.role;
+  }
   let body: string | undefined;
   if (req.method === "POST") {
     if (!(req.headers.get("content-type") ?? "").toLowerCase().startsWith("application/json")) {

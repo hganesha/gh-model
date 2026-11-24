@@ -42,7 +42,7 @@ test("build and review a value chain, then update and reload settings", async ({
   await page.keyboard.press("Enter");
   const card = page.getByRole("region", { name: "Customer management", exact: true });
   await expect(card.getByRole("button", { name: "orders-api", exact: true })).toBeVisible();
-  await expect(card.getByText("Confirmed by local-admin")).toBeVisible();
+  await expect(card.getByText("Confirmed by ada@example.test")).toBeVisible();
 
   const fulfillment = page.getByRole("region", { name: "Order fulfilment", exact: true });
   await card.getByRole("listitem").dragTo(fulfillment);
