@@ -752,9 +752,25 @@ class Service:
     def collect_garbage(self, actor: str = "gc", now: float | None = None, grace_seconds: float = 3600.0) -> dict[str, Any]:
         with self.maintenance.exclusive():
             report = self._collect(strict=False, now=now, grace_seconds=grace_seconds, prune=True)
+        row = {**report.row(), "webhook_deliveries_pruned": self._prune_deliveries(now)}
         with projection.connect(self.conninfo, self.store.tenant_id) as conn:
-            projection.audit(conn, self.store.tenant_id, actor, "gc.collected", digest(self.store.tenant_id), {k: v for k, v in report.row().items() if not k.endswith("_hashes")})
-        return report.row()
+            projection.audit(conn, self.store.tenant_id, actor, "gc.collected", digest(self.store.tenant_id), {k: v for k, v in row.items() if not k.endswith("_hashes")})
+        return row
+
+    def _prune_deliveries(self, now: float | None = None) -> int:
+        """Forget delivery IDs past the redelivery window, keeping each connection's latest
+        (the settings view reports when a connection last received a webhook)."""
+        _, document = self.workspace_settings()
+        cutoff = (time.time() if now is None else now) - document.retention.webhook_delivery_days * gc.DAY
+        with projection.connect(self.conninfo, self.store.tenant_id) as conn:
+            pruned = conn.execute(
+                """DELETE FROM webhook_deliveries d WHERE d.tenant_id=%s AND d.received_at < to_timestamp(%s)
+                   AND d.received_at < (SELECT max(received_at) FROM webhook_deliveries l
+                                        WHERE l.tenant_id=d.tenant_id AND l.connection_id=d.connection_id)""",
+                (self.store.tenant_id, cutoff),
+            ).rowcount
+            conn.commit()
+        return pruned
 
     def _collect(self, *, strict: bool, now: float | None = None, grace_seconds: float = 3600.0, prune: bool = True, keep: set[str] | None = None) -> gc.Report:
         """Mark and sweep; call with `maintenance` held exclusively."""

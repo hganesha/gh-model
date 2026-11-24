@@ -1,0 +1,6 @@
+{
+ "method": "GET",
+ "path": "/v1/snapshots/sha256:c0ce440cff3b164b993511c51d2615d807fb54fd4047df460945d6ff078d7720/placements",
+ "status": 200,
+ "body": "{\"components\":{\"ent_ritpndxi2paytw5owngti3yx5c\":{\"lineage_id\":\"ent_ritpndxi2paytw5owngti3yx5c\",\"capability_id\":\"e270bbd3-a5b6-4616-8609-be5713706e0c\",\"status\":\"confirmed\",\"score\":null,\"candidates\":[],\"rejected\":[\"42d56bf3-a887-43ac-83e8-f175bb37d5e4\"],\"author\":\"ada@example.test\",\"decision_ref\":null,\"source_rkp_hash\":null,\"evidence_ids\":[],\"reason\":null,\"capability\":\"Order fulfilment\"}},\"version\":14,\"capabilities\":[{\"id\":\"42d56bf3-a887-43ac-83e8-f175bb37d5e4\",\"name\":\"Customer management\"},{\"id\":\"cap-38\",\"name\":\"Logistics & Distribution\"},{\"id\":\"e270bbd3-a5b6-4616-8609-be5713706e0c\",\"name\":\"Order fulfilment\"}],\"eligible_components\":1}"
+}

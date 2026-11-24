@@ -163,6 +163,8 @@ class RetentionPolicy(Model):
     blob_cache_days: int = Field(14, ge=0, le=3650)  # source blobs; refilled from the host by OID
     step_cache_days: int = Field(30, ge=0, le=3650)  # step outputs, ledger and placement caches, by last use
     mirror_days: int = Field(14, ge=1, le=3650)  # bare mirrors not fetched into for this long
+    # Webhook delivery IDs are kept only to refuse redeliveries; GitHub redelivers for 3 days.
+    webhook_delivery_days: int = Field(7, ge=3, le=365)
 
 
 class ParityPolicy(Model):

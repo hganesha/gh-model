@@ -1,6 +1,0 @@
-{
- "method": "GET",
- "path": "/v1/snapshots/sha256:9f4654b57e0d3400f861d7cf22f762e7835e66cd159059b398b2a60d06522f20/entities?plane=contracts&kind=Endpoint&limit=60",
- "status": 200,
- "body": "{\"entities\":[{\"id\":\"ent_qgjwpb2dlopapahhkk7lrjlt2j\",\"kind\":\"Endpoint\",\"name\":\"GET /customers\",\"attributes\":{\"handler\":\"list_customers\",\"framework\":\"fastapi\"},\"natural_key\":{\"route\":\"/customers\",\"method\":\"GET\",\"protocol\":\"http\",\"component_root\":\"\"},\"evidence_ids\":[\"ev_fowdfojetatbk5k35fdgyugh5a\"]},{\"id\":\"ent_zxxli2vdkxolzw7urj4vp2o6ph\",\"kind\":\"Endpoint\",\"name\":\"POST /customers\",\"attributes\":{\"handler\":\"create_customer\",\"framework\":\"fastapi\"},\"natural_key\":{\"route\":\"/customers\",\"method\":\"POST\",\"protocol\":\"http\",\"component_root\":\"\"},\"evidence_ids\":[\"ev_itnt6cvchacezug22bulbej6ny\"]}],\"truncated\":false}"
-}

@@ -409,6 +409,20 @@ def test_retention_collects_old_snapshots_and_keeps_the_head(system, f01):
     assert again["rkp_hash"] == jobs[-1]["rkp_hash"], "evicted blobs are re-admitted from the repository"
 
 
+def test_gc_forgets_webhook_deliveries_past_the_redelivery_window(system):
+    _, service, _ = system
+    rows = [("c1", "old", 30), ("c1", "recent", 1), ("c2", "only", 30)]
+    with projection.connect(service.conninfo, "tenant-a") as conn:
+        for connection, delivery, days in rows:
+            conn.execute("INSERT INTO webhook_deliveries (tenant_id,connection_id,delivery_id,received_at) VALUES ('tenant-a',%s,%s,now() - make_interval(days => %s))", (connection, delivery, days))
+        conn.commit()
+    report = service.collect_garbage(grace_seconds=0)
+    assert report["webhook_deliveries_pruned"] == 1
+    with projection.connect(service.conninfo, "tenant-a") as conn:
+        left = {r[0] for r in conn.execute("SELECT delivery_id FROM webhook_deliveries WHERE tenant_id='tenant-a'")}
+    assert left == {"recent", "only"}, "a connection's latest delivery is kept for the settings view"
+
+
 def test_store_touch_and_sweep(tmp_path):
     store = ObjectStore(tmp_path, "t")
     a, b = store.put_bytes(b"a"), store.put_bytes(b"b")

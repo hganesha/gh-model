@@ -1,6 +1,0 @@
-{
- "method": "GET",
- "path": "/v1/snapshots/sha256:9f4654b57e0d3400f861d7cf22f762e7835e66cd159059b398b2a60d06522f20/entities?plane=data&kind=Field&limit=60",
- "status": 200,
- "body": "{\"entities\":[{\"id\":\"ent_3o5timl7c2i6n6pp2uwrjkz7yu\",\"kind\":\"Field\",\"name\":\"display_name\",\"attributes\":{\"orm\":\"sqlalchemy\",\"attribute\":\"display_name\"},\"natural_key\":{\"name\":\"display_name\",\"table\":\"customers\"},\"evidence_ids\":[\"ev_p4p4v2k4aliyi6vo3qwz3kgbmk\"]},{\"id\":\"ent_3yv4yeeooe5cio6xgrcgnfew33\",\"kind\":\"Field\",\"name\":\"email\",\"attributes\":{\"orm\":\"sqlalchemy\",\"attribute\":\"email\"},\"natural_key\":{\"name\":\"email\",\"table\":\"customers\"},\"evidence_ids\":[\"ev_j5h3yj3pwfedl7xv7wq6crf5qg\"]},{\"id\":\"ent_2w3yyttbjezxxyos2zbyxrw7ux\",\"kind\":\"Field\",\"name\":\"id\",\"attributes\":{\"orm\":\"sqlalchemy\",\"attribute\":\"id\"},\"natural_key\":{\"name\":\"id\",\"table\":\"customers\"},\"evidence_ids\":[\"ev_nd7qkwo7mc7fcby34oibnqlel7\"]}],\"truncated\":false}"
-}
