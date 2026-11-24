@@ -76,7 +76,7 @@ def test_connect_compile_and_read_a_repository(client, f01):
     assert all(a["subject"] in detail["neighbours"] and a["object"] in detail["neighbours"] for a in detail["assertions"])
 
     decisions = c.get(f"/v1/snapshots/{h}/decisions", headers=AUTH).json()["decisions"]
-    assert {d["spec"].split("@")[0] for d in decisions} == {"dm.component-kind", "dm.repository-topology", "dm.dependency-capability"}
+    assert {d["spec"].split("@")[0] for d in decisions} == {"dm.component-kind", "dm.primary-stack", "dm.repository-topology", "dm.dependency-capability"}
     deps = c.get(f"/v1/snapshots/{h}/entities", headers=AUTH, params={"kind": "ExternalDependency"}).json()["entities"]
     fastapi = next(e for e in deps if e["name"] == "fastapi")
     dependency = c.get(f"/v1/snapshots/{h}/entities/{fastapi['id']}", headers=AUTH).json()

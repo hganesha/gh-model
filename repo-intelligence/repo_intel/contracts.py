@@ -232,10 +232,30 @@ class DecisionSpec(Model):
     abstain_required_if_missing: list[str] = []
     verification: str
     max_input_bytes: int = 30000
-    max_attempts: int = 2
+    max_attempts: int = Field(2, ge=1)
+    # "labels": options come from the closed label set. "entities": options are entity IDs
+    # extracted for this decision (which table, which endpoint); the label set then only
+    # names the kind of answer and every option must be an entity the rules proposed.
+    candidate_source: Literal["labels", "entities"] = "labels"
 
 
 RuleOutcome = Literal["resolved", "ambiguous", "conflict", "insufficient_evidence"]
+DecisionMethod = Literal["rules", "decision_model", "llm", "classifier", "owner_override"]
+
+
+class Disagreement(Model):
+    """A label another source gave for the same decision, kept when it lost (spec §8.6)."""
+
+    method: Literal["rules", "decision_model", "llm", "classifier", "owner_override"]
+    label: str | None
+
+
+class Hypothesis(Model):
+    """DM08 output: model-written text, length-limited and never more than a hypothesis (§7.3)."""
+
+    statement: str = Field(min_length=1, max_length=280)
+    evidence_ids: list[str] = Field(min_length=1)
+    trust_label: Literal["untrusted_generated"] = "untrusted_generated"
 
 
 class DecisionResult(Model):
@@ -252,12 +272,17 @@ class DecisionResult(Model):
     contradicting_evidence_ids: list[str] = []
     abstained: bool
     abstain_reason: str | None = None
-    decision_method: Literal["rules", "decision_model", "llm", "classifier"]
+    decision_method: DecisionMethod
     model_ref: str | None = None
     attempts: int = 1
+    verification_ref: str | None = None  # set when the spec's verifier confirmed the label
+    disagreements: list[Disagreement] = []
+    hypotheses: list[Hypothesis] = []
 
     @model_validator(mode="after")
     def _consistent(self) -> "DecisionResult":
+        if self.hypotheses and self.decision_method != "llm":
+            raise ValueError("only an llm step writes hypotheses")
         if self.abstained != (self.selected_label is None):
             raise ValueError("abstained decisions have no label, and only they")
         if self.abstained and not self.abstain_reason:
