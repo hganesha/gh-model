@@ -109,3 +109,19 @@ test("fills in the fields format 2 leaves out, with separate copies per row", as
   bundle.entities.get("ent_a")!.attributes.changed = true;
   assert.deepEqual(bundle.entities.get("ent_b")!.attributes, {});
 });
+
+test("indexes behaviour rows by owner and skips tables it does not know", async () => {
+  const behavior = (id: string, owner: string) => ({
+    table: "behavior", id, owner, artifact: "ent_file", schema: "rkp-behavior/1", language: "cfml",
+    params: [], body: [{ op: "exit", at: [0, 4] }], evidence_ids: ["ev_1"], evidence_class: "E2",
+  });
+  const root = await writeBundle({ ...manifest, bundle_format: "rkp-bundle/2", units: [{ ...manifest.units[0], behaviors: 2 }] }, {
+    "units/root.jsonl": [...unitRows, behavior("bhv_2", "ent_a"), behavior("bhv_1", "ent_a"), { table: "something_newer", id: "x" }],
+  });
+  const bundle = await loadBundle(root);
+  assert.ok(bundle);
+  assert.deepEqual(bundle.behaviorOf("ent_a").map((b) => b.id), ["bhv_1", "bhv_2"]);
+  assert.equal(bundle.behaviorOf("ent_a")[0]?.language, "cfml");
+  assert.deepEqual(bundle.behaviorOf("ent_b"), []);
+  assert.equal(bundle.entities.size, 2);
+});
