@@ -28,6 +28,22 @@ Without the server: `rkp compile` writes a repository's knowledge to `.rkp/knowl
 .venv/bin/rkp compile path/to/repository
 ```
 
+Three commands read bundles without compiling anything:
+
+- `rkp verify [PATH]` re-checks a committed `.rkp/knowledge/` against itself: every unit's rows (behaviour included in the full tier) hash to their digests, the counts in `manifest.json` match the files, the tier holds only what it should, and the rows pass the publish gate. It reads the files as they are, so it needs neither the cache nor a compile, and it lists every problem it finds. Exit status 1 means the bundle should be compiled again.
+- `rkp diff A B` compares two bundles: two directories, or two commits of one repository (`--repo`, read with `git cat-file`, nothing checked out). It reports entities added, removed, changed or moved (matched by kind and natural key, so two repositories compare too), relations, behaviour per function or page, coverage, and files. A full bundle and an architecture-tier one are compared at the architecture tier.
+- `rkp solution check [PATH]` reads `.rkp/solution.json`, the repositories and inputs that make up one application, and opens every member's bundle; `rkp solution links [PATH]` prints the entities linked across members (exact rules at `E3`), the candidates it would not merge (`E4`), and the references it could not match.
+
+With `--json`, each writes one `{"event": "result", ...}` or `{"event": "error", ...}` line on stdout, the form editor shells read.
+
+```bash
+.venv/bin/rkp verify path/to/repository
+```
+
+```bash
+.venv/bin/rkp diff main my-branch --repo path/to/repository
+```
+
 ## Docs
 
 | Page | What it covers |
@@ -47,7 +63,7 @@ repo_intel/
 ├── extractors/   file.extract plugins, one module per language or format (base.py documents the interface)
 ├── decisions/    decision models: gateway and provider adapters, runner and ledger, rules, owner overrides
 ├── knowledge/    published snapshots over time: registry, projection, deltas, lineage, parity; the .rkp/ bundle and its local API
-├── cli.py        the `rkp` command line: compile a repository into its .rkp/ bundle, check it, serve it to the Explorer
+├── cli.py        the `rkp` command line: compile a repository into its .rkp/ bundle, check it, verify and compare bundles, serve it to the Explorer
 ├── storage/      content-addressed object store, SQL migrations, garbage collection, canonical hashing
 ├── workspace/    workspace settings and the cross-repository business map
 └── server/       HTTP API, the service behind it, the one-command server, Temporal workflows

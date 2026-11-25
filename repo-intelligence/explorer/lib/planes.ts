@@ -105,6 +105,10 @@ export function planeOfKind(kind: string): PlaneId | "files" {
   return KIND_TO_PLANE[kind] ?? "files";
 }
 
+/**
+ * A label for every coverage domain the engine writes to coverage.jsonl. A test
+ * (tests/test_cli_verify_diff.py) fails when the engine gains a domain this does not name.
+ */
 export const DOMAIN_LABEL: Record<string, string> = {
   parse: "Files parsed",
   inventory: "Files inventoried",
@@ -112,12 +116,17 @@ export const DOMAIN_LABEL: Record<string, string> = {
   dependency_capability: "Dependencies classified",
   event_topics: "Event topics resolved",
   route_to_handler: "Routes linked to a handler",
+  call_graph: "Calls resolved to a function",
   data_access: "Data access resolved to a table",
   data_lineage: "Data reads and writes named",
   contract_match: "Contracts matched",
   deployment_refs: "Deployment references resolved",
+  config_supply: "Config keys supplied by a deployment",
+  build_provenance: "Deployment units with a build",
+  decisions: "Decisions made without abstaining",
   architecture_patterns: "Catalogue patterns looked for",
   platform_constructs: "Platform constructs modelled",
+  behavior: "Behaviour units stored",
 };
 
 export function domainLabel(domain: string): string {
