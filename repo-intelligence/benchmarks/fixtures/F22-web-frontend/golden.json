@@ -576,7 +576,7 @@
       "kind": "UIControl",
       "natural_key": {
         "container": "src/pages/OrdersPage.tsx",
-        "name": "link1"
+        "name": "link2"
       },
       "attributes": {
         "target": "dynamic"
@@ -744,7 +744,7 @@
         "name": "admin"
       },
       "attributes": {
-        "platform_kind": "web:Guard"
+        "platform_kind": "web:Role"
       },
       "since": "M2"
     },

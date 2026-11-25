@@ -1,12 +1,14 @@
 """The web platform pack: routes and pages as screens, forms and controls, design tokens and
 route guards, from HTML, JSX/TSX, Vue and Angular sources and from stylesheets."""
 
+import ast
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
-# The extractors package loads the pack registry; importing it first lets the registry import
-# the web pack whole (a pack module imported first would be found half initialised).
 from repo_intel import extractors, platforms  # noqa: F401
 from repo_intel.compile.fixtures import FIXTURES_DIR
 from repo_intel.compile.ontology import EntityKind, check_relation
@@ -65,10 +67,40 @@ def test_the_pack_is_registered_and_valid():
     assert kinds["web:Route"] is EntityKind.SCREEN and kinds["web:Page"] is EntityKind.SCREEN
     assert kinds["web:Form"] is EntityKind.FORM and kinds["web:Control"] is EntityKind.UI_CONTROL
     assert {kinds[t] for t in ("web:CssVariable", "web:ScssVariable", "web:ThemeToken")} == {EntityKind.STYLE_TOKEN}
-    assert kinds["web:Guard"] is EntityKind.ROLE
+    assert kinds["web:Role"] is EntityKind.ROLE and PACK.term("web:Role").fidelity == "exact"
+    assert "web:Guard" not in kinds  # a guard lists roles; it is not one
     assert len(PACK.constructs) >= 40
     assert {e.id for e in PACK.extractors} == {"web.markup", "web.script", "web.styles"}
     assert not PACK.supersedes
+
+
+WEB_PACK_DIR = Path(platforms.__file__).parent / "web"
+REPO_ROOT = Path(platforms.__file__).parents[2]
+
+
+def test_importing_the_pack_first_still_registers_it():
+    # Discovery refuses a pack that is still importing; a pack that imports
+    # repo_intel.extractors at module level is still importing when discovery reaches it.
+    code = "import repo_intel.platforms.web\nfrom repo_intel import platforms\nassert 'web' in platforms.packs(), sorted(platforms.packs())\n"
+    env = {**os.environ, "PYTHONPATH": str(REPO_ROOT) + os.pathsep + os.environ.get("PYTHONPATH", "")}
+    done = subprocess.run([sys.executable, "-c", code], cwd=REPO_ROOT, env=env, capture_output=True, text=True, timeout=120)
+    assert done.returncode == 0, done.stderr[-2000:]
+
+
+@pytest.mark.parametrize("module", sorted(p.name for p in WEB_PACK_DIR.glob("*.py")))
+def test_no_module_level_import_of_the_extractors_package(module):
+    def run_at_import(node):  # every statement except those inside function bodies
+        for child in ast.iter_child_nodes(node):
+            if not isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+                yield child
+                yield from run_at_import(child)
+
+    for n in run_at_import(ast.parse((WEB_PACK_DIR / module).read_text())):
+        if isinstance(n, ast.Import):
+            assert not any(a.name.startswith("repo_intel.extractors") for a in n.names), (module, n.lineno)
+        elif isinstance(n, ast.ImportFrom):
+            assert not (n.module or "").startswith("repo_intel.extractors"), (module, n.lineno)
+            assert not (n.module == "repo_intel" and any(a.name == "extractors" for a in n.names)), (module, n.lineno)
 
 
 @pytest.mark.parametrize("path, claimed", [
@@ -115,6 +147,9 @@ def test_react_router_elements_are_screens():
     assert admin["platform_kind"] == "web:Route" and admin["component"] == "Admin" and admin["lazy"] is True
     assert admin["guards"] == ["RequireRole"] and admin["layouts"] == ["Shell"]
     assert edges(out, "REQUIRES_ROLE") == [("/admin", "admin"), ("/admin", "auditor")]
+    role = entity(out, "Role", name="admin")
+    assert role["natural_key"] == {"realm": "web", "name": "admin"}
+    assert role["attributes"]["platform_kind"] == "web:Role" and "fidelity" not in role["attributes"]  # exact
     assert ("@package", "/orders") in edges(out, "RENDERS")
     assert ("/orders", "src/pages/Orders.tsx?") in edges(out, "CONTAINS")  # the view, when the unit declares one
     assert out["constructs"]["web:redirect-route"] == (1, 0)
@@ -238,11 +273,54 @@ def test_an_html_fragment_with_a_form_is_a_view():
     assert ("link:/users/new", "/users/new?") in edges(out, "NAVIGATES_TO")
 
 
+def test_a_guard_component_in_a_view_requires_its_roles_and_is_kept_as_an_attribute():
+    out = run("src/views/Reports.tsx", """
+import RequireRole from "../components/RequireRole";
+export default function Reports() {
+  return <RequireRole roles={["finance", "audit"]}><form><input name="from" /></form></RequireRole>;
+}
+""")
+    view = entity(out, "Screen", name="src/views/Reports.tsx")["attributes"]
+    assert view["platform_kind"] == "web:View" and view["guards"] == ["RequireRole"]
+    assert edges(out, "REQUIRES_ROLE") == [("src/views/Reports.tsx", "audit"), ("src/views/Reports.tsx", "finance")]
+    for name in ("audit", "finance"):  # the role is the entity; the guard that lists it is not
+        role = entity(out, "Role", name=name)
+        assert role["attributes"]["platform_kind"] == "web:Role" and not {"guard", "guards", "fidelity"} & set(role["attributes"])
+
+
 def test_a_component_without_forms_or_links_is_not_a_screen():
     assert names(run("src/components/Badge.tsx", "export function Badge() { return <span className=\"badge\">new</span>; }"), "Screen") == []
 
 
 # ------------------------------------------------------------------ forms and controls
+
+
+def test_control_names_follow_the_contract_order():
+    # name, id, binding path, link:<target>, submit or button:<text>, else <type><n> with n
+    # the control's position among the container's controls of that type, named or not.
+    out = run("src/partials/signup.html", """<form id="signup" [formGroup]="form">
+  <input type="text">
+  <input name="email" id="ignored-when-named">
+  <input id="phone">
+  <input formControlName="city">
+  <input type="text">
+  <input type="button" value="Preview">
+  <button type="button"></button>
+  <button type="button">Clear</button>
+  <a href="#terms">Terms</a>
+  <a href="?page=2">Next</a>
+  <a href="/help?topic=signup#top">Help</a>
+  <a href="https://example.com/a/b?token=x">Elsewhere</a>
+  <input type="submit" value="Send">
+</form>""")
+    container = "src/partials/signup.html#signup"
+    controls = sorted(e["natural_key"]["name"] for e in out["entities"] if e["kind"] == "UIControl" and e["natural_key"]["container"] == container)
+    assert controls == sorted([
+        "input1", "email", "phone", "city", "input5",
+        "button:Preview", "button2", "button:Clear",
+        "link:#terms", "link2", "link:/help", "link:https://example.com",
+        "submit",
+    ])
 
 
 NEW_ORDER = """
@@ -499,6 +577,36 @@ def test_every_relation_on_the_fixture_fits_the_ontology():
                     assert o.evidence_class == "E3", (path, p)  # resolved against another file
                 count += 1
     assert count > 100
+
+
+def _relative(path):
+    return bool(path) and not path.startswith(("/", "./")) and ".." not in path.split("/") and ":" not in path
+
+
+def test_screen_names_and_token_systems_are_repository_relative_paths():
+    # A Screen is named by its route ("/orders") or by its path from the repository root;
+    # a StyleToken's system is the stylesheet or module path from the repository root.
+    seen = {"page_or_view": 0, "token": 0}
+    for path, data in _fixture_files():
+        for e in (e for e in PACK.extractors if e.matches(path)):
+            for o in e.extract(path, data, BLOB).observations:
+                p = o.payload
+                if o.kind == "entity" and p["kind"] == "Screen":
+                    if p["attributes"]["platform_kind"] == "web:Route":
+                        assert p["natural_key"]["name"].startswith("/"), p
+                    else:
+                        assert p["natural_key"]["name"] == path and _relative(path), p
+                        seen["page_or_view"] += 1
+                elif o.kind == "entity" and p["kind"] == "StyleToken":
+                    assert p["natural_key"]["system"] == path and _relative(path), p
+                    seen["token"] += 1
+                elif o.kind == "relation" and isinstance(p["object"], dict):
+                    key = p["object"]["natural_key"]
+                    if p["object"]["kind"] == "StyleToken":
+                        assert _relative(key["system"]), p
+                    elif p["object"]["kind"] == "Screen" and not key["name"].startswith("/"):
+                        assert _relative(key["name"]), p
+    assert seen["page_or_view"] and seen["token"]
 
 
 def test_extraction_depends_only_on_the_file_bytes():

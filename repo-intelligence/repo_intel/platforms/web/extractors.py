@@ -16,6 +16,9 @@ What a file contributes:
 - Stylesheets, style blocks and theme modules: StyleTokens.
 
 Test files, stories and type declarations are not read.
+
+Nothing here imports `repo_intel.extractors` at module level (see `experience.py`):
+`extract` returns the `repo_intel.extractors.base.Extraction` that `Out` builds.
 """
 
 from __future__ import annotations
@@ -24,7 +27,6 @@ import posixpath
 import re
 
 from repo_intel.compile.ontology import EvidenceClass, Predicate
-from repo_intel.extractors.base import Extraction
 from repo_intel.platforms.web import markup, script, styles
 from repo_intel.platforms.web.experience import Out, Owner, emit_roles, emit_style_refs, emit_tokens, emit_ui, has_ui, link_targets, renders, screen_ref
 
@@ -224,7 +226,7 @@ class WebScript:
     def matches(self, path: str) -> bool:
         return path.lower().endswith(script.SCRIPT_EXTS) and not _skipped(path)
 
-    def extract(self, path: str, data: bytes, blob: str) -> Extraction:
+    def extract(self, path: str, data: bytes, blob: str):
         out = Out(self.id, path, data, blob)
         s = script.Script(data, script.grammar_for(path))
         _route_screens(out, s)
@@ -232,16 +234,20 @@ class WebScript:
         elements = [el for el in s.elements + templates if not _in_route_config(el)]
         sheets = _Sheets(path)
         _script_sheets(sheets, s)
+        # Guard components inside the file's own markup (`<RequireRole role="admin">`): the
+        # roles they list become Roles the screen REQUIRES_ROLE, the guards' names its `guards`.
+        guard_els = [el for el in s.elements if script._GUARD_TAG.search(el.tag) and el.get(*script.ROLE_KEYS) is not None and not _in_route_config(el)]
+        guards = list(dict.fromkeys(el.tag for el in guard_els)) or None
         owner = None
         route = _file_route(path, s)
         component = s.default_export_name()
         if route is not None:
             name, cid = route
-            ref = out.entity("web:Route", {"platform": "web", "name": name}, name, 0, len(data), {"framework": "nextjs", "router": "app" if cid == "web:nextjs-app-page" else "pages", "component": component, "stylesheets": sheets.attribute()})
+            ref = out.entity("web:Route", {"platform": "web", "name": name}, name, 0, len(data), {"framework": "nextjs", "router": "app" if cid == "web:nextjs-app-page" else "pages", "component": component, "stylesheets": sheets.attribute(), "guards": guards})
             out.construct(cid, 0, len(data), True)
             owner = Owner(name, ref)
         elif has_ui(elements, path):
-            ref = out.entity("web:View", {"platform": "web", "name": path}, path, 0, len(data), {"framework": self._framework(s, templates), "component": component, "stylesheets": sheets.attribute()})
+            ref = out.entity("web:View", {"platform": "web", "name": path}, path, 0, len(data), {"framework": self._framework(s, templates), "component": component, "stylesheets": sheets.attribute(), "guards": guards})
             out.construct("web:view", 0, len(data), True)
             owner = Owner(path, ref)
         if owner is not None:
@@ -250,9 +256,8 @@ class WebScript:
             out.construct("web:nextjs-layout", 0, len(data), False)
         sheets.emit(out, owner)
         emit_ui(out, owner, elements, _script_resolver([s]))
-        for el in s.elements:  # guard components inside a view
-            if owner is not None and script._GUARD_TAG.search(el.tag) and el.get(*script.ROLE_KEYS) is not None and not _in_route_config(el):
-                emit_roles(out, owner.ref, s.element_component(el)[2])
+        for el in guard_els if owner is not None else []:
+            emit_roles(out, owner.ref, s.element_component(el)[2])
         for message in s.diagnostics:
             out.diag(message)
         _navigation(out, owner, [s])
@@ -299,7 +304,7 @@ class WebMarkup:
     def matches(self, path: str) -> bool:
         return path.lower().endswith((".html", ".htm", ".vue")) and not _skipped(path)
 
-    def extract(self, path: str, data: bytes, blob: str) -> Extraction:
+    def extract(self, path: str, data: bytes, blob: str):
         out = Out(self.id, path, data, blob)
         text = data.decode("latin-1")
         if path.lower().endswith(".vue"):
@@ -425,7 +430,7 @@ class WebStyles:
     def matches(self, path: str) -> bool:
         return path.lower().endswith(script.STYLE_EXTS) and not _skipped(path)
 
-    def extract(self, path: str, data: bytes, blob: str) -> Extraction:
+    def extract(self, path: str, data: bytes, blob: str):
         out = Out(self.id, path, data, blob)
         scan = styles.scan(data.decode("latin-1"), styles.dialect_of(path))
         emit_tokens(out, path, scan)
