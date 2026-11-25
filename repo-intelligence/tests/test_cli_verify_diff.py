@@ -1,4 +1,5 @@
-"""`rkp verify` and `rkp diff` (repo_intel.cli): re-checking a committed bundle, and comparing two."""
+"""`rkp verify` and `rkp diff` (repo_intel.cli, repo_intel.knowledge.bundle_check): re-checking a
+committed bundle, and comparing two."""
 
 import json
 import shutil
@@ -6,9 +7,11 @@ from pathlib import Path
 
 import pytest
 
-from repo_intel import cli
+from repo_intel import cli, extractors, platforms
+from repo_intel.compile import behavior, buildgraph
 from repo_intel.compile.fixtures import _git, materialize
-from repo_intel.knowledge import bundle
+from repo_intel.compile.ontology import EntityKind
+from repo_intel.knowledge import bundle, bundle_check
 from repo_intel.storage.hashing import digest
 
 ROUTE = 'from fastapi import APIRouter\n\nrouter = APIRouter()\n\n\n@router.get("/extra")\ndef extra():\n    return 1\n'
@@ -354,12 +357,206 @@ def test_coverage_changes_name_platform_constructs():
     parse = {"domain": "parse", "scope": ".", "numerator": 3, "denominator": 4, "detail": {}}
     before = [parse, entry(4, 0, ["cf:cfthread"])]
     after = [{**parse, "numerator": 4}, {**entry(4, 4, []), "detail": {"constructs": {"cf:cflock": {"seen": 4, "modelled": 4}, "cf:cfthread": {"seen": 1, "modelled": 0}}, "not_seen": []}, "denominator": 5}]
-    changes = cli._coverage_changes(before, after)
+    changes = bundle_check.coverage_changes(before, after)
     assert [d["domain"] for d in changes["domains"]] == ["parse", "platform_constructs"]
     cfml = next(e for e in changes["entries"] if e["domain"] == "platform_constructs")
     assert cfml["change"] == "changed" and cfml["before"] == {"numerator": 0, "denominator": 4} and cfml["after"] == {"numerator": 4, "denominator": 5}
     assert cfml["constructs"] == {"cf:cflock": {"before": {"seen": 4, "modelled": 0}, "after": {"seen": 4, "modelled": 4}}, "cf:cfthread": {"before": None, "after": {"seen": 1, "modelled": 0}}}
     assert cfml["now_seen"] == ["cf:cfthread"] and cfml["no_longer_seen"] == []
-    gone = cli._coverage_changes([entry(1, 1, [])], [])
+    gone = bundle_check.coverage_changes([entry(1, 1, [])], [])
     assert gone["entries"][0]["change"] == "removed" and gone["entries"][0]["no_longer_seen"] == ["cf:cflock"]
-    assert cli._coverage_changes(before, before) == {"domains": [], "entries": []}
+    assert bundle_check.coverage_changes(before, before) == {"domains": [], "entries": []}
+
+
+# ------------------------------------------------------------------ bundles with behaviour
+#
+# A demo pack, as in tests/test_behavior_store.py: a `.demo` file is a JSON document naming a
+# program, its page body and its functions; each function is a Symbol with one behaviour unit.
+
+
+class DemoSource:
+    id, version = "demo.source", "1.0.0"
+
+    def matches(self, path):
+        return path.endswith(".demo")
+
+    def extract(self, path, data, blob):
+        from repo_intel.extractors.base import Extraction, entity, find_span, ref, whole_file
+
+        doc = json.loads(data)
+        program = ref(EntityKind.PROGRAM, {"platform": "demo", "name": doc["program"]}, doc["program"])
+        out = [platforms.platform_entity(blob, whole_file(data), "demo:Template", program["natural_key"], program["name"])]
+        out.append(behavior.behavior_observation(blob, find_span(data, '"page"'), program, "demo", doc["page"]))
+        for name, body in sorted(doc["functions"].items()):
+            owner = ref(EntityKind.SYMBOL, {"platform": "demo", "program": doc["program"], "name": name}, name)
+            where = find_span(data, f'"{name}"')
+            out.append(entity(blob, where, EntityKind.SYMBOL, owner["natural_key"], name))
+            out.append(behavior.behavior_observation(blob, where, owner, "demo", body))
+        return Extraction(observations=out, parsed=True)
+
+
+DEMO = platforms.PlatformPack(
+    id="demo", name="Demo platform", prefix="demo", version="1.0.0",
+    terms=(platforms.Term("demo:Template", EntityKind.PROGRAM, "lossy", "a page template with code"),),
+    extractors=(DemoSource(),),
+)
+LIT = lambda v: {"e": "lit", "value": v, "type": "string"}  # noqa: E731
+PAGE = [{"op": "output", "at": [1, 2], "channel": "response", "value": LIT("orders")}]
+SAVE = [{"op": "query", "at": [3, 4], "sql": "UPDATE orders SET qty = :qty", "datasource": "shopdsn",
+         "params": [{"name": "qty", "value": {"e": "var", "scope": "form", "name": "qty"}, "type": "integer"}]}]
+DEMO_SOURCE = {"program": "orders", "page": PAGE, "functions": {"save": SAVE, "lookup": [{"op": "return", "at": [1, 2], "value": LIT("x")}]}}
+
+
+@pytest.fixture
+def demo(monkeypatch):
+    registry = platforms._load()
+    monkeypatch.setitem(registry, "PACKS", {"demo": DEMO})
+    monkeypatch.setitem(registry, "TERMS", {t.name: (DEMO, t) for t in DEMO.terms})
+    monkeypatch.setitem(registry, "CONSTRUCTS", {})
+    monkeypatch.setattr(extractors, "EXTRACTORS", sorted([*extractors.EXTRACTORS, *DEMO.extractors], key=lambda e: e.id))
+    # The pack exists only in this process, so steps must run here, not in a sandboxed worker.
+    monkeypatch.setenv(buildgraph.EXECUTOR_ENV, "inprocess")
+    yield DEMO
+    extractors._EXTRACTOR_VERSIONS.clear()
+
+
+def _demo_repo(path, tier, source=DEMO_SOURCE):
+    """A repository with one `.demo` file whose bundle is compiled in `tier` and committed."""
+    path.mkdir()
+    _git(path, "init", "-q", "-b", "main")
+    (path / "orders.demo").write_text(json.dumps(source, indent=1, sort_keys=True))
+    bundle.ensure_layout(path)
+    config = path / ".rkp" / "config.json"
+    config.write_text(json.dumps({**json.loads(config.read_text()), "commit": tier}))
+    _commit_all(path, "demo")
+    bundle.compile_bundle(path)
+    _commit_all(path, "knowledge")
+    return path
+
+
+def _behaviour_unit(repo):
+    """The manifest entry of the unit holding behaviour rows, and its rows."""
+    unit = next(u for u in _manifest(repo)["units"] if u.get("behaviors"))
+    return unit, _lines(_knowledge(repo) / unit["file"])
+
+
+def test_the_explorer_labels_every_coverage_domain_the_engine_writes():
+    import re
+
+    engine = Path(__file__).resolve().parents[1]
+    # Bundle coverage is built as CoverageEntry(domain="...") in the compiler and the linker.
+    written = {m for p in (engine / "repo_intel" / "compile").glob("*.py") for m in re.findall(r'CoverageEntry\(\s*domain="([a-z_]+)"', p.read_text())}
+    assert {"parse", "inventory", "behavior", "platform_constructs"} <= written
+    planes = (engine / "explorer" / "lib" / "planes.ts").read_text()
+    table = planes[planes.index("export const DOMAIN_LABEL"):]
+    labelled = set(re.findall(r"^\s+([a-z_]+): \"", table[:table.index("};")], re.MULTILINE))
+    assert written - labelled == set(), "explorer/lib/planes.ts DOMAIN_LABEL lacks these domains"
+
+
+def test_row_names_cover_every_table_the_bundle_writes():
+    assert set(bundle_check.ROW_NAMES) == {*bundle.ROW_TABLES, *bundle.OPTIONAL_TABLES}
+    assert bundle_check.ROW_NAMES == dict(bundle._ALL_TABLES)
+
+
+def test_a_full_bundle_with_behaviour_verifies_clean(demo, tmp_path, capsys):
+    repo = _demo_repo(tmp_path / "repo", "full")
+    shutil.rmtree(repo / ".rkp" / "cache")  # verify never needs the cache
+    code, result = _verify(capsys, repo)
+    assert code == 0, result["problems"]
+    assert result["checked"]["tier"] == "full" and result["checked"]["behaviors"] == 3
+    assert result["checked"]["content_hash"] == "re-derived from the rows"
+    assert cli.main(["verify", str(repo)]) == 0
+    assert "3 behaviour units" in capsys.readouterr().out
+
+
+def test_damaged_behaviour_rows_are_named(demo, tmp_path, capsys):
+    repo = _demo_repo(tmp_path / "repo", "full")
+    unit, rows = _behaviour_unit(repo)
+    behaviours = [r for r in rows if r["table"] == "behavior"]
+    behaviours[0]["owner"] = "ent_nobody"
+    behaviours[1]["body"] = [{"op": "nonsense"}]
+    rows.remove(behaviours[2])
+    rows.append({"table": "mystery", "id": "x"})
+    _write_lines(_knowledge(repo) / unit["file"], rows)
+    code, result = _verify(capsys, repo)
+    problems = result["problems"]
+    assert code == 1
+    file = unit["file"]
+    assert f"{file}: behavior {behaviours[0]['id']}: owner ent_nobody is not a Program or Symbol of this unit" in problems
+    assert any(p.startswith(f"{file}: behavior {behaviours[1]['id']}: not a valid behaviour unit (") for p in problems)
+    assert f"{file}: 2 behaviors rows; the manifest says 3" in problems
+    assert "manifest.json: counts.behaviors is 3; the files hold 2" in problems
+    assert f"{file}: 1 row names table 'mystery', which format rkp-bundle/2 does not have" in problems
+    assert f"{file}: rows do not hash to the unit's digest in the snapshot record" in problems
+
+
+def test_the_architecture_tier_must_leave_behaviour_out(demo, tmp_path, capsys):
+    full = _demo_repo(tmp_path / "full", "full")
+    repo = _demo_repo(tmp_path / "repo", "architecture")
+    code, result = _verify(capsys, repo)
+    assert code == 0, result["problems"]
+    assert result["checked"]["behaviors"] == 0 and _manifest(repo)["detail_omitted"]["behaviors"] == 3
+
+    # Behaviour rows put back by hand: detail the tier leaves out, and a broken digest.
+    _, rows = _behaviour_unit(full)
+    unit = _largest_unit(repo)
+    path = _knowledge(repo) / unit["file"]
+    _write_lines(path, _lines(path) + [r for r in rows if r["table"] == "behavior"])
+    document = _manifest(repo)
+    document["detail_tables"] = []
+    _write_manifest(repo, document)
+    code, result = _verify(capsys, repo)
+    problems = result["problems"]
+    assert code == 1
+    assert "the architecture tier holds detail it should leave out: 3 behaviors rows" in problems
+    assert "manifest.json: detail_tables is []; the architecture tier leaves out ['behaviors']" in problems
+    assert f"{unit['file']}: rows do not hash to the unit's digest in manifest.json" in problems
+
+
+def test_a_full_bundle_from_a_real_pack_verifies_clean(tmp_path, capsys):
+    # F20's ColdFusion pack emits behaviour for every function and page; its full tier once
+    # failed verify with one "a row names table 'behavior'" problem per unit of behaviour.
+    repo = tmp_path / "f20"
+    materialize("F20-coldfusion-app", repo)
+    bundle.ensure_layout(repo)
+    config = repo / ".rkp" / "config.json"
+    config.write_text(json.dumps({**json.loads(config.read_text()), "commit": "full"}))
+    document = bundle.compile_bundle(repo)
+    assert document["counts"]["behaviors"] > 0
+    code, result = _verify(capsys, repo)
+    assert code == 0, result["problems"]
+    assert result["checked"]["behaviors"] == document["counts"]["behaviors"]
+
+
+def test_diff_between_full_bundles_with_behaviour(demo, tmp_path, capsys):
+    repo = _demo_repo(tmp_path / "repo", "full")
+    shifted = [{**SAVE[0], "at": [30, 40]}]  # the same statement at other bytes: not a change
+    changed = {**DEMO_SOURCE, "functions": {"save": shifted, "lookup": [{"op": "return", "at": [1, 2], "value": LIT("y")}], "cancel": [{"op": "exit", "at": [1, 2]}]}}
+    (repo / "orders.demo").write_text(json.dumps(changed, indent=1, sort_keys=True))
+    _commit_all(repo, "change lookup, add cancel")
+    bundle.compile_bundle(repo)
+    _commit_all(repo, "knowledge again")
+
+    code, result = _diff(capsys, "HEAD~2", "HEAD", "--repo", repo)
+    assert code == 0 and result["warnings"] == [], "behaviour rows are not damage"
+    assert result["compared_tier"] == "full" and result["behaviors"]["compared"] is True
+    assert result["behaviors"]["summary"] == {"added": 1, "removed": 0, "changed": 1}
+    assert [(r["change"], r["owner"]["kind"], r["owner"]["name"], r["units_before"], r["units_after"]) for r in result["behaviors"]["rows"]] == [
+        ("added", "Symbol", "cancel", 0, 1),
+        ("changed", "Symbol", "lookup", 1, 1),
+    ]
+    assert result["entities"]["by_kind"]["Symbol"]["added"] == 1
+
+    assert cli.main(["diff", "HEAD~2", "HEAD", "--repo", str(repo)]) == 0
+    out = capsys.readouterr().out
+    assert "warning" not in out and "behaviour: 1 owners gained it, 0 lost it, 1 changed" in out and "~ Symbol lookup: 1 -> 1 units" in out
+
+    # The same bundle on both sides, read from a directory and from the commit that holds it.
+    code, result = _diff(capsys, repo, "HEAD", "--repo", repo)
+    assert code == 0 and result["identical"] is True and result["behaviors"]["rows"] == [] and result["warnings"] == []
+
+    # Against an architecture-tier bundle, behaviour is detail and is not compared.
+    arch = _demo_repo(tmp_path / "arch", "architecture", changed)
+    code, result = _diff(capsys, arch, repo)
+    assert code == 0 and result["compared_tier"] == "architecture" and result["warnings"] == []
+    assert result["behaviors"] == {"compared": False, "summary": {"added": 0, "removed": 0, "changed": 0}, "rows": []}
