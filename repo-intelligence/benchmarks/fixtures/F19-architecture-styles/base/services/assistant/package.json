@@ -1,0 +1,12 @@
+{
+  "name": "assistant",
+  "version": "0.1.0",
+  "private": true,
+  "main": "src/server.ts",
+  "dependencies": {
+    "axios": "^1.7.0",
+    "axios-retry": "^4.4.0",
+    "express": "^4.21.0",
+    "openai": "^4.70.0"
+  }
+}

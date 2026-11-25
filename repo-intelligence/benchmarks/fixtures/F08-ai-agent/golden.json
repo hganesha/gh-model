@@ -286,5 +286,10 @@
       "human_label": "service",
       "since": "M2"
     }
-  ]
+  ],
+  "granularity": {
+    "label": null,
+    "why": "an agent library and tools, not a deployed application",
+    "source": "fixture design"
+  }
 }

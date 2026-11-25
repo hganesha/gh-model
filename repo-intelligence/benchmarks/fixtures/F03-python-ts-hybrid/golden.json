@@ -206,5 +206,10 @@
       "added_entities": [],
       "removed_entities": []
     }
-  ]
+  ],
+  "granularity": {
+    "label": "monolithic",
+    "why": "one backend with a separate front end",
+    "source": "fixture design"
+  }
 }

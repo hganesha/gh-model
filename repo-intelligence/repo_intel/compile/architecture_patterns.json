@@ -1,6 +1,6 @@
 {
  "key": "arch-taxonomy-v1",
- "version": "1.0.0",
+ "version": "1.1.0",
  "source": "docs/architecture-pattern-taxonomy.md (Software Architecture Pattern Taxonomy v1, 2026-11-24); antipattern ids assigned here",
  "concerns": [
   {
@@ -834,7 +834,10 @@
    "name": "Layered architecture",
    "intent": "Organize code into responsibility layers with defined dependency rules.",
    "family": "02.01",
-   "observability": "repository"
+   "observability": "repository",
+   "detectors": [
+    "layering"
+   ]
   },
   {
    "id": "arch-0018",
@@ -843,7 +846,10 @@
    "name": "Hexagonal architecture",
    "intent": "Isolate application behavior behind ports implemented by external adapters.",
    "family": "02.01",
-   "observability": "repository"
+   "observability": "repository",
+   "detectors": [
+    "hexagonal"
+   ]
   },
   {
    "id": "arch-0019",
@@ -915,7 +921,10 @@
    "name": "Service Layer",
    "intent": "Provide a stable application-operation boundary that coordinates business actions.",
    "family": "02.02",
-   "observability": "repository"
+   "observability": "repository",
+   "detectors": [
+    "layering"
+   ]
   },
   {
    "id": "arch-0027",
@@ -1863,7 +1872,10 @@
    "name": "Saga",
    "intent": "Coordinate a sequence of local transactions with recovery or compensating actions on failure.",
    "family": "06.03",
-   "observability": "repository"
+   "observability": "repository",
+   "detectors": [
+    "saga"
+   ]
   },
   {
    "id": "arch-0129",
@@ -1872,7 +1884,10 @@
    "name": "Compensating Transaction",
    "intent": "Apply business actions that counteract prior completed work where feasible.",
    "family": "06.03",
-   "observability": "repository"
+   "observability": "repository",
+   "detectors": [
+    "saga"
+   ]
   },
   {
    "id": "arch-0130",
@@ -1995,7 +2010,10 @@
    "name": "CQRS",
    "intent": "Give state-changing commands and state-reading queries distinct models or interfaces.",
    "family": "07.02",
-   "observability": "repository"
+   "observability": "repository",
+   "detectors": [
+    "cqrs"
+   ]
   },
   {
    "id": "arch-0143",
@@ -2619,7 +2637,10 @@
    "name": "Retry",
    "intent": "Repeat an operation only for failures and conditions judged retryable.",
    "family": "10.01",
-   "observability": "repository"
+   "observability": "repository",
+   "detectors": [
+    "code-traits"
+   ]
   },
   {
    "id": "arch-0211",
@@ -4272,6 +4293,9 @@
     "Modular monolith",
     "improved service boundaries",
     "asynchronous interactions where suitable"
+   ],
+   "detectors": [
+    "distributed-monolith"
    ]
   },
   {
@@ -4281,6 +4305,9 @@
    "remediation": [
     "Explicit module boundaries",
     "layered or vertical-slice organization"
+   ],
+   "detectors": [
+    "module-structure"
    ]
   },
   {
@@ -4289,6 +4316,9 @@
    "typical_evidence": "One unit owns unrelated behavior and becomes a change bottleneck",
    "remediation": [
     "Capability or domain decomposition"
+   ],
+   "detectors": [
+    "module-structure"
    ]
   },
   {
@@ -4313,6 +4343,9 @@
     "coarse-grained boundaries",
     "local replicas",
     "asynchronous workflows"
+   ],
+   "detectors": [
+    "sync-chains"
    ]
   },
   {
@@ -4336,6 +4369,9 @@
     "bounded retries",
     "circuit breaker",
     "admission control"
+   ],
+   "detectors": [
+    "code-traits"
    ]
   },
   {
@@ -4347,6 +4383,9 @@
     "quotas",
     "backpressure",
     "load shedding"
+   ],
+   "detectors": [
+    "code-traits"
    ]
   },
   {
@@ -4358,6 +4397,9 @@
     "budgets",
     "termination rules",
     "approval and validation gates"
+   ],
+   "detectors": [
+    "code-traits"
    ]
   }
  ]

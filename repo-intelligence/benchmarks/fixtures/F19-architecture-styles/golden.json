@@ -1,0 +1,375 @@
+{
+ "fixture": "F19-architecture-styles",
+ "description": "Three services built in recognisable architecture styles (layered with CQRS and a saga, hexagonal, an agent service), with antipattern conditions planted on purpose. The pattern goldens are what the detectors of spec §8.8 must find; each seeded commit removes one.",
+ "entities": [
+  {
+   "kind": "Package",
+   "natural_key": {
+    "ecosystem": "pypi",
+    "name": "orders-service",
+    "manifest_dir": "services/orders"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "Package",
+   "natural_key": {
+    "ecosystem": "pypi",
+    "name": "payments-service",
+    "manifest_dir": "services/payments"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "Package",
+   "natural_key": {
+    "ecosystem": "npm",
+    "name": "assistant",
+    "manifest_dir": "services/assistant"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "EventTopic",
+   "natural_key": {
+    "name": "orders.placed"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "EventTopic",
+   "natural_key": {
+    "name": "payments.failed"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "Table",
+   "natural_key": {
+    "datastore": "default",
+    "name": "orders"
+   },
+   "since": "M0"
+  },
+  {
+   "kind": "Table",
+   "natural_key": {
+    "datastore": "default",
+    "name": "order_summaries"
+   },
+   "since": "M0"
+  }
+ ],
+ "edges": [
+  {
+   "subject": {
+    "kind": "Component",
+    "natural_key": {
+     "root": "services/orders"
+    }
+   },
+   "predicate": "EXHIBITS",
+   "object": {
+    "kind": "ArchitecturePattern",
+    "natural_key": {
+     "catalog": "arch-taxonomy-v1",
+     "id": "arch-0017"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Component",
+    "natural_key": {
+     "root": "services/orders"
+    }
+   },
+   "predicate": "EXHIBITS",
+   "object": {
+    "kind": "ArchitecturePattern",
+    "natural_key": {
+     "catalog": "arch-taxonomy-v1",
+     "id": "arch-0026"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Component",
+    "natural_key": {
+     "root": "services/orders"
+    }
+   },
+   "predicate": "EXHIBITS",
+   "object": {
+    "kind": "ArchitecturePattern",
+    "natural_key": {
+     "catalog": "arch-taxonomy-v1",
+     "id": "arch-0142"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Component",
+    "natural_key": {
+     "root": "services/orders"
+    }
+   },
+   "predicate": "EXHIBITS",
+   "object": {
+    "kind": "ArchitecturePattern",
+    "natural_key": {
+     "catalog": "arch-taxonomy-v1",
+     "id": "arch-0128"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "EventTopic",
+    "natural_key": {
+     "name": "payments.failed"
+    }
+   },
+   "predicate": "EXHIBITS",
+   "object": {
+    "kind": "ArchitecturePattern",
+    "natural_key": {
+     "catalog": "arch-taxonomy-v1",
+     "id": "arch-0129"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Component",
+    "natural_key": {
+     "root": "services/payments"
+    }
+   },
+   "predicate": "EXHIBITS",
+   "object": {
+    "kind": "ArchitecturePattern",
+    "natural_key": {
+     "catalog": "arch-taxonomy-v1",
+     "id": "arch-0018"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Component",
+    "natural_key": {
+     "root": "services/payments"
+    }
+   },
+   "predicate": "EXHIBITS",
+   "object": {
+    "kind": "ArchitecturePattern",
+    "natural_key": {
+     "catalog": "arch-taxonomy-v1",
+     "id": "arch-0210"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Component",
+    "natural_key": {
+     "root": "services/orders"
+    }
+   },
+   "predicate": "EXHIBITS",
+   "object": {
+    "kind": "Antipattern",
+    "natural_key": {
+     "catalog": "arch-antipatterns-v1",
+     "id": "anti-0007"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Component",
+    "natural_key": {
+     "root": "services/assistant"
+    }
+   },
+   "predicate": "EXHIBITS",
+   "object": {
+    "kind": "Antipattern",
+    "natural_key": {
+     "catalog": "arch-antipatterns-v1",
+     "id": "anti-0007"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Component",
+    "natural_key": {
+     "root": "services/payments"
+    }
+   },
+   "predicate": "EXHIBITS",
+   "object": {
+    "kind": "Antipattern",
+    "natural_key": {
+     "catalog": "arch-antipatterns-v1",
+     "id": "anti-0008"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Component",
+    "natural_key": {
+     "root": "services/assistant"
+    }
+   },
+   "predicate": "EXHIBITS",
+   "object": {
+    "kind": "Antipattern",
+    "natural_key": {
+     "catalog": "arch-antipatterns-v1",
+     "id": "anti-0008"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Component",
+    "natural_key": {
+     "root": "services/assistant"
+    }
+   },
+   "predicate": "EXHIBITS",
+   "object": {
+    "kind": "Antipattern",
+    "natural_key": {
+     "catalog": "arch-antipatterns-v1",
+     "id": "anti-0009"
+    }
+   },
+   "since": "M2"
+  }
+ ],
+ "absent_entities": [
+  {
+   "kind": "Antipattern",
+   "natural_key": {
+    "catalog": "arch-antipatterns-v1",
+    "id": "anti-0001"
+   },
+   "why": "no two services call each other or share written tables"
+  },
+  {
+   "kind": "Antipattern",
+   "natural_key": {
+    "catalog": "arch-antipatterns-v1",
+    "id": "anti-0002"
+   },
+   "why": "no import cycle spans the services' modules"
+  },
+  {
+   "kind": "Antipattern",
+   "natural_key": {
+    "catalog": "arch-antipatterns-v1",
+    "id": "anti-0003"
+   },
+   "why": "no module is imported by most of its service"
+  },
+  {
+   "kind": "Antipattern",
+   "natural_key": {
+    "catalog": "arch-antipatterns-v1",
+    "id": "anti-0005"
+   },
+   "why": "no synchronous call crosses three services"
+  },
+  {
+   "kind": "ArchitecturePattern",
+   "natural_key": {
+    "catalog": "arch-taxonomy-v1",
+    "id": "arch-0001"
+   },
+   "why": "three deployables, not one"
+  }
+ ],
+ "exclusions": [],
+ "forbidden_kinds": [],
+ "expected_unknowns": [],
+ "expected_conflicts": [],
+ "commits": [
+  {
+   "dir": "01-repository-calls-service",
+   "expect": "a repository importing the service layer breaks the layering, so neither layered architecture nor service layer is found",
+   "added_entities": [],
+   "removed_entities": [
+    {
+     "kind": "ArchitecturePattern",
+     "natural_key": {
+      "catalog": "arch-taxonomy-v1",
+      "id": "arch-0017"
+     },
+     "since": "M2"
+    },
+    {
+     "kind": "ArchitecturePattern",
+     "natural_key": {
+      "catalog": "arch-taxonomy-v1",
+      "id": "arch-0026"
+     },
+     "since": "M2"
+    }
+   ]
+  },
+  {
+   "dir": "02-bound-agent-loop",
+   "expect": "a counted loop bounds the agent, so the uncontrolled agent loop is gone",
+   "added_entities": [],
+   "removed_entities": [
+    {
+     "kind": "Antipattern",
+     "natural_key": {
+      "catalog": "arch-antipatterns-v1",
+      "id": "anti-0009"
+     },
+     "since": "M2"
+    }
+   ]
+  },
+  {
+   "dir": "03-retry-with-backoff",
+   "expect": "both retry policies now back off, so the retry storm condition is gone and retry is found instead",
+   "added_entities": [],
+   "removed_entities": [
+    {
+     "kind": "Antipattern",
+     "natural_key": {
+      "catalog": "arch-antipatterns-v1",
+      "id": "anti-0007"
+     },
+     "since": "M2"
+    }
+   ]
+  }
+ ],
+ "granularity": {
+  "label": "microservices",
+  "why": "three separately deployed services, connected by events and an HTTP call, none writing another's tables",
+  "source": "fixture design"
+ }
+}

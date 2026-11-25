@@ -220,5 +220,10 @@
   ],
   "oversize_not_parsed": [
     "data/dump.sql"
-  ]
+  ],
+  "granularity": {
+    "label": null,
+    "why": "too incomplete to show how an application is deployed",
+    "source": "fixture design"
+  }
 }

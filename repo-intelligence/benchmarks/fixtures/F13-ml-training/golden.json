@@ -525,6 +525,60 @@
     }
    },
    "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "mlflow",
+     "name": "churn"
+    }
+   },
+   "predicate": "EXHIBITS",
+   "object": {
+    "kind": "ArchitecturePattern",
+    "natural_key": {
+     "catalog": "arch-taxonomy-v1",
+     "id": "arch-0337"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "azureml",
+     "name": "churn-train"
+    }
+   },
+   "predicate": "EXHIBITS",
+   "object": {
+    "kind": "ArchitecturePattern",
+    "natural_key": {
+     "catalog": "arch-taxonomy-v1",
+     "id": "arch-0337"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "dvc",
+     "name": "dvc"
+    }
+   },
+   "predicate": "EXHIBITS",
+   "object": {
+    "kind": "ArchitecturePattern",
+    "natural_key": {
+     "catalog": "arch-taxonomy-v1",
+     "id": "arch-0337"
+    }
+   },
+   "since": "M2"
   }
  ],
  "absent_entities": [
@@ -669,5 +723,10 @@
    ]
   }
  ],
- "decision_cases": []
+ "decision_cases": [],
+ "granularity": {
+  "label": null,
+  "why": "a training pipeline, not a deployed application",
+  "source": "fixture design"
+ }
 }

@@ -327,5 +327,10 @@
       ],
       "removed_entities": []
     }
-  ]
+  ],
+  "granularity": {
+    "label": "monolithic",
+    "why": "one application deployed by compose, Kubernetes and Terraform",
+    "source": "fixture design"
+  }
 }

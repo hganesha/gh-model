@@ -59,7 +59,7 @@ def test_every_assertion_resolves_to_evidence_in_the_snapshot(store, f01):
     assert assertions
     for a in assertions.values():
         assert a["evidence_ids"] and all(evidence[i]["blob_sha256"] in blobs for i in a["evidence_ids"])
-    dep = next(a for a in assertions.values() if a["predicate"] == "DEPENDS_ON" and a["qualifiers"]["specifier"] == ">=0.115")
+    dep = next(a for a in assertions.values() if a["predicate"] == "DEPENDS_ON" and a["qualifiers"].get("specifier") == ">=0.115")
     ev = evidence[dep["evidence_ids"][0]]
     text = store.get_bytes("sha256:" + ev["blob_sha256"])[ev["span"]["start_byte"]:ev["span"]["end_byte"]]
     assert text == b"fastapi>=0.115"

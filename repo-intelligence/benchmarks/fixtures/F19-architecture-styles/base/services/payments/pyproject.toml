@@ -1,0 +1,7 @@
+[project]
+name = "payments-service"
+version = "0.1.0"
+dependencies = [
+    "confluent-kafka>=2.10",
+    "tenacity>=9.0",
+]

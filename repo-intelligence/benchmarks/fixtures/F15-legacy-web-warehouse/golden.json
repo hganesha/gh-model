@@ -1008,5 +1008,10 @@
    ]
   }
  ],
- "decision_cases": []
+ "decision_cases": [],
+ "granularity": {
+  "label": null,
+  "why": "legacy pages and warehouse procedures with no deployment a repository shows",
+  "source": "fixture design"
+ }
 }

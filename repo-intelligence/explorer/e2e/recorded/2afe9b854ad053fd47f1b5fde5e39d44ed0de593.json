@@ -1,0 +1,6 @@
+{
+ "method": "GET",
+ "path": "/v1/snapshots/sha256:ae5fe1d4dcb3f7b3696549031c749cfcc3df44d965fefba2ebd9910c256df7c2/entities?plane=deployment&kind=ConfigKey&limit=60",
+ "status": 200,
+ "body": "{\"entities\":[{\"id\":\"ent_hy5o2n77zgfkvav4tlnjt6jzxb\",\"kind\":\"ConfigKey\",\"name\":\"DATABASE_URL\",\"attributes\":{},\"natural_key\":{\"name\":\"DATABASE_URL\"},\"evidence_ids\":[\"ev_eugwzsuvfknqdzflpgemmmugk6\"]}],\"truncated\":false}"
+}

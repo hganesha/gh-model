@@ -201,5 +201,10 @@
    ],
    "removed_entities": []
   }
- ]
+ ],
+ "granularity": {
+  "label": "monolithic",
+  "why": "only the gateway binary is built and deployed; billing is a second binary over the same store package with no deployment",
+  "source": "fixture design"
+ }
 }

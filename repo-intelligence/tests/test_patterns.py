@@ -188,3 +188,135 @@ def test_an_undecided_granularity_is_an_unknown(tmp_path):
     result = compile_commit(store, root / "repo", REPO_ID, materialize("F02-ts-monorepo", root / "repo")[0])
     unknowns = store.get_json(result.manifest.unknowns_ref)
     assert [u["reason"] for u in unknowns if u["predicate"] == "deployment_granularity"] == ["ambiguous_no_model"]
+
+
+# ------------------------------------------------------------------ structure and coupling (phase 2)
+
+
+def _module_graph(files, imports, root="svc"):
+    """A component whose package holds `files` (paths below `root`), importing as `imports` says."""
+    entities = [_ent("Repository", "repo", {}), _ent("Component", "c", {"root": root}, component_kind="service"), _ent("Package", "p", {"name": "svc"})]
+    assertions = [_rel("c", "CONTAINS", "p")]
+    for f in files:
+        entities.append(_ent("Artifact", f, {"path": f"{root}/{f}"}, language="python"))
+        assertions.append(_rel("p", "CONTAINS", f))
+    assertions += [_rel(a, "DEPENDS_ON", b) for a, b in imports]
+    return {"entities": entities, "assertions": assertions, "evidence": []}
+
+
+def _targets(shard):
+    return {(f.target, f.subject) for f in detect(Graph.build([shard]), load_patterns())}
+
+
+def test_layers_that_import_only_downwards_are_layered():
+    files = ["app/api/routes.py", "app/services/orders.py", "app/repositories/orders.py"]
+    down = [(files[0], files[1]), (files[1], files[2])]
+    assert {("arch-0017", "c"), ("arch-0026", "c")} <= _targets(_module_graph(files, down))
+    assert not {("arch-0017", "c"), ("arch-0026", "c")} & _targets(_module_graph(files, down + [(files[2], files[1])])), "an upward import breaks the layering"
+    skipping = _targets(_module_graph(files, down + [(files[0], files[2])]))
+    assert ("arch-0017", "c") in skipping and ("arch-0026", "c") not in skipping, "presentation reaching the data layer is still layered, but has no service layer"
+
+
+def test_a_large_import_cycle_across_directories_is_a_big_ball_of_mud():
+    files = [f"{d}/m{i}.py" for i, d in enumerate(["a", "b", "c", "d", "e"])]
+    ring = [(files[i], files[(i + 1) % 5]) for i in range(5)]
+    assert ("anti-0002", "c") in _targets(_module_graph(files, ring))
+    assert ("anti-0002", "c") not in _targets(_module_graph(files, ring[:-1])), "no cycle, no tangle"
+
+
+def test_a_module_most_files_import_and_that_imports_most_is_a_god_module():
+    files = ["core.py", *(f"f{i}.py" for i in range(8))]
+    hub = [(f, "core.py") for f in files[1:]] + [("core.py", f) for f in files[1:6]]
+    assert ("anti-0003", "core.py") in _targets(_module_graph(files, hub))
+    leaf = [(f, "core.py") for f in files[1:]]
+    assert ("anti-0003", "core.py") not in _targets(_module_graph(files, leaf)), "a shared utility that imports nothing is not a god module"
+
+
+def _services(calls, shared_table=False):
+    """Components s0..sN, each exposing one endpoint e<i>; `calls` are (caller, callee) indexes."""
+    n = 1 + max(max(c) for c in calls)
+    entities = [_ent("Repository", "repo", {})]
+    assertions = []
+    for i in range(n):
+        entities += [_ent("Component", f"s{i}", {"root": f"s{i}"}, component_kind="service"), _ent("Endpoint", f"e{i}", {"route": f"/s{i}", "method": "GET"})]
+        assertions.append(_rel(f"s{i}", "EXPOSES", f"e{i}"))
+    assertions += [_rel(f"s{a}", "CONSUMES", f"e{b}") for a, b in calls]
+    if shared_table:
+        entities.append(_ent("Table", "t", {"name": "orders"}))
+        assertions += [_rel("s0", "WRITES_TO", "t"), _rel("s1", "WRITES_TO", "t")]
+    return {"entities": entities, "assertions": assertions, "evidence": []}
+
+
+def test_services_calling_each_other_both_ways_are_a_distributed_monolith():
+    assert ("anti-0001", "repo") in _targets(_services([(0, 1), (1, 0)]))
+    assert ("anti-0001", "repo") in _targets(_services([(0, 1)], shared_table=True)), "shared written tables and a synchronous call"
+    assert ("anti-0001", "repo") not in _targets(_services([(0, 1)]))
+
+
+def test_three_synchronous_hops_are_a_chatty_chain():
+    assert ("anti-0005", "s0") in _targets(_services([(0, 1), (1, 2), (2, 3)]))
+    assert not any(t == "anti-0005" for t, _ in _targets(_services([(0, 1), (1, 2)])))
+
+
+def test_code_traits_cite_the_exact_spans():
+    shard = _module_graph(["client.py"], [])
+    shard["entities"][-1]["attributes"]["code_traits"] = [
+        {"function": "reserve", "trait": "retry", "library": "tenacity", "backoff": False, "bounded": False, "evidence_id": "ev_retry"},
+        {"function": "loop", "trait": "agent_loop", "bounded": True, "evidence_id": "ev_loop"},
+    ]
+    found = {f.target: f for f in detect(Graph.build([shard]), load_patterns()) if f.detector == "code-traits"}
+    assert set(found) == {"anti-0007"}, "a bounded agent loop is not an antipattern"
+    assert found["anti-0007"].subject == "c" and found["anti-0007"].evidence == ("ev_retry",)
+
+
+def test_extractors_read_retry_fanout_and_agent_loop_traits():
+    from repo_intel.extractors.python_source import PythonSource
+    from repo_intel.extractors.typescript_source import TypeScriptSource
+    py = b'''import asyncio
+from tenacity import retry, wait_exponential
+
+@retry
+def fast(): ...
+
+@retry(wait=wait_exponential())
+def slow(): ...
+
+async def fan(xs):
+    await asyncio.gather(*[go(x) for x in xs])
+
+async def fan_limited(xs):
+    sem = asyncio.Semaphore(4)
+    await asyncio.gather(*[go(x) for x in xs])
+
+def agent(client, messages):
+    while True:
+        r = client.messages.create(model="m", messages=messages, tools=TOOLS)
+        messages.append(run_tools(r))
+
+def capped(client, messages):
+    turns = 0
+    while True:
+        turns += 1
+        if turns >= MAX_TURNS:
+            break
+        r = client.messages.create(model="m", messages=messages, tools=TOOLS)
+'''
+    traits = [(o.payload["function"], o.payload["trait"], o.payload.get("backoff", o.payload.get("bounded"))) for o in PythonSource().extract("a.py", py, "b").observations if o.kind == "code_trait"]
+    assert traits == [("fast", "retry", False), ("slow", "retry", True), ("fan", "unbounded_fanout", None), ("agent", "agent_loop", False), ("capped", "agent_loop", True)]
+    ts = b'''import axiosRetry from "axios-retry";
+axiosRetry(axios, { retries: 3 });
+export async function all(xs: string[]) { await Promise.all(xs.map((x) => go(x))); }
+export async function agent() {
+  while (true) { const r = await client.chat.completions.create({ model: "m", messages, tools }); messages.push(r); }
+}
+'''
+    traits = [(o.payload["trait"], o.payload.get("backoff", o.payload.get("bounded"))) for o in TypeScriptSource().extract("a.ts", ts, "b").observations if o.kind == "code_trait"]
+    assert traits == [("retry", False), ("unbounded_fanout", None), ("agent_loop", False)]
+
+
+def test_import_edges_join_the_files_of_a_unit(polyglot):
+    shards, _, _ = polyglot
+    entities = {e["id"]: e for s in shards.values() for e in s["entities"]}
+    imports = [a for s in shards.values() for a in s["assertions"] if a["predicate"] == "DEPENDS_ON" and entities.get(a["subject"], {}).get("kind") == "Artifact"]
+    for a in imports:
+        assert entities[a["object"]]["kind"] == "Artifact" and a["evidence_class"] == "E2" and a["qualifiers"] == {"via": "import"}

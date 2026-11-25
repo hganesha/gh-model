@@ -16,6 +16,11 @@ test("a production build renders every plane from recorded fixture responses", a
   for (const name of ["Orders fixture", "Storefront fixture"]) {
     await visitRepository(page, name, ["Quality"]);
     await expect(page.getByText(/Files parsed/).first()).toBeVisible();
+    // Architecture patterns are recorded too (spec §8.8): their coverage, then the kind on its plane.
+    await expect(page.getByText(/Catalogue patterns looked for/).first()).toBeVisible();
+    await page.getByRole("tab", { name: "Map" }).click();
+    await page.getByRole("heading", { name: "Architecture", exact: true }).click();
+    await expect(page.getByRole("button", { name: /^Architecture pattern [1-9]/ })).toBeVisible();
   }
   expect(missing).toEqual([]);
   expect(errors).toEqual([]);

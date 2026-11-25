@@ -638,5 +638,10 @@
       ],
       "removed_entities": []
     }
-  ]
+  ],
+  "granularity": {
+    "label": "service-based",
+    "why": "an API and a worker deployed separately beside a web app, sharing workspace packages: a few coarse services, not services organised around capabilities",
+    "source": "fixture design"
+  }
 }

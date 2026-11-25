@@ -777,5 +777,10 @@
    ]
   }
  ],
- "decision_cases": []
+ "decision_cases": [],
+ "granularity": {
+  "label": null,
+  "why": "data transformations and orchestration, not a deployed application",
+  "source": "fixture design"
+ }
 }

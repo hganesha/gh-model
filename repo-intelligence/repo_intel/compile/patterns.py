@@ -171,8 +171,9 @@ class Finding:
     subject: str  # entity id
     evidence_class: Literal["E3", "E4"]
     basis: str
-    facts: tuple[str, ...]  # entity and assertion ids whose evidence the finding cites
+    facts: tuple[str, ...]  # entity and assertion ids the finding rests on
     detector: str = ""
+    evidence: tuple[str, ...] = ()  # when set, the exact evidence to cite instead of all of the facts' evidence
 
 
 DEPLOYABLE = {"service", "worker", "frontend_app"}
@@ -192,17 +193,21 @@ class Graph:
     out: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     into: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     assertion_by_id: dict[str, dict[str, Any]] = field(default_factory=dict)
+    evidence: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     @classmethod
     def build(cls, shards: Iterable[Mapping[str, Any]]) -> Graph:
         entities: dict[str, dict[str, Any]] = {}
         assertions: dict[str, dict[str, Any]] = {}
+        evidence: dict[str, dict[str, Any]] = {}
         for s in shards:
             for e in s["entities"]:
                 entities.setdefault(e["id"], e)
             for a in s["assertions"]:
                 assertions.setdefault(a["id"], a)
-        g = cls(entities, [assertions[k] for k in sorted(assertions)], assertion_by_id=assertions)
+            for ev in s.get("evidence", []):
+                evidence.setdefault(ev["id"], ev)
+        g = cls(entities, [assertions[k] for k in sorted(assertions)], assertion_by_id=assertions, evidence=evidence)
         for a in g.assertions:
             g.out.setdefault(a["subject"], []).append(a)
             g.into.setdefault(a["object"], []).append(a)
@@ -222,6 +227,29 @@ class Graph:
 
     def root(self, component: Mapping[str, Any]) -> str:
         return component["natural_key"].get("root") or "."
+
+    def blob(self, row: Mapping[str, Any]) -> str | None:
+        """The blob a file entity's first evidence (or an assertion's) points into."""
+        ev = self.evidence.get(row["evidence_ids"][0]) if row.get("evidence_ids") else None
+        return ev["blob_sha256"] if ev else None
+
+    def files(self, component: Mapping[str, Any]) -> list[dict[str, Any]]:
+        """Source files of a component's packages."""
+        packages = [a["object"] for a in self.edges(component["id"], "CONTAINS", K.PACKAGE)]
+        return sorted({a["object"]: self.entities[a["object"]] for p in packages for a in self.edges(p, "CONTAINS", K.ARTIFACT)}.values(), key=lambda e: e["id"])
+
+    def owner(self, artifact: str) -> str | None:
+        """The component whose package contains a file, else the repository."""
+        for pkg in self.incoming(artifact, "CONTAINS", K.PACKAGE):
+            for c in self.incoming(pkg["subject"], "CONTAINS", K.COMPONENT):
+                return c["subject"]
+        repo = self.of_kind(K.REPOSITORY)
+        return repo[0]["id"] if repo else None
+
+    def imports(self, files: Iterable[str]) -> list[dict[str, Any]]:
+        """Import edges between the given files (Artifact DEPENDS_ON Artifact)."""
+        ids = set(files)
+        return [a for f in sorted(ids) for a in self.edges(f, "DEPENDS_ON", K.ARTIFACT) if a["object"] in ids]
 
 
 def _name(e: Mapping[str, Any]) -> str:
@@ -479,9 +507,19 @@ def _batch(g: Graph) -> list[Finding]:
         # The job, its tasks, or the notebooks and code they run, one hop.
         runs = [a for x in [job["id"], *tasks] for a in g.edges(x, "RUNS")]
         produced = [a for x in [job["id"], *tasks, *(r["object"] for r in runs)] for a in g.edges(x, "PRODUCES", K.ML_MODEL)]
+        via = [r["id"] for r in runs if any(p["subject"] == r["object"] for p in produced)]
+        # A file the job runs, whose own code produces the model (the PRODUCES fact is the
+        # package's, but its evidence lies in that file).
+        for r in runs:
+            target = g.entities.get(r["object"])
+            if target is None or target["kind"] != K.ARTIFACT or (blob := g.blob(target)) is None:
+                continue
+            hits = [a for a in g.assertions if a["predicate"] == "PRODUCES" and any(g.evidence.get(e, {}).get("blob_sha256") == blob for e in a["evidence_ids"])]
+            if hits:
+                produced += hits
+                via.append(r["id"])
         if produced:
-            via = [r["id"] for r in runs if any(p["subject"] == r["object"] for p in produced)]
-            out.append(Finding("arch-0337", job["id"], "E3", "a declared pipeline produces a model", tuple(via + [a["id"] for a in produced])))
+            out.append(Finding("arch-0337", job["id"], "E3", "a declared pipeline produces a model", tuple(dict.fromkeys(via + [a["id"] for a in produced]))))
     return out
 
 
@@ -513,6 +551,334 @@ def _analytical(g: Graph) -> list[Finding]:
     models = [d for d in g.of_kind(K.DATASET) if d["attributes"].get("framework") == "dbt" and d["attributes"].get("kind") == "model"]
     if models:
         out.append(Finding("arch-0186", repo[0]["id"], "E4", f"{len(models)} dbt model(s) transform data inside the warehouse it was loaded into", tuple(d["id"] for d in models)))
+    return out
+
+
+# ------------------------------------------------------------------ code structure (the module graph)
+
+# Layer names a codebase gives its directories, or its files as a suffix (orders_service.py,
+# OrderController.ts). A naming convention, so every layering finding is E4.
+LAYERS = {
+    0: {"api", "apis", "routes", "routers", "controllers", "controller", "handlers", "views", "web", "endpoints", "resources", "http", "rest", "presentation", "ui"},
+    1: {"services", "service", "usecases", "use_cases", "application", "business", "logic", "managers"},
+    2: {"repositories", "repository", "repos", "dao", "daos", "persistence", "db", "database", "data", "dal", "storage", "store", "stores"},
+}
+LAYER_SUFFIX = {0: re.compile(r"(_controller|_routes?|_views?|_handlers?|Controller|Router|Routes|Handler|Resource)$"), 1: re.compile(r"(_service|_use_?case|Service|UseCase)$"), 2: re.compile(r"(_repository|_repo|_dao|Repository|Repo|Dao|DAO)$")}
+LAYER_NAMES = ("presentation", "service", "data access")
+HEXAGON = {"adapter": {"adapters", "adapter"}, "port": {"ports", "port"}, "core": {"domain", "core", "application", "app_core"}}
+COMMAND_SIDE = re.compile(r"(^|[/_.-])(commands?|writes?|write_?model)([/_.-]|$)|Command(Handler)?$", re.I)
+QUERY_SIDE = re.compile(r"(^|[/_.-])(quer(y|ies)|reads?|read_?models?|projections?)([/_.-]|$)|Query(Handler)?$")
+COMPENSATION = re.compile(r"(fail|reject|cancel|compensat|rollback|revert|refund|undo|abort)", re.I)
+_SOURCE = {"python", "typescript", "javascript"}
+
+
+def _segments(component: Mapping[str, Any], file: Mapping[str, Any]) -> tuple[list[str], str]:
+    """Directory segments of a file below its component's root, and its stem."""
+    path = str(file["natural_key"].get("path", ""))
+    root = component["natural_key"].get("root") or ""
+    rel = path[len(root) + 1:] if root and path.startswith(root + "/") else path
+    parts = rel.split("/")
+    return parts[:-1], parts[-1].rsplit(".", 1)[0]
+
+
+def _layer(component: Mapping[str, Any], file: Mapping[str, Any]) -> int | None:
+    dirs, stem = _segments(component, file)
+    for d in reversed(dirs):
+        for rank, names in LAYERS.items():
+            if d.lower() in names:
+                return rank
+    for rank, suffix in LAYER_SUFFIX.items():
+        if suffix.search(stem):
+            return rank
+    return None
+
+
+def _source_files(g: Graph, component: Mapping[str, Any]) -> list[dict[str, Any]]:
+    return [f for f in g.files(component) if f["attributes"].get("language") in _SOURCE and not re.search(r"(^|/)(tests?|__tests__|spec)/|(^|/)test_[^/]*$|_test\.py$|\.(test|spec)\.[jt]sx?$", str(f["natural_key"].get("path", "")))]
+
+
+@detector("layering")
+def _layering(g: Graph) -> list[Finding]:
+    """Presentation imports services, services import data access, and nothing imports upwards."""
+    out = []
+    for c in g.of_kind(K.COMPONENT):
+        files = _source_files(g, c)
+        rank = {f["id"]: r for f in files if (r := _layer(c, f)) is not None}
+        if set(rank.values()) != {0, 1, 2}:
+            continue
+        edges = [a for a in g.imports(rank) if rank[a["subject"]] != rank[a["object"]]]
+        down = [a for a in edges if rank[a["subject"]] < rank[a["object"]]]
+        up = [a for a in edges if rank[a["subject"]] > rank[a["object"]]]
+        steps = {(rank[a["subject"]], rank[a["object"]]) for a in down}
+        if up or not {(0, 1), (1, 2)} <= steps:
+            continue
+        skips = sum(1 for a in down if (rank[a["subject"]], rank[a["object"]]) == (0, 2))
+        out.append(Finding("arch-0017", c["id"], "E4", f"{len(down)} imports run presentation → service → data access and none runs upwards" + (f"; {skips} skip the service layer" if skips else ""), tuple(a["id"] for a in down)))
+        if not skips:
+            out.append(Finding("arch-0026", c["id"], "E4", "presentation reaches data only through the service layer", tuple(a["id"] for a in down if rank[a["subject"]] == 0)))
+    return out
+
+
+@detector("hexagonal")
+def _hexagonal(g: Graph) -> list[Finding]:
+    """Adapters depend on ports and the core; the core and ports depend on no adapter."""
+    out = []
+    for c in g.of_kind(K.COMPONENT):
+        role: dict[str, str] = {}
+        for f in _source_files(g, c):
+            dirs, _ = _segments(c, f)
+            for d in dirs:
+                found = next((r for r, names in HEXAGON.items() if d.lower() in names), None)
+                if found:
+                    role[f["id"]] = found
+                    break
+        if "adapter" not in role.values() or "port" not in role.values():
+            continue
+        edges = g.imports(role)
+        inward = [a for a in edges if role[a["subject"]] == "adapter" and role[a["object"]] in ("port", "core")]
+        outward = [a for a in edges if role[a["subject"]] in ("port", "core") and role[a["object"]] == "adapter"]
+        if inward and not outward:
+            out.append(Finding("arch-0018", c["id"], "E4", f"{len(inward)} imports run from adapters to ports or the core, and none runs outwards", tuple(a["id"] for a in inward)))
+    return out
+
+
+@detector("cqrs")
+def _cqrs(g: Graph) -> list[Finding]:
+    """Command-side code writes, query-side code only reads, and the two are separate modules."""
+    out = []
+    for c in g.of_kind(K.COMPONENT):
+        side: dict[str, str] = {}
+        for f in _source_files(g, c):
+            path = str(f["natural_key"].get("path", ""))
+            if COMMAND_SIDE.search(path.rsplit(".", 1)[0]):
+                side[f["id"]] = "command"
+            elif QUERY_SIDE.search(path.rsplit(".", 1)[0]):
+                side[f["id"]] = "query"
+        access: dict[str, list[dict[str, Any]]] = {"command_write": [], "query_read": [], "query_write": []}
+        for s in g.of_kind(K.SYMBOL):
+            home = next((a["object"] for a in g.edges(s["id"], "DEFINED_IN", K.ARTIFACT)), None)
+            if home not in side:
+                continue
+            writes = g.edges(s["id"], "WRITES_TO")
+            reads = g.edges(s["id"], "READS_FROM")
+            if side[home] == "command":
+                access["command_write"] += writes
+            else:
+                access["query_read"] += reads
+                access["query_write"] += writes
+        if access["command_write"] and access["query_read"] and not access["query_write"]:
+            written = {a["object"] for a in access["command_write"]}
+            separate = [a for a in access["query_read"] if a["object"] not in written]
+            basis = "command handlers write and query handlers only read" + ("; queries read a separate read model" if separate else ", from the same tables")
+            out.append(Finding("arch-0142", c["id"], "E4", basis, tuple(a["id"] for a in access["command_write"] + access["query_read"])))
+    return out
+
+
+@detector("saga")
+def _saga(g: Graph) -> list[Finding]:
+    """A step announced by one component, a failure event announced back by another, and the
+    first component listening for that failure to undo its own step."""
+    out = []
+    for a in g.of_kind(K.COMPONENT):
+        published = {x["object"]: x for x in g.edges(a["id"], "PUBLISHES_TO", K.EVENT_TOPIC)}
+        for sub in g.edges(a["id"], "SUBSCRIBES_TO", K.EVENT_TOPIC):
+            topic = g.entities[sub["object"]]
+            if not COMPENSATION.search(_name(topic)):
+                continue
+            for pub in g.incoming(topic["id"], "PUBLISHES_TO", K.COMPONENT):
+                if pub["subject"] == a["id"]:
+                    continue
+                triggers = [x for x in g.edges(pub["subject"], "SUBSCRIBES_TO", K.EVENT_TOPIC) if x["object"] in published]
+                if triggers:
+                    facts = (published[triggers[0]["object"]]["id"], triggers[0]["id"], pub["id"], sub["id"])
+                    out.append(Finding("arch-0128", a["id"], "E4", f"publishes {_name(g.entities[triggers[0]['object']])}, and listens for {_name(topic)} from the participant that consumes it", facts))
+                    out.append(Finding("arch-0129", topic["id"], "E4", "a failure event the initiating step listens for, to undo its work", facts))
+    return list({(f.target, f.subject): f for f in out}.values())
+
+
+# ------------------------------------------------------------------ coupling antipatterns
+
+
+def _sync_calls(g: Graph) -> dict[tuple[str, str], list[dict[str, Any]]]:
+    """(calling component, called component) -> the CONSUMES edges between them, over HTTP."""
+    calls: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for a in g.assertions:
+        if a["predicate"] != "CONSUMES" or g.entities.get(a["subject"], {}).get("kind") != K.COMPONENT or g.entities.get(a["object"], {}).get("kind") != K.ENDPOINT:
+            continue
+        for owner in g.incoming(a["object"], "EXPOSES", K.COMPONENT):
+            if owner["subject"] != a["subject"]:
+                calls.setdefault((a["subject"], owner["subject"]), []).append(a)
+    return calls
+
+
+@detector("distributed-monolith")
+def _distributed_monolith(g: Graph) -> list[Finding]:
+    """Deployables that call each other synchronously in both directions, or that share
+    written tables and also call each other: they cannot change or deploy apart."""
+    calls = _sync_calls(g)
+    backend = {c["id"] for c in g.components(DEPLOYABLE)}
+    facts: list[str] = []
+    reasons = set()
+    for (x, y), edges in calls.items():
+        if x < y and (y, x) in calls:
+            facts += [a["id"] for a in edges + calls[(y, x)]]
+            reasons.add("call each other synchronously in both directions")
+    for t in g.of_kind(K.TABLE):
+        writers = _users(g, t["id"], backend, ("WRITES_TO",))
+        pairs = [(x, y) for x in writers for y in writers if x != y and (x, y) in calls]
+        for x, y in pairs:
+            facts += [a["id"] for a in writers[x] + writers[y] + calls[(x, y)]]
+            reasons.add("write the same tables and call each other")
+    repo = g.of_kind(K.REPOSITORY)
+    if not facts or not repo:
+        return []
+    return [Finding("anti-0001", repo[0]["id"], "E4", "deployables " + " and ".join(sorted(reasons)), tuple(dict.fromkeys(facts)))]
+
+
+@detector("sync-chains")
+def _sync_chains(g: Graph) -> list[Finding]:
+    """A request that crosses three or more synchronous hops, or one caller using many
+    operations of the same service."""
+    calls = _sync_calls(g)
+    nxt: dict[str, list[str]] = {}
+    for x, y in calls:
+        nxt.setdefault(x, []).append(y)
+    out = []
+
+    def longest(node: str, seen: tuple[str, ...]) -> tuple[str, ...]:
+        best = seen
+        for y in sorted(nxt.get(node, [])):
+            if y not in seen:
+                path = longest(y, seen + (y,))
+                best = path if len(path) > len(best) else best
+        return best
+
+    starts = sorted({x for x, _ in calls} - {y for _, y in calls}) or sorted({x for x, _ in calls})
+    for s in starts:
+        path = longest(s, (s,))
+        if len(path) >= 4:
+            hops = list(zip(path, path[1:]))
+            out.append(Finding("anti-0005", s, "E4", f"a call from here crosses {len(hops)} synchronous hops", tuple(a["id"] for h in hops for a in calls[h][:1])))
+    for (x, y), edges in calls.items():
+        if len({a["object"] for a in edges}) >= 4:
+            out.append(Finding("anti-0005", x, "E4", f"calls {len({a['object'] for a in edges})} operations of {_name(g.entities[y])} synchronously", tuple(a["id"] for a in edges)))
+    return list({(f.target, f.subject): f for f in out}.values())
+
+
+def _cycles(nodes: list[str], edges: list[tuple[str, str]]) -> list[list[str]]:
+    """Strongly connected components with more than one node (Tarjan, iterative)."""
+    succ: dict[str, list[str]] = {n: [] for n in nodes}
+    for a, b in edges:
+        succ[a].append(b)
+    index: dict[str, int] = {}
+    low: dict[str, int] = {}
+    stack: list[str] = []
+    on: set[str] = set()
+    out: list[list[str]] = []
+    counter = 0
+    for root in nodes:
+        if root in index:
+            continue
+        work = [(root, 0)]
+        while work:
+            v, i = work.pop()
+            if i == 0:
+                index[v] = low[v] = counter
+                counter += 1
+                stack.append(v)
+                on.add(v)
+            if i < len(succ[v]):
+                work.append((v, i + 1))
+                w = succ[v][i]
+                if w not in index:
+                    work.append((w, 0))
+                elif w in on:
+                    low[v] = min(low[v], index[w])
+                continue
+            if low[v] == index[v]:
+                scc = []
+                while True:
+                    w = stack.pop()
+                    on.discard(w)
+                    scc.append(w)
+                    if w == v:
+                        break
+                if len(scc) > 1:
+                    out.append(sorted(scc))
+            if work:
+                parent = work[-1][0]
+                low[parent] = min(low[parent], low[v])
+    return out
+
+
+# Placeholders until calibrated on the reviewed corpus (spec §7.4), like DM11's.
+TANGLE_MIN_FILES, TANGLE_MIN_DIRS, TANGLE_SHARE = 5, 3, 0.4
+HUB_MIN_IMPORTERS, HUB_SHARE, HUB_MIN_IMPORTS = 6, 0.5, 5
+
+
+@detector("module-structure")
+def _module_structure(g: Graph) -> list[Finding]:
+    """A component whose files import each other in one large cycle across directories (a big
+    ball of mud), or one file that most of the component imports and that imports much of it
+    (a god module)."""
+    out = []
+    for c in g.of_kind(K.COMPONENT):
+        files = _source_files(g, c)
+        ids = [f["id"] for f in files]
+        edges = g.imports(ids)
+        if not edges:
+            continue
+        for scc in _cycles(ids, [(a["subject"], a["object"]) for a in edges]):
+            dirs = {"/".join(_segments(c, g.entities[f])[0]) for f in scc}
+            if len(scc) >= TANGLE_MIN_FILES and len(dirs) >= TANGLE_MIN_DIRS and len(scc) >= TANGLE_SHARE * len(ids):
+                inside = set(scc)
+                out.append(Finding("anti-0002", c["id"], "E4", f"{len(scc)} of {len(ids)} files across {len(dirs)} directories import each other in one cycle", tuple(a["id"] for a in edges if a["subject"] in inside and a["object"] in inside)))
+        importers: dict[str, list[dict[str, Any]]] = {}
+        imported: dict[str, list[dict[str, Any]]] = {}
+        for a in edges:
+            importers.setdefault(a["object"], []).append(a)
+            imported.setdefault(a["subject"], []).append(a)
+        for f in ids:
+            stem = _segments(c, g.entities[f])[1]
+            fan_in, fan_out = len(importers.get(f, [])), len(imported.get(f, []))
+            if stem in ("__init__", "index") or fan_in < max(HUB_MIN_IMPORTERS, HUB_SHARE * (len(ids) - 1)) or fan_out < HUB_MIN_IMPORTS:
+                continue
+            out.append(Finding("anti-0003", f, "E4", f"imported by {fan_in} of {len(ids) - 1} other files and imports {fan_out}: a change bottleneck", tuple(a["id"] for a in importers[f] + imported[f])))
+    return out
+
+
+# ------------------------------------------------------------------ code traits
+
+
+@detector("code-traits")
+def _code_traits(g: Graph) -> list[Finding]:
+    """Retry policies, fan-out and agent loops the extractors read from function bodies. Each
+    shows the condition for a runtime antipattern, not the antipattern under load: E4."""
+    out: list[Finding] = []
+    by_subject: dict[tuple[str, str], list[tuple[str, str, str]]] = {}
+    for f in g.of_kind(K.ARTIFACT):
+        for t in f["attributes"].get("code_traits", []):
+            subject = g.owner(f["id"])
+            if subject is None:
+                continue
+            where = f"{f['natural_key'].get('path')}:{t.get('function')}"
+            kind = t["trait"]
+            if kind == "retry" and t.get("backoff"):
+                by_subject.setdefault(("arch-0210", subject), []).append((f["id"], t["evidence_id"], where))
+            elif kind == "retry":
+                by_subject.setdefault(("anti-0007", subject), []).append((f["id"], t["evidence_id"], where + (" (no backoff, no stop)" if not t.get("bounded") else " (no backoff)")))
+            elif kind == "unbounded_fanout":
+                by_subject.setdefault(("anti-0008", subject), []).append((f["id"], t["evidence_id"], f"{where} ({t.get('construct')})"))
+            elif kind == "agent_loop" and not t.get("bounded"):
+                by_subject.setdefault(("anti-0009", subject), []).append((f["id"], t["evidence_id"], where))
+    basis = {
+        "arch-0210": "retries with backoff in {}",
+        "anti-0007": "retries at once, with no backoff, in {}: under load every caller retries together",
+        "anti-0008": "starts work for every element with no concurrency limit in {}",
+        "anti-0009": "calls a model and runs its tools in a loop with no iteration bound in {}",
+    }
+    for (target, subject), hits in sorted(by_subject.items()):
+        out.append(Finding(target, subject, "E4", basis[target].format(", ".join(sorted({h[2] for h in hits}))), tuple(sorted({h[0] for h in hits})), evidence=tuple(sorted({h[1] for h in hits}))))
     return out
 
 

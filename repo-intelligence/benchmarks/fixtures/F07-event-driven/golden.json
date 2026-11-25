@@ -327,5 +327,10 @@
       "added_entities": [],
       "removed_entities": []
     }
-  ]
+  ],
+  "granularity": {
+    "label": "microservices",
+    "why": "three services, each in its own package, that share no tables and communicate only through Kafka topics",
+    "source": "fixture design"
+  }
 }

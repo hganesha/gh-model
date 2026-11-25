@@ -420,5 +420,10 @@
    ]
   }
  ],
- "decision_cases": []
+ "decision_cases": [],
+ "granularity": {
+  "label": "microservices",
+  "why": "separately deployed functions and a worker that communicate only through queues and share no data",
+  "source": "fixture design"
+ }
 }
