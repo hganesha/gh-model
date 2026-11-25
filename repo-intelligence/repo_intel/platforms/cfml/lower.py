@@ -30,14 +30,20 @@ _INLINE_UI = frozenset({"cfinput"})
 _SINKS = {"cfsavecontent": "capture", "cfsilent": "silent", "cfxml": "capture", "cfdocument": "report", "cfmail": "mail", "cfmailpart": "mail"}
 
 
-def mask_sql(raw: str) -> str:
+_INLINE_EXPR = re.compile(r"#[^#\n]*#")
+
+
+def mask_sql(raw: str) -> tuple[str, tuple[tuple[int, int], ...]]:
     """SQL with parameters, tags and `#expressions#` masked, offsets kept: what table lineage reads.
 
-    The masks are the ones `legacy.cfml` used, so lineage finds the same tables."""
+    The masks are the ones `legacy.cfml` used, so lineage finds the same tables. Also
+    returns the spans (offsets into `raw`) of the `#expressions#` substituted into the
+    SQL text: a table name that overlaps one is computed at run time."""
     raw = re.sub(r"<!---.*?--->", lambda m: re.sub(r"[^\n]", " ", m.group()), raw, flags=re.S)
     raw = re.sub(r"<cfqueryparam\b[^>]*>", lambda m: "0".ljust(len(m.group())), raw, flags=re.I)
     raw = re.sub(r"</?cf\w+\b[^>]*>", lambda m: " " * len(m.group()), raw, flags=re.I)
-    return re.sub(r"#[^#\n]*#", lambda m: "x".ljust(len(m.group()), "_"), raw)
+    spans = tuple(m.span() for m in _INLINE_EXPR.finditer(raw) if m.end() - m.start() > 2)  # `##` is an escaped `#`
+    return _INLINE_EXPR.sub(lambda m: "x".ljust(len(m.group()), "_"), raw), spans
 
 
 class Lowerer:
@@ -275,7 +281,8 @@ class Lowerer:
         if n.literal("result"):
             stmt["result"] = n.literal("result")
         region = n.body if n.body else (n.open_end, n.open_end)
-        self.ctx.queries.append(QueryFact(self.ctx.func, region, mask_sql(self.text[region[0]: region[1]]), ds, (ds_attr.start, ds_attr.end) if ds and ds_attr else None, (n.start, n.end), dbtype))
+        masked, inline = mask_sql(self.text[region[0]: region[1]])
+        self.ctx.queries.append(QueryFact(self.ctx.func, region, masked, ds, (ds_attr.start, ds_attr.end) if ds and ds_attr else None, (n.start, n.end), dbtype, inline))
         return [stmt]
 
     def t_cfscript(self, n: Node) -> list[Stmt]:

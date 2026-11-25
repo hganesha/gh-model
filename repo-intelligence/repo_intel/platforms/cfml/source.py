@@ -11,10 +11,13 @@ natural keys:
 - `cfinvoke`, `createObject`, `new` and `cfinclude` CALL the `Program`s they name,
   with component names tried against every directory the lookup may use.
 
-On top of that: each function is a `Symbol` with its own behaviour unit, and each
-template's body a behaviour unit of its `Program`; a template that renders output
-is a `Screen` its `Program` RENDERS, holding the `Form`s and `UIControl`s of its
-markup; forms SUBMIT_TO and links and `cflocation` NAVIGATE_TO literal targets;
+On top of that: each function is a `Symbol` its `Program` CONTAINS, with its own
+behaviour unit, and each template's body a behaviour unit of its `Program`; a
+template that renders output is a `Screen` its `Program` RENDERS, holding the
+`Form`s and `UIControl`s of its markup; forms SUBMIT_TO and links NAVIGATE_TO
+literal targets, and so does a `cflocation` (from the screen, or from the page or
+function that runs it when nothing is rendered); a table named by a `#expression#`
+is not declared;
 `roles=`, `IsUserInRole` and `cfloginuser` give `Role`s; `Application.cfc` records
 its lifecycle events and settings; `cfschedule` gives scheduled `Task`s.
 
@@ -114,7 +117,7 @@ class _Emit:
 
 class CfmlSource:
     id = "cfml.source"
-    version = "1.0.0"
+    version = "1.1.0"
 
     def matches(self, path: str) -> bool:
         return path.lower().endswith((".cfc", ".cfm", ".cfml"))
@@ -229,13 +232,16 @@ def _entities(o: _Emit, path: str, is_cfc: bool, doc: Document | None, body: lis
         if fn.name.lower() in seen_fn:
             o.note(f"function {fn.name} is defined twice")
         seen_fn.add(fn.name.lower())
-        _behavior(o, o.span(fn.start, fn.end), s, fn.body, fn.params)
+        o.rel(at, prog, P.CONTAINS, s)
+        _behavior(o, o.span(fn.start, fn.end), s, fn.body, fn.params, "function")
 
     # Queries: lineage and datasources.
     for q in ctx.queries:
         if q.masked is not None and q.region is not None and q.dbtype != "query":
             found = sql.lineage(q.masked, None)
+            dynamic_writes = _drop_dynamic_tables(o, q, found)
             o.resolved += len(found.writes) + len(found.reads)
+            o.unresolved += dynamic_writes  # data written to a table no name in the source gives
             o.unresolved += found.unresolved
             for subject in subjects(q.owner):
                 o.items += sql.lineage_relations(o.blob, o.data, ctx.text, found, subject, offset=q.region[0], to_byte=ctx.to_byte)
@@ -308,12 +314,16 @@ def _entities(o: _Emit, path: str, is_cfc: bool, doc: Document | None, body: lis
             if e.node is not None:
                 ctx.construct(_ui_construct(e.node), e.node.start, e.node.open_end, False)
 
-    # Redirects from a screen are navigation.
+    # Redirects are navigation: from the screen when the page renders one, else from
+    # the code that runs them (the page or component Program, or the function's Symbol).
     for target, (a, b), owner in ctx.redirects:
-        if screen is not None and owner is None and target is not None:
-            obj = _target(o, path, target, target)
-            if obj is not None:
-                o.rel(o.span(a, b), screen, P.NAVIGATES_TO, obj, {"via": "cflocation"})
+        if target is None:
+            continue  # a computed URL: noted where it was lowered
+        obj = _target(o, path, target, target)
+        if obj is None:
+            continue
+        subject = sym(owner) if owner is not None else screen if screen is not None else prog
+        o.rel(o.span(a, b), subject, P.NAVIGATES_TO, obj, {"via": "cflocation"})
 
     # Roles checked in code, and roles granted at login.
     for role, (a, b), owner, via in ctx.role_checks:
@@ -333,17 +343,45 @@ def _entities(o: _Emit, path: str, is_cfc: bool, doc: Document | None, body: lis
         if item["task"] and item["action"] in ("", "update", "add", "create"):
             _scheduled_task(o, o.span(*item["at"]), item["task"], item["group"], item["path"], {"interval": item["interval"]} if item["interval"] else {}, "cfschedule")
 
-    # Behaviour of the page (or of the component's pseudo-constructor).
+    # Behaviour of the page (or of the component's pseudo-constructor, code outside its functions).
     if not is_cfc or body:
-        _behavior(o, o.whole(), prog, body, [])
+        _behavior(o, o.whole(), prog, body, [], "open_code" if is_cfc else "page")
 
     for cid, a, b, modelled in ctx.constructs:
         o.items.append(o.platforms.construct(o.blob, o.span(a, b), cid, modelled))
 
 
-def _behavior(o: _Emit, at, owner: dict[str, Any], body: list, params: list) -> None:
+def _drop_dynamic_tables(o: _Emit, q, found) -> int:
+    """Take out of `found` every table whose name holds a `#expression#` of the SQL.
+
+    `FROM orders_#url.region#` or `FROM #tbl#` names a table only at run time: the
+    masked text (`orders_x___________`) is not a table. The query stays in the
+    behaviour with its inline parameters; a diagnostic says the table is not
+    resolved. Returns how many writes were dropped."""
+    if not q.inline:
+        return 0
+
+    def dynamic(name: str, a: int, b: int) -> bool:
+        # The name overlaps a masked expression and carries its mask (the span of a
+        # name lineage could not locate is the whole statement, so both are checked).
+        return any(s < b and a < e and q.masked[s:e].lower() in name for s, e in q.inline)
+
+    dropped = 0
+    for items in (found.writes, found.reads):
+        keep = []
+        for name, a, b in items:
+            if dynamic(name, a, b):
+                dropped += items is found.writes
+                o.ctx.note("query names a table computed at run time: table not resolved", q.region[0] + a)
+            else:
+                keep.append((name, a, b))
+        items[:] = keep
+    return dropped
+
+
+def _behavior(o: _Emit, at, owner: dict[str, Any], body: list, params: list, kind: str) -> None:
     try:
-        o.items.append(o.behavior_observation(o.blob, at, owner, "cfml", body, params))
+        o.items.append(o.behavior_observation(o.blob, at, owner, "cfml", body, params, kind=kind))
     except ValueError as exc:  # a lowering bug must not lose the file's entities
         o.note(f"behaviour of {owner['name']} not emitted: {exc}", "warning")
 
@@ -403,6 +441,44 @@ def _ui_construct(node: Node) -> str:
 def _plain(node: Node, attr: str) -> str | None:
     value = node.literal(attr)
     return value.strip() if value and value.strip() else None
+
+
+_BUTTON_INPUTS = ("submit", "button", "reset", "image")
+_END_BUTTON = re.compile(r"</button\s*>", re.I)
+
+
+def _button_text(text: str, node: Node) -> str | None:
+    """The literal label of a button: an input's `value`, or the text of a `<button>`."""
+    if node.name != "button":
+        return _plain(node, "value")
+    close = _END_BUTTON.search(text, node.open_end)
+    if close is None:
+        return None
+    label = re.sub(r"\s+", " ", re.sub(r"<[^>]*>", " ", text[node.open_end: close.start()])).strip()
+    return label if label and "#" not in label else None
+
+
+def _control_name(text: str, node: Node, ctype: str, link: str | None, counts: dict[tuple[str, str], int], container: str) -> str:
+    """A control's name as the contract orders it: its name, its id, `link:<target>` for
+    a link with a literal target, `submit` or `button:<text>` for a button, else
+    `<type><n>` counted in document order among the controls of its container that
+    fall back to it. CFML has no binding attribute apart from the field name, so no
+    binding path is looked for."""
+    name = _plain(node, "name") or _plain(node, "id")
+    if name:
+        return name
+    link = re.split(r"[?#]", link, 1)[0].strip() if link else None
+    if ctype == "link" and link:
+        return "link:" + link  # as written, without its query string
+    if node.name == "button" or ctype in _BUTTON_INPUTS:
+        kind = (_plain(node, "type") or "").lower() if node.name == "button" else ctype
+        if kind == "submit":
+            return "submit"
+        label = _button_text(text, node)
+        if label and len(label) <= 40:
+            return "button:" + label
+    counts[(container, ctype)] = counts.get((container, ctype), 0) + 1
+    return f"{ctype}{counts[(container, ctype)]}"
 
 
 def _ui(o: _Emit, path: str, doc: Document, screen: dict[str, Any]) -> None:
@@ -472,8 +548,7 @@ def _ui(o: _Emit, path: str, doc: Document, screen: dict[str, Any]) -> None:
         else:  # <button>
             ctype, target = "button", None
         container = form[1] if form else screen_name
-        counts[(container, ctype)] = counts.get((container, ctype), 0) + 1
-        cname = _plain(node, "name") or _plain(node, "id") or f"{ctype}{counts[(container, ctype)]}"
+        cname = _control_name(ctx.text, node, ctype, head if ctype == "link" else None, counts, container)
         cattrs: dict[str, Any] = {"control": ctype, "tag": tag}
         if node.attr("name") is not None and _plain(node, "name") is None:
             cattrs["name_dynamic"] = True

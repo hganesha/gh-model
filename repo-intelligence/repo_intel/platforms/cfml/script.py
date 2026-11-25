@@ -1188,17 +1188,17 @@ class Parser:
         if ds:
             stmt["datasource"] = ds
         region = self._sql_region(sql_e)
-        masked = None
+        masked, inline = None, ()
         if region is not None:
             from repo_intel.platforms.cfml.lower import mask_sql
 
-            masked = mask_sql(self.text[region[0]: region[1]])
+            masked, inline = mask_sql(self.text[region[0]: region[1]])
         dbtype = stmt.get("dbtype")
         span = None
         if ds:  # evidence for the datasource: its name where the options give it
             k = self.text.find(ds, a, b)
             span = (k, k + len(ds)) if k >= 0 else (a, b)
-        self.ctx.queries.append(QueryFact(self.ctx.func, region, masked, ds, span, (a, b), dbtype))
+        self.ctx.queries.append(QueryFact(self.ctx.func, region, masked, ds, span, (a, b), dbtype, inline))
         self.ctx.query_ops[id(call)] = stmt
 
     def _sql_region(self, sql_e: Expr | None) -> tuple[int, int] | None:

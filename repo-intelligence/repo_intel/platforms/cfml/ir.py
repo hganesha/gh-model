@@ -78,6 +78,7 @@ class QueryFact:
     ds_at: tuple[int, int] | None
     at: tuple[int, int]
     dbtype: str | None = None
+    inline: tuple[tuple[int, int], ...] = ()  # spans of `#expressions#` in the masked SQL, offsets into it
 
 
 @dataclass
