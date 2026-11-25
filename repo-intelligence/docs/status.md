@@ -153,7 +153,7 @@ DM11 calibration:
 
 Known gaps:
 - The structure and DM11 thresholds are placeholders until the reviewed corpus exists (GI-026). A dozen synthetic cases cannot support a recommendation.
-- No live decision-model run has been made for DM11.
+- A live run against Microsoft Decision 1.1 (`benchmarks/results/deployment-granularity-2026-11-25.md`) gave no wrong answers, but its first run would have been wrong on both ambiguous cases. One of those (F17) missed the accept threshold by 0.01. Criteria v2 explains each feature: the model then picks F02 correctly and declines F17. Neither run supports a threshold change.
 - Other resilience patterns, event sourcing, and onion and clean architecture are not looked for yet.
 - Code traits are read only in Python and TypeScript.
 
