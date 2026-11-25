@@ -128,10 +128,10 @@ Inside a repository the bundle lives in `.rkp/`, which the engine already reads 
 |---|---|---|
 | 0. Spike | Measure bundle size on two or three real repositories; prototype the frozen executable; test a merge conflict and a toolchain version mismatch | Size and packaging are known numbers |
 | 1. Engine local mode and command line | Working-tree source, in-memory projection, bundle reader and writer, `compile`, `verify` and `diff` commands. *Built: working-tree source, in-memory projection (the local API), bundle reader, writer and hydration, `compile`, `status`, `serve`* | Goldens and parity pass with no PostgreSQL |
-| 2. CFML behaviour | A real CFML parser; per-function control flow and typed expression trees; database catalogue dumps as input | One real ColdFusion application compiles with measured coverage |
-| 3. Intent lifting | Ontology kinds for business rule, workflow, screen and role; model lifting with cited evidence; confirmation through overrides | An analyst can review every lifted rule against its source |
+| 2. Platform packs and behaviour | The platform-pack contract and two-layer ontology; a real CFML parser and a macro-aware SAS parser, lowered into one behavioural form (control flow, typed expression trees, data flow); configuration from outside the repository and database catalogue dumps as input. See [Toward a complete solution IR](#toward-a-complete-solution-ir) | One real ColdFusion application compiles with measured coverage per construct |
+| 3. Intent, experience and security | Ontology kinds for screen, form, style token, business rule, workflow and role; extractors for templates, forms, front ends and stylesheets; model lifting with cited evidence; confirmation through overrides | An analyst can review every lifted rule and screen against its source |
 | 4. VS Code plug-in | Tree view, jump to evidence, unknowns and conflicts in the Problems panel, rule review, Explorer views in a webview. *Built: tree view, jump to evidence, conflicts, status bar, workspace trust, bundled engine, Explorer views in a webview* | A repository opens, analyses, reloads from `.rkp/` and supports review |
-| 5. Export and evidence requests | Export command with its own gate: classification, redaction, signing, approval record. Evidence requests from unknowns; merge of supplemental bundles | A signed bundle rebuilds the full context in a clean environment |
+| 5. Export and evidence requests | Export command with its own gate: classification, redaction, signing, approval record. Evidence requests from unknowns; merge of supplemental bundles; a solution manifest over several bundles, with identity resolved across them | A signed bundle rebuilds the full context in a clean environment |
 | 6. Factory hydration and design | The hosted service loads a bundle; target architecture in `design/`; mismatches between declared and observed architecture reported | A bundle drives a design in the factory |
 | 7. Behavioural equivalence | Fixture generation from the IR; a customer-run harness using native tools; comparison of result bundles | A report classifies behaviour as equivalent, divergent or unverified |
 | 8. Coding and delivery | Knowledge exposed to coding agents; delivery bundle with traceability from legacy logic to target code | The customer can build and run the result without the accelerator |
@@ -147,6 +147,69 @@ The taxonomy in `docs/architecture-pattern-taxonomy.md` feeds phases 1 and 6. Ga
 - **No declared architecture.** `design/architecture.json` holds the chosen composition as pattern references with rationale.
 - **Entries a repository cannot show.** Owners declare these in overrides; they are recorded as declared, never as observed.
 - **Local entries.** A committed `.rkp/patterns/` folder, with the catalogue version recorded in the manifest.
+
+## Toward a complete solution IR
+
+Added 2026-11-25. The engine models structure well: what exists, what calls what, and what data it touches. It does not yet model behaviour, what users see, or business meaning, and its platform front ends match patterns rather than parse. This section lists what a complete representation of a solution needs when the solution spans diverse repositories and platform-specific constructs such as ColdFusion templates and SAS objects.
+
+### Where it stands
+
+- **Platform front ends match patterns.** `repo_intel/extractors/legacy.py` handles ColdFusion, SAS, COBOL and JCL, and Synapse with about 26 regular expressions. For ColdFusion it finds components, pages, remote functions, `cfquery` SQL and calls. For SAS it finds macros (as Programs), DATA-step reads and writes, `PROC SQL` and `LIBNAME`. Neither sees control flow, scopes, macro expansion or runtime configuration.
+- **The ontology has no kinds for screens, forms, styles, roles, rules or workflows.** `Requirement` is reserved and unused. The IR domain table under [Starting point](#starting-point) shows the behavioural, business, experience and security domains missing.
+- **The unit is a repository, not a solution.** Linking across repositories exists only in the hosted service; the local API answers 501 for the business map.
+
+### 1. A neutral core with platform packs
+
+- **Two layers in the ontology.** A neutral core that every target consumes (Program, Screen, Rule, Dataset and so on), and per-platform vocabularies that keep native detail: `cf:Template`, `cf:ApplicationScope`, `sas:MacroVariable`, `sas:Format`, `sas:StoredProcess`. Each platform construct maps to the core with a recorded fidelity: exact, lossy or unmapped. Nothing platform-specific is dropped, and a generator can tell what it is not handling.
+- **A platform-pack contract.** A pack holds the extractors, the vocabulary extension, the mapping to the core, golden fixtures and a checklist of the constructs it covers. Packs are added without changing the engine and are fingerprinted into the toolchain hash, as extractors are now.
+- **Coverage per construct.** For example, "`cflock`: seen 14 times, modelled 0". This is how a view tells "not found" from "not looked for" on each platform.
+
+### 2. Real parsers feeding a behavioural layer
+
+| Platform | What the parser has to handle |
+|---|---|
+| ColdFusion | Mixed tag and script syntax; the `Application.cfc` lifecycle (`onRequestStart`, `onError`); implicit scopes (`session`, `application`, `form`, `url`, `request`); dynamic `cfinclude` and `evaluate`; `cftransaction`, `cflock` and `cftry`; scheduled tasks |
+| SAS | Symbolic macro expansion, since macro variables resolve only at run time; DATA-step semantics (the implicit loop, `RETAIN`, `BY` groups, `first.` and `last.`); `PROC FORMAT` as code tables and reference data; ODS outputs; Enterprise Guide projects (`.egp`), DI Studio jobs and stored processes |
+| All platforms | Lowering into one statement and expression form with data flow; SQL as relational algebra (sqlglot already parses it). Equivalence testing (phase 7) and code generation consume this form |
+
+Much of a legacy application is configured on the server rather than in code: ColdFusion Administrator exports (datasources, mappings, scheduled tasks in `neo-cron.xml`), web-server rewrite rules, SAS `autoexec` and `config.sas`, the SAS metadata server, LSF or cron schedules, and database catalogue dumps. These come in through native extraction (mode 2): a script for the customer's own tools writes a file the engine reads as input.
+
+### 3. An experience layer
+
+| Model | Extracted from |
+|---|---|
+| Screen or page, region, layout | `.cfm` templates, JSP, ASPX and Razor, React, Angular and Vue components, router configuration |
+| Form, input, validation, default value | `cfform` and `cfinput`, HTML forms, client-side validators, form schemas |
+| Action and navigation edge | Form `action=`, `cflocation`, links and route transitions, each linked to the server endpoint it reaches |
+| Message, label, glossary term | Screen text, resource bundles, column headings. These also feed the business layer |
+| Style token and component style | CSS, SCSS and LESS: colours, type, spacing, and which classes each screen uses. A design system can be derived from them |
+| Report output | SAS ODS and BI report definitions. Stored-process prompts are in effect input forms |
+| Accessibility | Labels, roles, tab order, and contrast computed from style tokens |
+
+Where the application can be run, a headless browser can capture screenshots and DOM snapshots, and a vision model can segment them. That evidence is class E5 and is tied back to the template that produced each screen.
+
+### 4. Business, security and process layers
+
+- **Business rules.** Candidates come from conditions in the behavioural layer: `cfif` validations, SAS `WHERE` and `IF` logic, computed columns. A model lifts them into named rules and calculations that cite their evidence. They stay hypotheses until an owner confirms them through overrides, which the decision ledger already supports.
+- **Security.** Roles and permissions from `cflogin`, `IsUserInRole`, SAS metadata access lists and database grants; trust boundaries from where authentication checks run; field-level classification of personal data, building on the existing `sensitivity` field.
+- **Process.** Workflows and approvals inferred from status columns and the code paths that change them. Transactions, locking, retries and error handling come from the behavioural layer.
+
+### 5. A solution above the repository
+
+- **A solution manifest** lists the repositories, configuration exports and catalogue dumps that make up one application, each with its own bundle.
+- **Identity resolution across sources.** The same table touched from a CFC and a SAS job, or one endpoint called from JavaScript and served by ColdFusion, becomes one entity. Rules settle exact matches; a model proposes candidates at lower confidence.
+- **Platform reference catalogues**, like the architecture-pattern catalogue: CFML tags and functions, SAS procedures and their read and write signatures. Extractors and the coverage checklist both use them.
+
+### Order and tiers
+
+1. The platform-pack contract and the two-layer ontology, since everything else plugs into them.
+2. A real ColdFusion parser, giving the behavioural layer, and screens and forms from templates. ColdFusion is the reference platform for phases 2 and 3.
+3. SAS: symbolic macro expansion, DATA-step lowering, `PROC FORMAT` as reference data, stored-process prompts as forms.
+4. The solution manifest and configuration from outside the repository.
+5. Experience extractors for modern web front ends and CSS tokens. They are cheaper and test the experience model before the legacy versions.
+6. Business-rule lifting with models, gated by owner confirmation.
+
+Behaviour and per-screen layout are large, as Symbol detail is, so they belong in the detail tier that stays in the local cache. Rules, screens, roles and the solution manifest are what review and design need, so they belong in the committed architecture tier.
 
 ## Risks
 
@@ -221,3 +284,5 @@ Recommendation:
 | What is committed | The architecture tier, with function-level detail recompiled locally. Built as the default; `"commit": "full"` is the alternative | Inputs only (option E) |
 | Hosted product | Keep it as the factory shell over the same engine | Retire it |
 | First reference application | One real ColdFusion application for phases 2 and 3 | Synthetic fixtures only |
+| Platform-specific constructs | A neutral core plus platform vocabularies, each construct mapped with a recorded fidelity | Add every platform's kinds to the core ontology |
+| Where behaviour and screen layout live | The detail tier, in the local cache; rules, screens and roles in the committed tier | Commit everything |
