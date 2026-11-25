@@ -212,6 +212,12 @@ def _script_sheets(sheets: _Sheets, s: script.Script) -> None:
         sheets.add(spec, "web:css-module" if is_module else "web:stylesheet-import", a, b, styles.dialect_of(spec.split("?")[0]))
 
 
+def _style_scan(out: Out, a: int, b: int, dialect: str) -> styles.StyleScan:
+    """A style block's bytes `a:b`, scanned the way a stylesheet file is (one character per
+    byte), so the offsets the scan reports are byte offsets into the file."""
+    return styles.scan(out.data[a:b].decode("latin-1"), dialect, a)
+
+
 def _misc(out: Out, s: script.Script) -> None:
     for cid, a, b in script.misc_constructs(s):
         out.construct(cid, a, b, False)
@@ -290,8 +296,8 @@ class WebScript:
                 out.construct("web:angular-template-url", *s.at(p["templateUrl"]), False)
             template = script.unwrap(p.get("template"))
             if template is not None and script.string_value(template) is not None:
-                content = template.text[1:-1].decode("latin-1")
-                found += markup.scan(content, s.base + template.start_byte + 1)
+                content, byte_of = markup.decode(template.text[1:-1])
+                found += markup.scan(content, s.base + template.start_byte + 1, byte_of=byte_of)
         return found
 
 
@@ -306,29 +312,29 @@ class WebMarkup:
 
     def extract(self, path: str, data: bytes, blob: str):
         out = Out(self.id, path, data, blob)
-        text = data.decode("latin-1")
+        text, byte_of = markup.decode(data)
         if path.lower().endswith(".vue"):
-            self._vue(out, text)
+            self._vue(out, text, byte_of)
         else:
-            self._html(out, text)
+            self._html(out, text, byte_of)
         return out.result
 
-    def _html(self, out: Out, text: str) -> None:
+    def _html(self, out: Out, text: str, byte_of: markup.ByteOf) -> None:
         path = out.path
-        elements = markup.scan(text, 0, lower=True)
+        elements = markup.scan(text, 0, lower=True, byte_of=byte_of)
         sheets = _Sheets(path)
         style_scans = []
         for el in elements:
             if el.tag == "link" and "stylesheet" in (el.lit("rel") or "").lower() and el.lit("href"):
                 sheets.add(el.lit("href"), "web:stylesheet-import", el.start, el.end)
             elif el.tag == "style" and el.raw is not None:
-                style_scans.append(styles.scan(el.raw, "css", el.raw_start))
+                style_scans.append(_style_scan(out, el.raw_start, el.raw_end, "css"))
             elif el.tag == "script":
                 out.construct("web:external-script" if el.has("src") else "web:inline-script", el.start, el.end, False)
         owner = None
         if _DOCUMENT.search(text):
             title = next((el.text for el in elements if el.tag == "title" and el.text), None)
-            ref = out.entity("web:Page", {"platform": "web", "name": path}, path, 0, len(out.data), {"title": markup.utf8(title)[:120] if title else None, "stylesheets": sheets.attribute()})
+            ref = out.entity("web:Page", {"platform": "web", "name": path}, path, 0, len(out.data), {"title": title[:120] if title else None, "stylesheets": sheets.attribute()})
             out.construct("web:static-page", 0, len(out.data), True)
             owner = Owner(path, ref)
         elif has_ui(elements, path):
@@ -340,31 +346,31 @@ class WebMarkup:
             renders(out, owner.ref, 0, len(out.data), None)
         sheets.emit(out, owner)
         emit_ui(out, owner, elements, None)
-        self._template_misc(out, text, 0)
+        self._template_misc(out, text, byte_of)
         self._styles(out, owner, style_scans, elements, sheets.paths)
 
-    def _vue(self, out: Out, text: str) -> None:
+    def _vue(self, out: Out, text: str, byte_of: markup.ByteOf) -> None:
         path = out.path
         scripts: list[script.Script] = []
         elements: list[markup.Element] = []
         style_scans: list[styles.StyleScan] = []
         sheets = _Sheets(path)
         template_at = (0, 0)
-        for tag, attrs, a, b in markup.sfc_blocks(text):
+        for tag, attrs, a, b in markup.sfc_blocks(text):  # a and b are text positions
             if tag == "template":
-                elements = markup.scan(text[a:b], a)
+                elements = markup.scan(text[a:b], 0, byte_of=lambda i, a=a: byte_of(a + i))
                 template_at = (a, b)
             elif tag == "script":
                 lang = attrs.get("lang", "js")
-                scripts.append(script.Script(out.data[a:b], script.grammar_for(lang if lang in ("ts", "tsx", "jsx") else "js"), a))
+                scripts.append(script.Script(out.data[byte_of(a):byte_of(b)], script.grammar_for(lang if lang in ("ts", "tsx", "jsx") else "js"), byte_of(a)))
             elif tag == "style":
                 dialect = styles.dialect_of(attrs.get("lang", "css"))
-                scan = styles.scan(text[a:b], dialect, a)
+                scan = _style_scan(out, byte_of(a), byte_of(b), dialect)
                 style_scans.append(scan)
                 for rule, spec, x, y in scan.imports:
                     sheets.add(spec, "web:stylesheet-import", x, y, dialect)
                 if attrs.get("src"):
-                    sheets.add(attrs["src"], "web:stylesheet-import", a, a, dialect)
+                    sheets.add(attrs["src"], "web:stylesheet-import", byte_of(a), byte_of(a), dialect)
         for s in scripts:
             _route_screens(out, s)
             _script_sheets(sheets, s)
@@ -396,13 +402,14 @@ class WebMarkup:
         for s in scripts:
             _script_style_refs(out, owner, s, sheets.paths, set())
             _misc(out, s)
-        self._template_misc(out, text[template_at[0]:template_at[1]], template_at[0])
+        ta = template_at[0]
+        self._template_misc(out, text[ta:template_at[1]], lambda i: byte_of(ta + i))
         self._styles(out, owner, style_scans, elements, sheets.paths)
 
     @staticmethod
-    def _template_misc(out: Out, text: str, base: int) -> None:
+    def _template_misc(out: Out, text: str, byte_of: markup.ByteOf) -> None:
         for m in _TEMPLATE_I18N.finditer(text):
-            out.construct("web:i18n-key", base + m.start(), base + m.end(), False)
+            out.construct("web:i18n-key", byte_of(m.start()), byte_of(m.end()), False)
 
     @staticmethod
     def _styles(out: Out, owner: Owner | None, scans: list[styles.StyleScan], elements: list[markup.Element], stylesheets: list[str]) -> None:
