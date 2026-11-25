@@ -156,6 +156,16 @@ def test_hydrate_rebuilds_the_cache_from_committed_files(repo):
         bundle.hydrate(repo)
 
 
+def test_a_warm_cache_does_not_hide_an_edited_unit_file(repo):
+    document = bundle.compile_bundle(repo)
+    bundle.hydrate(repo)  # the cache already holds every shard
+    unit = repo / ".rkp" / "knowledge" / document["units"][0]["file"]
+    lines = unit.read_text().splitlines()
+    unit.write_text("\n".join(lines[1:]) + "\n")
+    with pytest.raises(bundle.BundleError, match="does not match"):
+        bundle.hydrate(repo)
+
+
 def test_hydrate_restores_omitted_fields_exactly(repo):
     _set_commit(repo, "full")
     document = bundle.compile_bundle(repo)

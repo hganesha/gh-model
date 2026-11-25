@@ -1,6 +1,6 @@
 # Solution IR contract
 
-Status: 2026-11-25. This is the contract every workstream building the solution IR follows, so that their work fits together without negotiation. It implements [Toward a complete solution IR](vscode-plugin-plan.md#toward-a-complete-solution-ir). The shared foundation it describes is built and tested (`tests/test_platforms.py`); everything else is built against it.
+Status: 2026-11-25, amended after the wave-1 review. This is the contract every workstream building the solution IR follows, so that their work fits together without negotiation. It implements [Toward a complete solution IR](vscode-plugin-plan.md#toward-a-complete-solution-ir). The shared foundation it describes is built and tested (`tests/test_platforms.py`); everything else is built against it.
 
 If something here is wrong or missing for your workstream, do not change a shared file. Write the request under **Requests for the foundation** in your report, with the reason, and work around it in your own files.
 
@@ -12,10 +12,10 @@ Every entity has one **core kind** from `repo_intel/compile/ontology.py`. Consum
 
 | Kind | Meaning | Natural key |
 |---|---|---|
-| `Screen` | A page, view or report screen a user reaches | `{platform, name}`; `name` is the route or the template path from the unit root |
+| `Screen` | A page, view or report screen a user reaches | `{platform, name}`; `name` is the route, or the template path from the repository root |
 | `Form` | An input form on a screen | `{screen, name}`; `screen` is the screen's `name`, `name` the form's name or `form<n>` in document order |
-| `UIControl` | An input, select, button, link or display element | `{container, name}`; `container` is `<screen>#<form>` or `<screen>` |
-| `StyleToken` | A design value: colour, type size, spacing, radius | `{system, name}`; `system` is the stylesheet path or design-system name, `name` the variable or class |
+| `UIControl` | An input, select, button, link or display element | `{container, name}`; `container` is `<screen>#<form>` or `<screen>`; `name` is, in order of preference, the control's name, its id, its binding path, `link:<target>` for a link with a literal target, `submit` or `button:<text>` for a button, else `<type><n>` in document order |
+| `StyleToken` | A design value: colour, type size, spacing, radius | `{system, name}`; `system` is the stylesheet path from the repository root or the design-system name, `name` the variable or class |
 | `Report` | An output a person reads: ODS, PDF, spreadsheet | `{platform, name}` |
 | `BusinessRule` | A validation, calculation or decision | `{scope, name}`; `scope` is the owning entity's name |
 | `Workflow` | States and transitions of a business object | `{scope, name}` |
@@ -30,14 +30,14 @@ Existing kinds keep their keys. Legacy code units stay `Program` (`{platform, na
 |---|---|---|
 | `RENDERS` | code (`Program`, `Symbol`, `Component`, `Package`, `Notebook`) → `Screen`, `Report` | `orders.cfm` RENDERS screen `orders` |
 | `SUBMITS_TO` | `Form` → `Endpoint`, `Program`, `Symbol`, `Screen` | the order form SUBMITS_TO `orders_save.cfm` |
-| `NAVIGATES_TO` | `Screen`, `Form`, `UIControl` → `Screen`, `Endpoint`, `Program` | a link or `cflocation` |
+| `NAVIGATES_TO` | `Screen`, `Form`, `UIControl`, `Program`, `Symbol` → `Screen`, `Endpoint`, `Program` | a link, or a server-side redirect (`cflocation`) from code |
 | `BINDS_TO` | `UIControl`, `Form` → `Field`, `CodeList`, `ConfigKey` | a select BINDS_TO the `order_status` code list |
 | `STYLED_BY` | `Screen`, `Form`, `UIControl`, `Report` → `StyleToken` | |
 | `ENFORCES` | code, UI, jobs, `Table`, `Field` → `BusinessRule` | |
 | `APPLIES_TO` | `BusinessRule`, `Workflow` → data, UI, `Field`, `Endpoint`, `Task`, `Program` | |
 | `REQUIRES_ROLE` | code, UI, `Endpoint`, `Report`, `Dataset`, `Table`, `Job` → `Role` | `IsUserInRole("admin")` guarding a page |
 | `GRANTS` | `Role` → `Permission`, `Role` | |
-| `CONTAINS` | now also from `Screen`, `Form`, `Workflow` | screen CONTAINS form CONTAINS control |
+| `CONTAINS` | now also from `Program`, `Screen`, `Form`, `Workflow` | screen CONTAINS form CONTAINS control; a component Program CONTAINS its function Symbols |
 | `READS_FROM` | objects now include `CodeList` | a DATA step applying a format |
 | `PRODUCES` | objects now include `Report` | `PROC REPORT` with ODS |
 
@@ -70,7 +70,7 @@ PACK = PlatformPack(
 
 Rules:
 
-1. **Imports.** A pack may import `repo_intel.compile.*`, `repo_intel.extractors.base` and other `repo_intel.extractors.<module>` modules, and `repo_intel.platforms`. It must never import the `repo_intel.extractors` package root (pack discovery runs while it loads).
+1. **Imports.** A pack may import `repo_intel.compile.*` and `repo_intel.platforms` at module level. It imports `repo_intel.extractors.base` and other `repo_intel.extractors.<module>` modules only inside functions, and never the `repo_intel.extractors` package root: pack discovery runs while that package loads, and refuses a pack that is still importing.
 2. **Extractor ids** are `<pack id>.<name>`. An extractor sees one file's bytes. It never runs, imports or installs repository code, never reads another file, and never copies configuration values, only names (values may be secrets).
 3. **Superseding.** A pack that replaces a legacy extractor lists it in `supersedes`, and must produce at least everything that extractor did: the existing goldens (F14 for SAS, F15 for ColdFusion) are the proof and must keep passing unchanged.
 4. **Versioning.** Each extractor's version folds in its code digest and its pack's terms and constructs. Raise `version` on any intended output change.
@@ -80,7 +80,7 @@ Rules:
 
 ### Construct coverage
 
-Every construct the pack lists is reported on each occurrence with `repo_intel.platforms.construct(blob, at, construct_id, modelled)`. `modelled=True` only if the occurrence became an entity, relation, attribute or behaviour node. The compiler records the counts on the file's `Artifact` (`attributes.constructs`) and writes one `platform_constructs` coverage entry per platform: occurrences modelled over occurrences seen, per-construct counts, and the constructs looked for but not seen. List the constructs a real application uses, not only the ones you model: an unmodelled construct counted is the point.
+Every construct the pack lists is reported on each occurrence with `repo_intel.platforms.construct(blob, at, construct_id, modelled)` (pass `evidence_class=EvidenceClass.E1` for constructs read from a declarative export). `modelled=True` only if the occurrence became an entity, relation, attribute or behaviour node. The compiler records the counts on the file's `Artifact` (`attributes.constructs`) and writes one `platform_constructs` coverage entry per platform: occurrences modelled over occurrences seen, per-construct counts, and the constructs looked for but not seen. List the constructs a real application uses, not only the ones you model: an unmodelled construct counted is the point.
 
 ### Inputs from outside the repository
 
@@ -90,7 +90,9 @@ Exports of platform configuration (ColdFusion Administrator `neo-*.xml`, SAS `au
 
 `repo_intel/compile/behavior.py` defines it; `validate_unit` is the contract. A pack emits one `behavior` observation per function, page, DATA step, macro or procedure with `behavior_observation(blob, at, owner, language, body, params)`, where `owner` is the `ref(...)` of the `Symbol` or `Program` it belongs to. The function validates before emitting; invalid output raises.
 
-Statements (`op`): `assign`, `declare`, `call`, `if`, `switch`, `loop` (`kind`: `for`, `while`, `until`, `each`, `range`, `implicit` — a DATA step's row loop is `implicit`), `break`, `continue`, `return`, `throw`, `try`, `query` (SQL text with `:name` parameters, `params`, `datasource`, optional `target`), `output` (`channel`: `response`, `log`, `file`, `report`, `dataset`, `mail`), `include`, `redirect`, `transaction`, `lock`, `exit`, and `platform` for anything else.
+A unit may carry `kind` (`function`, `page`, `macro`, `data_step`, `sql_step`, `proc_step`, `open_code`, `handler`; pass `kind=` to `behavior_observation`) to tell apart several units of one owner, such as a SAS program's DATA steps.
+
+Statements (`op`): `assign`, `declare`, `call`, `if`, `switch`, `loop` (`kind`: `for`, `while`, `until`, `each`, `range`, `implicit` — a DATA step's row loop is `implicit`), `break`, `continue`, `return`, `throw`, `try`, `query` (SQL text with `:name` parameters, `params`, `datasource`, optional `target`; a parameter with `"inline": true` is text substituted into the SQL before it runs, CFML `#x#` or SAS `&x`, not a bind parameter, and consumers treat it as dynamic text), `output` (`channel`: `response`, `log`, `file`, `report`, `dataset`, `mail`), `include`, `redirect`, `transaction`, `lock`, `exit`, and `platform` for anything else.
 
 Expressions (`e`): `lit` (with `type`), `var` (with `scope`: `form`, `url`, `session`, `application`, `request`, `cgi`, `local`, `arguments`, `variables`, `this`, `macro`, `work`, ...), `member`, `index`, `call`, `name`, `binop`, `unop`, `cond`, `new`, `array`, `struct`, `lambda`, `template` (interpolation), and `platform`.
 
@@ -104,7 +106,9 @@ Each node may carry `"at": [start_byte, end_byte]`; give it on every statement. 
            "datasource": "shopdsn"}]}
 ```
 
-Behaviour observations stay in file summaries until the behaviour workstream (W4) stores them in shards. They are function-level detail: in the bundle they belong to the detail tier, never the committed architecture tier.
+The compiler stores each unit as a row of its shard's `behaviors` table, keyed by the owner's entity id (the table is present only when it has rows). Behaviour is function-level detail: the bundle keeps it only in the full tier (`bundle.DETAIL_TABLES`), never in the committed architecture tier. A unit whose owner is not declared in the same unit, or that no longer validates, becomes an Unknown (predicate `behavior_owner`, coverage ref `behavior:<unit>`) counted in the unit's `behavior` coverage. Read it through `repo_intel.knowledge.behavior_store` or the local API, `GET snapshots/{h}/behavior/{entity_id}`.
+
+When two declarations of one entity disagree on platform (a JCL and a SAS `Dataset`), the compiler keeps the platform attributes of the one declared through a term and lists both platforms in `attributes.platforms`.
 
 ## 4. Workstreams (wave 1)
 
@@ -115,8 +119,8 @@ Each workstream works on its own branch from `claude/solution-ir-foundation`, na
 | W1 | ColdFusion pack: a real CFML parser (tags and script), behaviour for every function and page, `Application.cfc` lifecycle and scopes, screens, forms and controls from templates, roles from `cflogin`/`IsUserInRole`/`roles=`, datasources and scheduled tasks from `.rkp/inputs/cfml/` | `claude/ir-cfml` | `repo_intel/platforms/cfml/**`, `tests/test_platform_cfml.py`, `benchmarks/fixtures/F20-coldfusion-app/**` |
 | W2 | SAS pack: a parser with symbolic macro expansion, DATA-step and PROC lowering, `PROC FORMAT` as `CodeList`, ODS and `PROC REPORT` as `Report`, stored-process prompts as `Form`s, `LIBNAME` and `autoexec`/`config.sas` from `.rkp/inputs/sas/` | `claude/ir-sas` | `repo_intel/platforms/sas/**`, `tests/test_platform_sas.py`, `benchmarks/fixtures/F21-sas-analytics/**` |
 | W3 | Web experience pack: screens, forms, controls and navigation from HTML, JSX/TSX, Vue and Angular templates and router configuration; `StyleToken`s from CSS, SCSS and LESS and which screens use them | `claude/ir-web` | `repo_intel/platforms/web/**`, `tests/test_platform_web.py`, `benchmarks/fixtures/F22-web-frontend/**` |
-| W4 | Behaviour store: compile `behavior` observations into shards, keep them in the bundle's detail tier, answer them in the local API (`GET snapshots/{h}/behavior/{entity_id}`), derive call edges and data access from them | `claude/ir-behavior` | `repo_intel/compile/compiler.py` (behaviour only), `repo_intel/knowledge/bundle.py`, `repo_intel/knowledge/local_api.py`, `repo_intel/knowledge/behavior_store.py` (new), `tests/test_behavior_store.py` |
-| W5 | Solution manifest: `.rkp/solution.json` listing the repositories and inputs of one application, loading several bundles, resolving one entity across them (exact rules first; candidates at `E4`), and database catalogue dumps from `.rkp/inputs/catalog/` | `claude/ir-solution` | `repo_intel/solution/**` (new), `repo_intel/platforms/catalog/**`, `repo_intel/cli.py` (a `solution` command only), `tests/test_solution.py`, `benchmarks/fixtures/F23-multi-repo-solution/**` |
+| W4 | Behaviour store: compile `behavior` observations into shards, keep them in the bundle's detail tier, answer them in the local API (`GET snapshots/{h}/behavior/{entity_id}`), derive call edges and data access from them | `claude/ir-behavior` | `repo_intel/compile/compiler.py` (behaviour only), `repo_intel/knowledge/bundle.py`, `repo_intel/knowledge/local_api.py`, `repo_intel/knowledge/behavior_store.py` (new), `tests/test_behavior_store.py`, `packages/bundle/**` (the TypeScript reader) |
+| W5 | Solution manifest: `.rkp/solution.json` listing the repositories and inputs of one application, loading several bundles, resolving one entity across them (exact rules first; candidates at `E4`), and database catalogue dumps from `.rkp/inputs/catalog/` | `claude/ir-solution` | `repo_intel/solution/**` (new), `repo_intel/platforms/catalog/**`, `repo_intel/cli.py` (a `solution` command only), `tests/test_solution.py`, `tests/fixtures/solution/**` (the golden format is single-repository, so F23 is test-only) |
 | W6 | Commands and views: `rkp verify` (re-check a bundle against its digests and the publish gate) and `rkp diff` (structural diff between two bundles, using `repo_intel/knowledge/delta.py`), and the Explorer's experience, business and security planes | `claude/ir-views` | `repo_intel/cli.py` (`verify`, `diff` only), `repo-intelligence/explorer/**`, `tests/test_cli_verify_diff.py` |
 
 `repo_intel/cli.py` is shared by W5 and W6; each adds its own subcommand in a separate function and touches nothing else in the file. The integrator merges them.
@@ -137,7 +141,7 @@ Shared, read-only for every workstream: `repo_intel/compile/ontology.py`, `repo_
   .venv/bin/python -m repo_intel.compile.golden_check
   ```
 
-  Both must pass. A workstream never edits another fixture's golden to make it pass.
+  Both must pass. A workstream never edits another fixture's golden to make it pass. Sandboxed compile workers load the engine from the checkout under test, so the shared virtual environment works from any worktree with `PYTHONPATH=.`.
 
 ## 6. Review checklist
 

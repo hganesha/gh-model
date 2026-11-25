@@ -168,7 +168,7 @@ def _r(subjects, objects, functional=False, weakest=EvidenceClass.E5) -> Relatio
 
 P = Predicate
 RELATIONS: dict[Predicate, RelationSchema] = {
-    P.CONTAINS: _r({K.REPOSITORY, K.PACKAGE, K.COMPONENT, K.DATA_SCHEMA, K.TABLE, K.INTERFACE, K.JOB, K.SCREEN, K.FORM, K.WORKFLOW}, _ANY, weakest=EvidenceClass.E3),
+    P.CONTAINS: _r({K.REPOSITORY, K.PACKAGE, K.COMPONENT, K.PROGRAM, K.DATA_SCHEMA, K.TABLE, K.INTERFACE, K.JOB, K.SCREEN, K.FORM, K.WORKFLOW}, _ANY, weakest=EvidenceClass.E3),
     # DEFINED_IN carries the class of the declaration it comes from, so a heuristically
     # read entity (a namespace taken as an environment) is not presented as supported.
     P.DEFINED_IN: _r(_ANY - {K.REPOSITORY, K.ARTIFACT}, {K.ARTIFACT}),
@@ -206,7 +206,7 @@ RELATIONS: dict[Predicate, RelationSchema] = {
     # Experience, business and security (docs/solution-ir-contract.md).
     P.RENDERS: _r(_CODE, {K.SCREEN, K.REPORT}),
     P.SUBMITS_TO: _r({K.FORM}, {K.ENDPOINT, K.PROGRAM, K.SYMBOL, K.SCREEN}),
-    P.NAVIGATES_TO: _r(_UI, {K.SCREEN, K.ENDPOINT, K.PROGRAM}),
+    P.NAVIGATES_TO: _r(_UI | {K.PROGRAM, K.SYMBOL}, {K.SCREEN, K.ENDPOINT, K.PROGRAM}),  # code: a server-side redirect
     P.BINDS_TO: _r({K.UI_CONTROL, K.FORM}, {K.FIELD, K.CODE_LIST, K.CONFIG_KEY}),
     P.STYLED_BY: _r(_UI | {K.REPORT}, {K.STYLE_TOKEN}),
     P.ENFORCES: _r(_CODE | _UI | _WORK | {K.TABLE, K.FIELD}, {K.BUSINESS_RULE}),

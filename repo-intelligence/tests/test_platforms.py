@@ -210,3 +210,43 @@ def test_behavior_observations_are_validated_before_emission():
     assert o.kind == "behavior" and o.payload["schema"] == behavior.SCHEMA and o.payload["body"] == VALID
     with pytest.raises(ValueError, match="invalid behaviour unit"):
         behavior.behavior_observation("b" * 64, AT, {"kind": "Program"}, "cfml", VALID)
+
+
+def test_units_may_say_what_they_are_and_mark_inline_params():
+    o = behavior.behavior_observation("b" * 64, AT, OWNER, "sas", VALID, kind="data_step")
+    assert o.payload["kind"] == "data_step"
+    assert any("unknown unit kind" in p for p in behavior.validate_unit({**_unit(VALID), "kind": "lambda"}))
+    inline = [{"op": "query", "sql": "SELECT * FROM t_:m", "params": [{"name": "m", "value": {"e": "var", "name": "m"}, "inline": True}]}]
+    assert behavior.validate_unit(_unit(inline)) == []
+    inline[0]["params"][0]["inline"] = "yes"
+    assert any("inline must be true or false" in p for p in behavior.validate_unit(_unit(inline)))
+
+
+def test_constructs_carry_an_evidence_class(demo):
+    from repo_intel.compile.ontology import EvidenceClass
+
+    assert platforms.construct("b" * 64, AT, "demo:lock", True).evidence_class == EvidenceClass.E2
+    assert platforms.construct("b" * 64, AT, "demo:lock", True, EvidenceClass.E1).evidence_class == EvidenceClass.E1
+
+
+def test_platform_attributes_merge_together():
+    merge = compiler._merge_attributes
+    jcl, sas = {"platform": "mainframe", "dsorg": "PS"}, {"platform": "sas", "platform_kind": "sas:Dataset", "fidelity": "lossy"}
+    assert merge(jcl, sas) == {"dsorg": "PS", "platform": "sas", "platform_kind": "sas:Dataset", "fidelity": "lossy", "platforms": ["mainframe", "sas"]}
+    assert merge(sas, jcl) == merge(jcl, sas)
+    assert merge({"platform": "a"}, {"z": 1}) == {"platform": "a", "z": 1}, "neutral declarations merge as before"
+
+
+def test_discovery_refuses_a_pack_that_is_still_importing(tmp_path):
+    import subprocess
+    import sys
+
+    probe = "import sys, types, importlib.util\n" \
+        "import repo_intel.platforms as p\n" \
+        "m = types.ModuleType('repo_intel.platforms.zz'); m.__spec__ = importlib.util.spec_from_loader('repo_intel.platforms.zz', loader=None); m.__spec__._initializing = True\n" \
+        "sys.modules['repo_intel.platforms.zz'] = m\n" \
+        "import pkgutil; real = pkgutil.iter_modules\n" \
+        "pkgutil.iter_modules = lambda path=None: [*real(path), pkgutil.ModuleInfo(None, 'zz', True)] if list(path or []) == list(p.__path__) else real(path)\n" \
+        "try:\n    p.packs()\nexcept RuntimeError as e:\n    print('refused' if 'still importing' in str(e) else e)\n"
+    run = subprocess.run([sys.executable, "-c", probe], capture_output=True, text=True)
+    assert run.stdout.strip() == "refused", run.stderr

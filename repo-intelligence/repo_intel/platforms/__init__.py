@@ -20,9 +20,10 @@ found" from "not looked for".
 
 Each pack is a subpackage of this package that defines `PACK`. Packs are discovered,
 never imported by name, and need no change to shared engine files. Discovery is lazy and
-runs when `repo_intel.extractors` finishes loading, so a pack may import
-`repo_intel.extractors.base` and other extractor modules, but never the
-`repo_intel.extractors` package itself. A pack's extractors
+runs when `repo_intel.extractors` finishes loading, so a pack imports
+`repo_intel.extractors.base` and other extractor modules only inside functions, never at
+module level, and never the `repo_intel.extractors` package itself; discovery refuses a
+pack that is still importing rather than silently leaving it out. A pack's extractors
 run with the others; `supersedes` names extractors the pack replaces (for example
 `legacy.cfml`), which then no longer run.
 """
@@ -108,9 +109,14 @@ def _discover() -> dict[str, PlatformPack]:
     found: dict[str, PlatformPack] = {}
     for info in sorted(pkgutil.iter_modules(__path__), key=lambda m: m.name):
         module = importlib.import_module(f"{__name__}.{info.name}")
+        if getattr(module.__spec__, "_initializing", False):
+            raise RuntimeError(
+                f"platform pack {module.__name__} is still importing: import repo_intel.extractors before it, "
+                "and import repo_intel.extractors modules inside functions, not at module level"
+            )
         pack = getattr(module, "PACK", None)
         if pack is None:
-            continue
+            raise RuntimeError(f"{module.__name__} defines no PACK")
         problems = validate_pack(pack)
         if problems:
             raise RuntimeError("invalid platform pack: " + "; ".join(problems))
@@ -199,13 +205,13 @@ def platform_entity(blob: str, at: Span, term_name: str, natural_key: dict[str, 
     return entity(blob, at, term.core, natural_key, name, attrs, evidence_class)
 
 
-def construct(blob: str, at: Span, construct_id: str, modelled: bool) -> Observation:
+def construct(blob: str, at: Span, construct_id: str, modelled: bool, evidence_class: EvidenceClass = EvidenceClass.E2) -> Observation:
     """Report one occurrence of a platform construct, and whether this extractor modelled it."""
     from repo_intel.extractors.base import obs
 
     if construct_id not in _load()["CONSTRUCTS"]:
         raise KeyError(f"unknown platform construct {construct_id}")
-    return obs("construct", blob, at, {"construct": construct_id, "modelled": bool(modelled)})
+    return obs("construct", blob, at, {"construct": construct_id, "modelled": bool(modelled)}, evidence_class)
 
 
 __all__ = [

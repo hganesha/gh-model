@@ -53,7 +53,7 @@ def _graph(store: ObjectStore, manifest: Manifest, evidence: dict[str, str] | No
     return entities, assertions
 
 
-COMPILE_ARTEFACTS = {"decision_ref", "topology_decision_ref"}  # change whenever their inputs do; not a difference in themselves
+COMPILE_ARTEFACTS = {"decision_ref", "topology_decision_ref", "primary_language_decision_ref"}  # change whenever their inputs do; not a difference in themselves
 
 
 def _label(e: dict[str, Any]) -> str | None:

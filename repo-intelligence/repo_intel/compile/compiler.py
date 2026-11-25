@@ -53,6 +53,28 @@ UNIT_PLAN = Step("unit.plan", "0.4.0", _unit_plan)
 # --------------------------------------------------------------- unit.compile
 
 
+_PLATFORM_ATTRS = ("platform", "platform_kind", "fidelity")
+
+
+def _merge_attributes(old: dict[str, Any], new: dict[str, Any]) -> dict[str, Any]:
+    """Merge two declarations of one entity; platform attributes move together, never half from each.
+
+    A declaration through a platform term (platform_kind) wins over a neutral one. When two
+    platforms declare the same entity (a JCL and a SAS Dataset), both are kept in `platforms`.
+    """
+    merged = {**old, **new}
+    if old.get("platform_kind") or new.get("platform_kind"):
+        source = new if new.get("platform_kind") else old
+        for key in _PLATFORM_ATTRS:
+            merged.pop(key, None)
+            if key in source:
+                merged[key] = source[key]
+    seen = {a.get("platform") for a in (old, new) if a.get("platform")} | set(old.get("platforms", [])) | set(new.get("platforms", []))
+    if len(seen) > 1:
+        merged["platforms"] = sorted(seen)
+    return merged
+
+
 class _Shard:
     def __init__(self, unit: str):
         self.unit = unit
@@ -67,7 +89,7 @@ class _Shard:
         row = e.row()
         old = self.entities.get(e.id)
         if old:
-            row["attributes"] = {**old["attributes"], **row["attributes"]}
+            row["attributes"] = _merge_attributes(old["attributes"], row["attributes"])
             row["evidence_ids"] = sorted(set(old["evidence_ids"]) | set(row["evidence_ids"]))
         self.entities[e.id] = row
         return e.id
@@ -354,6 +376,7 @@ def _behavior(shard: _Shard, repo: str, unit_root: str, artifact: str, o: Mappin
     row = {
         "id": make_id("bhv", owner_id, ev, digest(p["body"])), "owner": owner_id, "artifact": artifact,
         "schema": p.get("schema", BEHAVIOR_SCHEMA), "language": p["language"], "params": p.get("params", []), "body": p["body"],
+        **({"kind": p["kind"]} if p.get("kind") else {}),
         "evidence_ids": [ev], "evidence_class": o["evidence_class"],
     }
     shard.behaviors[row["id"]] = row

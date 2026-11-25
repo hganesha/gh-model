@@ -31,6 +31,8 @@ from repo_intel.compile.ontology import EvidenceClass
 
 SCHEMA = "rkp-behavior/1"
 TYPES = frozenset({"string", "number", "integer", "boolean", "date", "datetime", "binary", "array", "struct", "query", "dataset", "any", "null", "unknown"})
+# What a unit is the behaviour of, when an owner has several (a program's DATA steps and open code).
+UNIT_KINDS = frozenset({"function", "page", "macro", "data_step", "sql_step", "proc_step", "open_code", "handler"})
 # Statement ops, with their required fields and which fields hold statement lists or expressions.
 STATEMENTS: dict[str, dict[str, tuple[str, ...]]] = {
     "assign": {"required": ("target", "value"), "exprs": ("target", "value")},
@@ -44,7 +46,10 @@ STATEMENTS: dict[str, dict[str, tuple[str, ...]]] = {
     "return": {"required": (), "exprs": ("value",)},
     "throw": {"required": (), "exprs": ("value",)},
     "try": {"required": ("body",), "blocks": ("body", "finally")},  # catches: [{"type": str, "var": str, "body": [stmt]}]
-    "query": {"required": ("sql",), "exprs": ("target",)},  # sql: text with parameters as :name; params: [{"name", "value": expr, "type"}]; datasource: str
+    # sql: text with parameters as :name; params: [{"name", "value": expr, "type", "inline"}]; datasource: str.
+    # inline: true marks text substituted into the SQL before it runs (CFML #x#, SAS &x), not a bind
+    # parameter: consumers treat it as dynamic text, so a table named through it is dynamic.
+    "query": {"required": ("sql",), "exprs": ("target",)},
     "output": {"required": ("channel",), "exprs": ("value",)},  # channel: response|log|file|report|dataset|mail
     "include": {"required": ("target",), "exprs": ("target",)},  # a template or %include; dynamic when target is not a literal
     "redirect": {"required": ("target",), "exprs": ("target",)},  # cflocation, a response redirect
@@ -143,6 +148,8 @@ def _check_stmt(node: Any, path: str, problems: list[str]) -> None:
         for i, param in enumerate(node.get("params", [])):
             if "value" in param:
                 _check_expr(param["value"], f"{path}.params[{i}].value", problems)
+            if not isinstance(param.get("inline", False), bool):
+                problems.append(f"{path}.params[{i}]: inline must be true or false")
     if node["op"] == "loop" and node.get("kind") not in ("for", "while", "until", "each", "range", "implicit"):
         problems.append(f"{path}: unknown loop kind {node.get('kind')!r}")
 
@@ -165,6 +172,8 @@ def validate_unit(unit: Any) -> list[str]:
         problems.append("owner must be an entity reference {kind, natural_key, name}")
     if not isinstance(unit.get("language"), str):
         problems.append("language must be text")
+    if unit.get("kind") is not None and unit["kind"] not in UNIT_KINDS:
+        problems.append(f"unknown unit kind {unit['kind']!r}")
     for i, param in enumerate(unit.get("params", [])):
         if not isinstance(param, dict) or not isinstance(param.get("name"), str):
             problems.append(f"params[{i}]: needs a name")
@@ -176,11 +185,14 @@ def validate_unit(unit: Any) -> list[str]:
     return problems
 
 
-def behavior_observation(blob: str, at: Span, owner: dict[str, Any], language: str, body: list[dict[str, Any]], params: list[dict[str, Any]] | None = None, evidence_class: EvidenceClass = EvidenceClass.E2) -> Observation:
-    """One unit of behaviour for `owner` (a Symbol or Program ref), validated before it is emitted."""
+def behavior_observation(blob: str, at: Span, owner: dict[str, Any], language: str, body: list[dict[str, Any]], params: list[dict[str, Any]] | None = None, evidence_class: EvidenceClass = EvidenceClass.E2, kind: str | None = None) -> Observation:
+    """One unit of behaviour for `owner` (a Symbol or Program ref), validated before it is emitted.
+
+    `kind` (UNIT_KINDS) says what the unit is when one owner has several.
+    """
     from repo_intel.extractors.base import obs
 
-    unit = {"schema": SCHEMA, "owner": owner, "language": language, "params": params or [], "body": body}
+    unit = {"schema": SCHEMA, "owner": owner, "language": language, "params": params or [], "body": body, **({"kind": kind} if kind else {})}
     problems = validate_unit(unit)
     if problems:
         raise ValueError("invalid behaviour unit: " + "; ".join(problems[:5]))
