@@ -112,6 +112,12 @@ export interface BundleManifest {
   counts: Record<string, number>;
   /** Format 2: values to fill in for fields a unit row leaves out. Absent in format 1. */
   row_defaults?: RowDefaults;
+  /** What was committed: everything, or the architecture tier without function-level detail. Absent means full. */
+  tier?: "architecture" | "full";
+  /** Architecture tier: the entity kinds left out, with the rows that touch them. */
+  detail_kinds?: string[];
+  /** Architecture tier: how many rows of each table were left out. */
+  detail_omitted?: Record<"entities" | "assertions" | "evidence" | "unknowns", number>;
 }
 
 /** One row of a unit file: a contract row tagged with its table. */

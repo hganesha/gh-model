@@ -29,7 +29,7 @@ Set the two settings in user settings: an untrusted workspace's settings cannot 
 
 ```
 .rkp/
-  config.json        repository ID (from the origin remote); edit to pin another
+  config.json        repository ID (from the origin remote); edit to pin another. "commit" says what is committed
   overrides.json     optional owner corrections
   .gitignore         ignores cache/
   .gitattributes     marks knowledge/ as generated
@@ -38,6 +38,8 @@ Set the two settings in user settings: an untrusted workspace's settings cannot 
 ```
 
 Committing `knowledge/` does not make it stale: the engine leaves these files out of its own input.
+
+By default (`"commit": "architecture"`), `knowledge/` holds the architecture tier: components, endpoints, data, dependencies, deployment and patterns, without function-level detail (functions, their calls and test links), which stays in `cache/`. Someone who clones the repository sees the architecture tier at once, and the status bar reads **Knowledge current (architecture)** until they analyse; analysing adds the detail on their machine and rewrites the same files. Set `"commit": "full"` in `.rkp/config.json` to commit everything.
 
 ## Security
 

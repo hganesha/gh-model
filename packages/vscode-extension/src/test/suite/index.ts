@@ -136,6 +136,27 @@ if (engine) {
     await waitFor(() => extension.explorerRequests().some((r) => r.startsWith(`GET snapshots/${hash}/summary 200`)), "the page to load its summary", 60_000);
     assert.ok(extension.explorerRequests().every((r) => r.endsWith(" 200")), extension.explorerRequests().join("\n"));
   }]);
+
+  cases.push(["a fresh clone reads the committed architecture tier, and analysing adds the detail", async () => {
+    const workspace = process.env.RKP_TEST_WORKSPACE!;
+    const extension = await api();
+    const knowledge = path.join(workspace, ".rkp", "knowledge");
+    const written = async (): Promise<string> => {
+      const manifest = JSON.parse(await fs.readFile(path.join(knowledge, "manifest.json"), "utf8")) as { tier: string; rkp_hash: string; units: { file: string }[] };
+      const units = await Promise.all(manifest.units.map((u) => fs.readFile(path.join(knowledge, u.file), "utf8")));
+      return JSON.stringify([manifest.tier, manifest.rkp_hash, units]);
+    };
+    const before = await written();
+    assert.equal(JSON.parse(before)[0], "architecture");
+
+    await fs.rm(path.join(workspace, ".rkp", "cache"), { recursive: true, force: true });
+    await vscode.commands.executeCommand("rkp.refresh");
+    assert.equal(extension.status(), "Knowledge current (architecture)");
+    assert.ok(labels(extension.tree).includes("Endpoints"), "the committed tier still loads");
+
+    await analysed(extension);
+    assert.equal(await written(), before, "analysing rewrites the same knowledge");
+  }]);
 }
 
 export async function run(): Promise<void> {

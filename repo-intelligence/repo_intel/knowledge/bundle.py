@@ -3,7 +3,7 @@
 No database and no server: the bundle is read straight from the files, and is
 reused whenever the repository is opened again. Layout (format `rkp-bundle/2`):
 
-    .rkp/config.json                 repository ID and bundle format; written once, then the owner's
+    .rkp/config.json                 repository ID, bundle format and what to commit; written once, then the owner's
     .rkp/overrides.json              owner overrides, optional (the OverrideDocument shape)
     .rkp/exclude                     the repository's exclusion globs (read by the snapshot)
     .rkp/.gitignore, .gitattributes  ignore cache/; mark knowledge/ as generated
@@ -13,6 +13,12 @@ reused whenever the repository is opened again. Layout (format `rkp-bundle/2`):
     .rkp/knowledge/files.jsonl       every path read or excluded, with its blob hash; never content
     .rkp/knowledge/coverage.jsonl, conflicts.jsonl, unknowns.jsonl, decisions.jsonl
     .rkp/cache/                      object store: blobs, step cache, decision ledger; not committed
+
+What is committed depends on `"commit"` in config.json. `"architecture"` (the default)
+writes the architecture tier: every entity except function-level ones (DETAIL_KINDS), the
+assertions and unknowns that do not touch them, and the evidence those rows cite. The
+full snapshot stays in `cache/`, and a fresh clone gets it back with a local compile; until
+then the bundle is read as it is. `"full"` writes everything.
 
 Every file is written deterministically (sorted keys, the engine's row order, no timestamps), so
 compiling the same source with the same toolchain rewrites identical bytes and a
@@ -36,7 +42,7 @@ from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any
 
-from repo_intel.compile.contracts import Manifest
+from repo_intel.compile.contracts import Manifest, ShardRef
 from repo_intel.compile.pipeline import load_shards, stage_compile, stage_snapshot, toolchain_hash
 from repo_intel.decisions.gateway import Gateway
 from repo_intel.decisions.overrides import EMPTY, OverrideDocument, Overrides
@@ -61,6 +67,12 @@ ROW_DEFAULTS: dict[str, dict[str, Any]] = {
     "evidence": {"ast_node_kind": None, "trust_label": "untrusted_data", "sensitivity": "internal", "secret_masked": False},
     "unknown": {"status": "unknown"},
 }
+# Entity kinds left out of the architecture tier, with every assertion and unknown that
+# touches one and the evidence only those rows cite. Symbol (functions, classes, methods)
+# and its calls, test links and definitions are most of a bundle's bytes.
+DETAIL_KINDS = ("Symbol",)
+TIERS = ("architecture", "full")
+DEFAULT_TIER = "architecture"
 BUNDLE = ".rkp"
 TENANT = "local"
 _TABLES = (("entities", "entity"), ("assertions", "assertion"), ("evidence", "evidence"), ("unknowns", "unknown"))
@@ -135,13 +147,21 @@ def read_config(repo: Path) -> dict[str, Any]:
     return config
 
 
+def commit_tier(config: dict[str, Any]) -> str:
+    """What `rkp compile` commits: `"commit"` in .rkp/config.json, `architecture` by default."""
+    tier = config.get("commit", DEFAULT_TIER)
+    if tier not in TIERS:
+        raise BundleError(f'.rkp/config.json: "commit" must be one of {", ".join(TIERS)}, not {tier!r}')
+    return tier
+
+
 def ensure_layout(repo: Path) -> dict[str, Any]:
     """Create `.rkp/` with its config, .gitignore and .gitattributes. Returns the config."""
     root = repo / BUNDLE
     root.mkdir(exist_ok=True)
     config = read_config(repo)
     if not config.get("repository_id"):
-        config = {"bundle_format": FORMAT, "repository_id": default_repository_id(repo), **config}
+        config = {"bundle_format": FORMAT, "repository_id": default_repository_id(repo), "commit": DEFAULT_TIER, **config}
         _write_json(root / "config.json", config)
     for name, text in ((".gitignore", _GITIGNORE), (".gitattributes", _GITATTRIBUTES)):
         path = root / name
@@ -201,18 +221,42 @@ def _slugs(units: list[str]) -> dict[str, str]:
     return named
 
 
-def write_bundle(repo: Path, store: ObjectStore, manifest: Manifest, *, working_tree: bool = False) -> dict[str, Any]:
+def _architecture_shards(shards: dict[str, dict[str, Any]], conflicts: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """The shards without function-level detail; rows keep the engine's order."""
+    detail = {e["id"] for shard in shards.values() for e in shard["entities"] if e["kind"] in DETAIL_KINDS}
+    kept: dict[str, dict[str, Any]] = {}
+    cited = {ev for c in conflicts for ev in c.get("evidence_ids", [])}
+    for unit, shard in shards.items():
+        entities = [e for e in shard["entities"] if e["id"] not in detail]
+        assertions = [a for a in shard["assertions"] if a["subject"] not in detail and a["object"] not in detail]
+        unknowns = [u for u in shard["unknowns"] if u["subject"] not in detail]
+        for row in (*entities, *assertions):
+            cited.update(row.get("evidence_ids", []), row.get("counterevidence_ids", []))
+        kept[unit] = {**shard, "entities": entities, "assertions": assertions, "unknowns": unknowns}
+    for shard in kept.values():
+        shard["evidence"] = [ev for ev in shard["evidence"] if ev["id"] in cited]
+    return kept
+
+
+def write_bundle(repo: Path, store: ObjectStore, manifest: Manifest, *, working_tree: bool = False, tier: str = "full") -> dict[str, Any]:
     """Write `.rkp/knowledge/` for a published manifest, replacing what is there. Returns manifest.json.
 
     Rows keep the engine's order, so `hydrate` can rebuild every stored object from the
-    files and check it against the digest the manifest names.
+    files and check it against the digest the manifest names. In the architecture tier each
+    unit's digest is that of its reduced shard, which `hydrate` checks the same way.
     """
+    if tier not in TIERS:
+        raise BundleError(f"unknown tier {tier!r}")
     root = repo / BUNDLE
     staging, previous, target = root / "knowledge.new", root / "knowledge.old", root / "knowledge"
     shutil.rmtree(staging, ignore_errors=True)
     (staging / "units").mkdir(parents=True)
 
     shards = load_shards(store, manifest)
+    full = shards
+    conflicts = store.get_json(manifest.conflicts_ref)
+    if tier == "architecture":
+        shards = _architecture_shards(shards, conflicts)
     slugs = _slugs(list(shards))
     units, totals = [], {table: 0 for table, _ in _TABLES}
     for unit, shard in sorted(shards.items()):
@@ -227,10 +271,9 @@ def write_bundle(repo: Path, store: ObjectStore, manifest: Manifest, *, working_
             rows.extend({"table": name, **_omit_defaults(name, row)} for row in items)
         file = f"units/{slugs[unit]}.jsonl"
         _write_jsonl(staging / file, rows)
-        units.append({"unit": unit, "file": file, **counts})
+        units.append({"unit": unit, "file": file, **counts, **({"digest": store.put_json(shard)} if tier == "architecture" else {})})
 
     coverage = store.get_json(manifest.coverage_ref)
-    conflicts = store.get_json(manifest.conflicts_ref)
     unknowns = store.get_json(manifest.unknowns_ref)
     decisions = [store.get_json(e["digest"]) | {"decision_id": e["decision_id"]} for e in store.get_json(manifest.ledger_entries_ref)]
     path_manifest = store.get_json(store.index_get("path_manifests", manifest.source_tree_hash) or "")
@@ -246,6 +289,8 @@ def write_bundle(repo: Path, store: ObjectStore, manifest: Manifest, *, working_
         "source_tree_hash": manifest.source_tree_hash, "toolchain_hash": manifest.toolchain_hash,
         "override_set_hash": manifest.override_set_hash, "rkp_hash": manifest.rkp_hash, "status": manifest.status,
         "row_defaults": ROW_DEFAULTS,
+        "tier": tier,
+        **({"detail_kinds": list(DETAIL_KINDS), "detail_omitted": {table: sum(len(s[table]) for s in full.values()) - totals[table] for table, _ in _TABLES}} if tier == "architecture" else {}),
         "units": units,
         "counts": {**totals, "coverage": len(coverage), "conflicts": len(conflicts), "repository_unknowns": len(unknowns), "decisions": len(decisions), "files": sum(1 for f in files if "blob_sha256" in f), "excluded_files": sum(1 for f in files if "excluded" in f)},
         "snapshot": manifest.row(),
@@ -275,6 +320,10 @@ def hydrate(repo: Path, store: ObjectStore | None = None) -> tuple[ObjectStore, 
     Every object is rebuilt from the files and must hash to the digest the snapshot manifest
     names; a bundle edited by hand or damaged in a merge is refused, never half-loaded.
     Source blobs are not in the bundle: excerpts are read from the working tree instead.
+
+    An architecture-tier bundle cannot rebuild the full shards. Its units are checked
+    against their own digests in manifest.json, and the manifest returned names those
+    reduced shards; it is not indexed as the snapshot, which only a compile produces.
     """
     document = read_manifest(repo)
     if document is None:
@@ -289,6 +338,8 @@ def hydrate(repo: Path, store: ObjectStore | None = None) -> tuple[ObjectStore, 
             problems.append(what)
 
     defaults = document.get("row_defaults", {})  # format 1 wrote every field
+    architecture = document.get("tier", "full") == "architecture"
+    shard_refs = []
     by_unit = {u["unit"]: u for u in document["units"]}
     for ref in manifest.shards:
         unit = by_unit.get(ref.unit)
@@ -303,7 +354,9 @@ def hydrate(repo: Path, store: ObjectStore | None = None) -> tuple[ObjectStore, 
         for row in _read_jsonl(file):
             name = row.pop("table")
             shard[names[name]].append(_with_defaults(row, defaults.get(name, {})))
-        put(shard, ref.digest, f"unit {ref.unit}")
+        expected = unit.get("digest", "") if architecture else ref.digest
+        put(shard, expected, f"unit {ref.unit}")
+        shard_refs.append(ShardRef(unit=ref.unit, digest=expected))
     for name, ref in (("coverage", manifest.coverage_ref), ("conflicts", manifest.conflicts_ref), ("unknowns", manifest.unknowns_ref)):
         put(_read_jsonl(knowledge / f"{name}.jsonl"), ref, name)
     entries = []
@@ -312,8 +365,16 @@ def hydrate(repo: Path, store: ObjectStore | None = None) -> tuple[ObjectStore, 
     put(entries, manifest.ledger_entries_ref, "decisions")
     if problems:
         raise BundleError("the bundle does not match its manifest (" + ", ".join(problems) + "); compile again")
+    if architecture:
+        return store, manifest.model_copy(update={"shards": shard_refs})
     store.index_put("rkp", manifest.rkp_hash, store.put_json(manifest.row()))
     return store, manifest
+
+
+def has_snapshot(store: ObjectStore, manifest: Manifest) -> bool:
+    """Whether the cache holds every object of the compiled snapshot, detail included."""
+    refs = [ref.digest for ref in manifest.shards] + [manifest.coverage_ref, manifest.conflicts_ref, manifest.unknowns_ref, manifest.ledger_entries_ref]
+    return all(store.has(d) for d in refs)
 
 
 # ------------------------------------------------------------------ commands
@@ -337,7 +398,7 @@ def compile_bundle(path: str | os.PathLike[str], ref: str = "HEAD", *, working_t
     store = store_for(repo)
     overrides = load_overrides(repo)
     result = stage_compile(store, config["repository_id"], _snapshot(store, repo, sha, working_tree), gateway=gateway, overrides=overrides, progress=progress)
-    document = write_bundle(repo, store, result.manifest, working_tree=working_tree)
+    document = write_bundle(repo, store, result.manifest, working_tree=working_tree, tier=commit_tier(config))
     if progress:
         progress("written", {"path": str(repo / BUNDLE / "knowledge"), "steps_executed": result.stats.total_executed, "steps_reused": sum(result.stats.hits.values())})
     return document
@@ -360,7 +421,10 @@ def bundle_status(path: str | os.PathLike[str], ref: str = "HEAD", *, working_tr
     """Whether the bundle describes `ref` (or the working tree): `missing`, `fresh` or `stale`.
 
     Compares the source tree hash (not the commit, so a bundle committed alongside the
-    source it describes stays fresh), the toolchain, the owner overrides and the bundle format.
+    source it describes stays fresh), the toolchain, the owner overrides, the bundle format
+    and the `"commit"` setting. `detail` says whether function-level detail can be read here:
+    `complete` for a full bundle or when the cache holds the compiled snapshot, else
+    `architecture` (a fresh clone of an architecture-tier bundle, until a local compile).
     """
     repo = repository_root(path)
     sha = resolve_commit(repo, ref)
@@ -380,4 +444,11 @@ def bundle_status(path: str | os.PathLike[str], ref: str = "HEAD", *, working_tr
         reasons.append("owner overrides changed")
     if document["bundle_format"] != FORMAT:
         reasons.append("bundle format changed")  # still readable; compiling again rewrites it
-    return {**base, "state": "stale" if reasons else "fresh", "reasons": reasons, "bundle_commit_sha": document["commit_sha"], "bundle_working_tree": document.get("working_tree", False), "counts": document["counts"]}
+    tier = document.get("tier", "full")
+    if commit_tier(read_config(repo)) != tier:
+        reasons.append("commit setting changed")
+    detail = "complete" if tier == "full" or has_snapshot(store, Manifest.model_validate(document["snapshot"])) else "architecture"
+    return {
+        **base, "state": "stale" if reasons else "fresh", "reasons": reasons, "bundle_commit_sha": document["commit_sha"],
+        "bundle_working_tree": document.get("working_tree", False), "tier": tier, "detail": detail, "counts": document["counts"],
+    }

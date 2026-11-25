@@ -22,7 +22,7 @@ npm --prefix explorer install && npm --prefix explorer run dev
 
 Open http://localhost:3100 and choose **Connect repository**. The [running and testing guide](docs/running.md) has the test suites and the other checks.
 
-Without the server: `rkp compile` writes a repository's knowledge to `.rkp/knowledge/` inside it (`--working-tree` includes uncommitted changes), `rkp status` says whether that is current, and `rkp serve --stdio` answers the Explorer's read API from it. This is what the [VS Code extension](../packages/vscode-extension/README.md) runs. `freeze/build_engine.py` freezes the command line into a folder that needs no Python, for the extension's platform packages.
+Without the server: `rkp compile` writes a repository's knowledge to `.rkp/knowledge/` inside it (`--working-tree` includes uncommitted changes; by default without function-level detail, see `"commit"` in `.rkp/config.json`), `rkp status` says whether that is current, and `rkp serve --stdio` answers the Explorer's read API from it. This is what the [VS Code extension](../packages/vscode-extension/README.md) runs. `freeze/build_engine.py` freezes the command line into a folder that needs no Python, for the extension's platform packages.
 
 ```bash
 .venv/bin/rkp compile path/to/repository

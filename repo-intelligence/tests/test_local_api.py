@@ -152,3 +152,41 @@ def test_serve_command_reports_a_missing_bundle(tmp_path, capsys, monkeypatch):
     assert cli.main(["serve", str(path), "--stdio"]) == 0
     reply = json.loads(capsys.readouterr().out)
     assert reply["status"] == 404 and reply["body"]["code"] == "missing"
+
+
+@pytest.mark.parametrize("fixture", ["F01-python-api", "F16-polyglot-contracts"])
+def test_an_architecture_clone_answers_like_the_full_snapshot_without_detail(tmp_path, fixture):
+    path = tmp_path / "repo"
+    materialize(fixture, path)
+    document = bundle.compile_bundle(path)
+    full = local_api.Snapshot(bundle.store_for(path), Manifest.model_validate(document["snapshot"]))
+    symbols = {i for i, rows in full.entity_rows.items() if rows[0][1]["kind"] == "Symbol"}
+    shutil.rmtree(path / ".rkp" / "cache")
+
+    clone = local_api.LocalApi(path).snapshot()
+    assert clone.detail == "architecture" and set(clone.entity_rows) == set(full.entity_rows) - symbols
+    counts = full.count_by_kind()
+    counts.pop("Symbol", None)
+    assert clone.count_by_kind() == counts
+    for entity_id in clone.entity_rows:
+        want = full.entity_detail(entity_id, limit=100_000)
+        got = clone.entity_detail(entity_id, limit=100_000)
+        assert got["entity"] == want["entity"], entity_id  # the same row wins when a unit repeats it
+        assert got["assertions"] == [a for a in want["assertions"] if not {a["subject"], a["object"]} & symbols], entity_id
+
+
+def test_rank_decides_which_units_row_of_an_entity_wins(tmp_path):
+    """An architecture clone's shard digests differ from the compiled ones; rows must still be
+    ordered by the compiled digests, as the projection orders them."""
+    path = tmp_path / "repo"
+    materialize("F07-event-driven", path)
+    document = bundle.compile_bundle(path)
+    shutil.rmtree(path / ".rkp" / "cache")
+    store, manifest = bundle.hydrate(path)
+    units = [ref.unit for ref in manifest.shards]
+    forward = local_api.Snapshot(store, manifest, {u: f"{i:04}" for i, u in enumerate(units)})
+    backward = local_api.Snapshot(store, manifest, {u: f"{len(units) - i:04}" for i, u in enumerate(units)})
+    repeated = [i for i, rows in forward.entity_rows.items() if len(rows) > 1 and rows[0][1] != rows[-1][1]]
+    assert repeated
+    for entity_id in repeated:
+        assert forward.first(entity_id) == backward.entity_rows[entity_id][-1][1] != backward.first(entity_id)

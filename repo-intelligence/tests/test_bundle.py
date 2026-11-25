@@ -13,7 +13,7 @@ from repo_intel.compile.fixtures import _git, materialize
 from repo_intel.compile import contracts
 from repo_intel.compile.contracts import Manifest
 from repo_intel.compile.pipeline import load_shards
-from repo_intel.knowledge import bundle
+from repo_intel.knowledge import bundle, local_api
 
 
 @pytest.fixture
@@ -25,6 +25,17 @@ def repo(tmp_path):
 
 def _files(root):
     return {str(p.relative_to(root)): p.read_bytes() for p in sorted(root.rglob("*")) if p.is_file()}
+
+
+def _set_commit(repo, tier):
+    bundle.ensure_layout(repo)
+    config = repo / ".rkp" / "config.json"
+    config.write_text(json.dumps({**json.loads(config.read_text()), "commit": tier}))
+
+
+def _unit_rows(repo, document):
+    knowledge = repo / ".rkp" / "knowledge"
+    return [json.loads(line) for unit in document["units"] for line in (knowledge / unit["file"]).read_text().splitlines()]
 
 
 def _commit_all(repo, message):
@@ -146,7 +157,9 @@ def test_hydrate_rebuilds_the_cache_from_committed_files(repo):
 
 
 def test_hydrate_restores_omitted_fields_exactly(repo):
+    _set_commit(repo, "full")
     document = bundle.compile_bundle(repo)
+    assert document["tier"] == "full" and "detail_omitted" not in document
     compiled = load_shards(bundle.store_for(repo), Manifest.model_validate(document["snapshot"]))
     shutil.rmtree(repo / ".rkp" / "cache")
     store, manifest = bundle.hydrate(repo)
@@ -155,6 +168,7 @@ def test_hydrate_restores_omitted_fields_exactly(repo):
 
 def test_reads_a_format_1_bundle(repo):
     """Bundles committed before format 2 hold every field and no row_defaults."""
+    _set_commit(repo, "full")
     document = bundle.compile_bundle(repo)
     knowledge = repo / ".rkp" / "knowledge"
     for unit in document["units"]:
@@ -165,13 +179,82 @@ def test_reads_a_format_1_bundle(repo):
     manifest_file = knowledge / "manifest.json"
     old = json.loads(manifest_file.read_text())
     old["bundle_format"] = "rkp-bundle/1"
-    del old["row_defaults"]
+    del old["row_defaults"], old["tier"]
     manifest_file.write_text(json.dumps(old))
     shutil.rmtree(repo / ".rkp" / "cache")
     store, manifest = bundle.hydrate(repo)
     assert manifest.rkp_hash == document["rkp_hash"]
     assert bundle.read_manifest(repo)["bundle_format"] == "rkp-bundle/1"
     assert bundle.bundle_status(repo)["reasons"] == ["bundle format changed"]
+
+
+def test_architecture_tier_leaves_out_function_level_detail(repo):
+    document = bundle.compile_bundle(repo)
+    assert json.loads((repo / ".rkp" / "config.json").read_text())["commit"] == "architecture"
+    assert document["tier"] == "architecture" and document["detail_kinds"] == ["Symbol"]
+    full = load_shards(bundle.store_for(repo), Manifest.model_validate(document["snapshot"]))
+    symbols = {e["id"] for s in full.values() for e in s["entities"] if e["kind"] == "Symbol"}
+    assert symbols, "the fixture should have function-level detail to leave out"
+
+    rows = _unit_rows(repo, document)
+    entities = {r["id"] for r in rows if r["table"] == "entity"}
+    assertions = [r for r in rows if r["table"] == "assertion"]
+    evidence = {r["id"] for r in rows if r["table"] == "evidence"}
+    assert not entities & symbols
+    assert not [a for a in assertions if {a["subject"], a["object"]} & symbols]
+    # Everything else is kept, with the evidence it cites and nothing more.
+    assert entities == {e["id"] for s in full.values() for e in s["entities"]} - symbols
+    cited = {ev for r in rows if r["table"] in ("entity", "assertion") for ev in r.get("evidence_ids", [])}
+    cited |= {ev for c in bundle._read_jsonl(repo / ".rkp" / "knowledge" / "conflicts.jsonl") for ev in c["evidence_ids"]}
+    assert evidence == cited & {ev["id"] for s in full.values() for ev in s["evidence"]}
+    omitted = document["detail_omitted"]
+    assert omitted["entities"] == len(symbols) and omitted["assertions"] > 0
+    assert sum(u["entities"] for u in document["units"]) == document["counts"]["entities"] == len(entities)
+
+
+def test_fresh_clone_reads_the_architecture_tier_until_it_compiles(repo):
+    document = bundle.compile_bundle(repo)
+    rkp_hash = document["rkp_hash"]
+    assert bundle.bundle_status(repo)["detail"] == "complete"  # compiled here: the cache has it all
+    written = _files(repo / ".rkp" / "knowledge")
+
+    shutil.rmtree(repo / ".rkp" / "cache")  # a fresh clone
+    status = bundle.bundle_status(repo)
+    assert status["state"] == "fresh" and status["tier"] == "architecture" and status["detail"] == "architecture"
+    store, manifest = bundle.hydrate(repo)
+    assert manifest.rkp_hash == rkp_hash and store.index_get("rkp", rkp_hash) is None
+    loaded = load_shards(store, manifest)
+    assert not [e for s in loaded.values() for e in s["entities"] if e["kind"] == "Symbol"]
+
+    api = local_api.LocalApi(repo)
+    assert api.local()["detail"] == "architecture"
+    status_code, summary = api.handle("GET", f"snapshots/{rkp_hash}/summary")
+    assert status_code == 200 and "Symbol" not in summary["counts_by_kind"]
+
+    bundle.compile_bundle(repo)  # the local compile brings the detail back and rewrites nothing
+    assert _files(repo / ".rkp" / "knowledge") == written
+    assert bundle.bundle_status(repo)["detail"] == "complete"
+    assert local_api.LocalApi(repo).local()["detail"] == "complete"
+
+
+def test_architecture_tier_is_checked_on_load(repo):
+    document = bundle.compile_bundle(repo)
+    unit = repo / ".rkp" / "knowledge" / max(document["units"], key=lambda u: u["entities"])["file"]
+    unit.write_text("\n".join(unit.read_text().splitlines()[1:]) + "\n")
+    shutil.rmtree(repo / ".rkp" / "cache")
+    with pytest.raises(bundle.BundleError, match="does not match"):
+        bundle.hydrate(repo)
+
+
+def test_changing_the_commit_setting_makes_the_bundle_stale(repo):
+    bundle.compile_bundle(repo)
+    _set_commit(repo, "full")
+    assert bundle.bundle_status(repo)["reasons"] == ["commit setting changed"]
+    document = bundle.compile_bundle(repo)
+    assert document["tier"] == "full" and bundle.bundle_status(repo)["state"] == "fresh"
+    _set_commit(repo, "everything")
+    with pytest.raises(bundle.BundleError, match='"commit" must be one of'):
+        bundle.compile_bundle(repo)
 
 
 def test_row_defaults_agree_with_the_contracts():

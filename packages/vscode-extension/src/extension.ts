@@ -102,7 +102,12 @@ export function activate(context: vscode.ExtensionContext): Api {
       const result = (await runEngine(["status", folder, ...sourceArgs()], folder, output)) as unknown as StatusResult;
       const what = result.working_tree && result.uncommitted_changes ? `the files on disk (commit ${result.commit_sha.slice(0, 12)} with uncommitted changes)` : `commit ${result.commit_sha.slice(0, 12)}`;
       const uncommitted = result.uncommitted_changes && !result.working_tree ? " Uncommitted changes are not analysed (rkp.analysis.includeUncommittedChanges is off)." : "";
-      if (result.state === "fresh") show("Knowledge current", `The knowledge describes ${what}.${uncommitted}`);
+      const architectureOnly =
+        result.detail === "architecture"
+          ? " Function-level detail (functions, their calls and test links) is not committed, and has not been compiled on this machine. Click to analyse and add it; the committed files stay the same."
+          : "";
+      if (result.state === "fresh" && architectureOnly) show("Knowledge current (architecture)", `The knowledge describes ${what}.${architectureOnly}${uncommitted}`);
+      else if (result.state === "fresh") show("Knowledge current", `The knowledge describes ${what}.${uncommitted}`);
       else if (result.state === "stale") show("Knowledge stale", `Out of date: ${result.reasons.join(", ")}. Click to analyse again.${uncommitted}`, true);
       else show("No knowledge", "Click to analyse this repository.", true);
     } catch (error) {

@@ -61,8 +61,10 @@ def _not_found() -> HttpError:
 class Snapshot:
     """One published snapshot, indexed for the Explorer's queries."""
 
-    def __init__(self, store: ObjectStore, manifest: Manifest):
-        self.store, self.manifest = store, manifest
+    def __init__(self, store: ObjectStore, manifest: Manifest, rank: dict[str, str] | None = None, detail: str = "complete"):
+        """`rank` orders an entity's rows by unit as the projection would; it maps each unit to
+        its full shard digest when `manifest` names an architecture tier's reduced shards."""
+        self.store, self.manifest, self.detail = store, manifest, detail
         self.row = manifest.row()
         # entity_id -> [(shard_digest, row)], highest digest first
         self.entity_rows: dict[str, list[tuple[str, dict[str, Any]]]] = defaultdict(list)
@@ -71,8 +73,9 @@ class Snapshot:
         self.evidence: dict[str, dict[str, Any]] = {}
         for ref in manifest.shards:
             shard = store.get_json(ref.digest)
+            key = (rank or {}).get(ref.unit, ref.digest)
             for row in shard["entities"]:
-                self.entity_rows[row["id"]].append((ref.digest, row))
+                self.entity_rows[row["id"]].append((key, row))
             for row in shard["assertions"]:
                 self.assertions.setdefault(row["id"], row)
                 self.touching[row["subject"]].add(row["id"])
@@ -179,9 +182,14 @@ class LocalApi:
             assert document is not None
             manifest = Manifest.model_validate(document["snapshot"])
             store = bundle.store_for(self.repo)
-            if not all(store.has(ref.digest) for ref in manifest.shards) or not store.has(manifest.unknowns_ref):
-                store, manifest = bundle.hydrate(self.repo, store)
-            self._snapshot, self._key = Snapshot(store, manifest), key
+            if bundle.has_snapshot(store, manifest):  # compiled on this machine: detail included
+                self._snapshot = Snapshot(store, manifest)
+            else:
+                store, loaded = bundle.hydrate(self.repo, store)
+                rank = {ref.unit: ref.digest for ref in manifest.shards}
+                detail = "architecture" if document.get("tier") == "architecture" else "complete"
+                self._snapshot = Snapshot(store, loaded, rank, detail)
+            self._key = key
         return self._snapshot
 
     def _at(self, rkp_hash: str) -> Snapshot:
@@ -249,6 +257,7 @@ class LocalApi:
         return {
             "repository": str(self.repo), "repository_id": snap.manifest.repository_id, "rkp_hash": snap.manifest.rkp_hash,
             "commit_sha": snap.manifest.commit_sha, "working_tree": document.get("working_tree", False), "status": snap.manifest.status,
+            "tier": document.get("tier", "full"), "detail": snap.detail,
         }
 
     def summary(self, snap: Snapshot) -> dict[str, Any]:

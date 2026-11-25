@@ -80,6 +80,7 @@ Built in this slice:
 - **`rkp serve --stdio`** answers the Explorer's read API (summary, entities, entity detail, graph query, evidence, decisions, dependencies, exclusions, owner overrides) from in-memory indexes of the bundle. A test checks its answers against the PostgreSQL projection on four fixtures. On a fresh clone, `hydrate` rebuilds the local cache from the committed files and refuses any file whose digest does not match the manifest; evidence excerpts are then read from working-tree files that still hold the analysed content.
 - **A frozen engine.** `freeze/build_engine.py` builds a self-contained `rkp` (about 75 MB, 35 MB as a VSIX) that is its own sandboxed step worker. It writes byte-identical knowledge to the Python install, so teammates on either get the same files.
 - **Bundle format 2 (`rkp-bundle/2`).** A unit-file row leaves out any field that holds its format default (empty `attributes`, `confidence: null`, `sensitivity: "internal"` and so on). `manifest.json` lists the defaults as `row_defaults`, and `hydrate` and `@rkp/bundle` put them back before anything else sees the row, so digests still verify. Both readers still load format 1. StackGraph's bundle went from 21.5 to 15.1 MB.
+- **The architecture tier is what gets committed (option D).** By default (`"commit": "architecture"` in `.rkp/config.json`) the bundle leaves out function-level detail: Symbol entities (functions, classes, methods), every assertion and unknown that touches one, and the evidence only those rows cite. Each unit records the digest of its reduced shard, so a fresh clone still checks every file it loads. The full snapshot stays in the gitignored cache; a fresh clone reads the committed tier straight away, and a local compile brings the detail back and rewrites identical files. The status bar says "Knowledge current (architecture)" until then. `"commit": "full"` commits everything, as before. On StackGraph the committed bundle went from 15.1 to 6.0 MB, and committing it grows the packed repository by 1.2 MB instead of 3.4 MB.
 - **Self-exclusion.** The snapshot leaves the bundle's own files out of its input, so committing `knowledge/` does not make it stale. Other `.rkp/` files (`exclude`, `business.yaml`) are still read as before.
 - **Stable identity across clones.** The repository ID comes from the origin remote (or the folder name) and is pinned in `.rkp/config.json`, never from an absolute path.
 - **The VS Code extension**: Analyze Repository, a Knowledge view with relations, go to evidence (with a warning when the file changed since the analysis), conflicts in the Problems panel, and a status bar saying whether the knowledge is current, rechecked after edits. Platform packages carry the frozen engine. **Open Explorer** shows the Explorer's map, plane, graph, quality and decision views in a webview, using the Explorer's own components unchanged; the page has no network access and reaches the engine through the extension. The engine never runs in an untrusted workspace.
@@ -92,14 +93,15 @@ Inside a repository the bundle lives in `.rkp/`, which the engine already reads 
 
 ```
 .rkp/
-  config.json          committed   repository ID and bundle format (later: engine version pin, providers)
+  config.json          committed   repository ID, bundle format, what to commit (later: engine version pin, providers)
   exclude              committed   (exists today)
   overrides.json       committed   owner corrections and confirmations
   .gitignore           committed   ignores cache/
   .gitattributes       committed   marks knowledge/ as linguist-generated
   knowledge/           committed   derived
     manifest.json        source tree hash, toolchain hash, override set hash, unit list, counts
-    units/<unit>.jsonl   entities, assertions, evidence and unknowns, one row per line, sorted; fields at their default left out
+    units/<unit>.jsonl   entities, assertions, evidence and unknowns, one row per line, sorted; fields at their default left out;
+                         function-level detail left out unless "commit" is "full"
     files.jsonl          every path read or excluded, with its blob hash; never content
     coverage.jsonl, conflicts.jsonl, unknowns.jsonl
     decisions.jsonl      decision results, so nobody calls a model twice
@@ -153,7 +155,8 @@ The taxonomy in `docs/architecture-pattern-taxonomy.md` feeds phases 1 and 6. Ga
 - **Customer-side execution.** Equivalence testing needs someone to run fixtures against the legacy system, so "nothing runs inside the customer environment" holds for the accelerator but not for the whole process.
 - **Sensitivity of the bundle.** Business rules and security configuration in the IR can be as sensitive as the source.
 - **Toolchain churn.** Two people on different engine versions would rewrite each other's `knowledge/`. The version pin in `config.json` is meant to prevent that; phase 0 tests it.
-- **Bundle size.** Committing the full knowledge adds about 40% to a repository's packed size. Omitting default values (format 2) cut the files by 30% but the compressed size by only 5%. See [Bundle size: measurements and options](#bundle-size-measurements-and-options).
+- **Bundle size.** Committing the full knowledge added about 40% to StackGraph's packed size. Omitting default values (format 2) cut the files by 30% but the compressed size by only 5%. Committing only the architecture tier (option D, now the default) brings the addition down to 16%.
+- **Detail needs a local compile.** On a fresh clone of an architecture-tier bundle, call graphs, per-function test links and which function implements an endpoint are missing until the engine compiles locally. The status bar says so, but nothing compiles on its own yet. See [Bundle size: measurements and options](#bundle-size-measurements-and-options).
 - **Extension size and platforms.** The frozen engine makes a platform package about 35 MB. About 18 MB of the 76 MB engine folder is PostgreSQL client libraries the engine imports but never uses locally; making those imports lazy would remove them. Each platform needs its own build, and a macOS build distributed outside the Marketplace needs signing and notarisation.
 - **Repositories with planted secrets.** The publish gate refuses to write a bundle whose evidence contains a value the secret scan found, and says which file it came from. The owner's fix is a line in `.rkp/exclude`. This repository was refused because `repo-intelligence/tests/test_secrets.py` holds sample secrets; its `.rkp/exclude` now leaves that file out, and the fixture repositories under `repo-intelligence/benchmarks/fixtures/` too, which would otherwise add fake services and tables to its knowledge. With those two lines it compiles: 3,014 entities and 11,781 assertions, an 8.8 MB bundle. The extension could make this easier by offering to add the exclusion when the gate names a file.
 - **Sharing the extension.** The platform package ships the engine's Python source as readable files, because the engine reads its own source to find its steps and fingerprint their code. [Sharing the VS Code extension privately](vscode-extension-sharing.md) describes the options for removing it and the channels for sharing.
@@ -166,6 +169,7 @@ Measured 2026-11-25 on two repositories, with no decision models. The row and Gi
 |---|---|---|
 | `knowledge/`, format 1 | 21.5 MB, 3.25 MB gzipped | 8.7 MB, 1.5 MB gzipped |
 | `knowledge/`, format 2 (option A, built) | 15.1 MB, 3.10 MB gzipped | 6.2 MB, 1.4 MB gzipped |
+| `knowledge/`, architecture tier (option D, built, the default) | 6.0 MB, 1.27 MB gzipped | 1.3 MB, 0.26 MB gzipped |
 | Rows | 10,129 entities, 27,760 assertions, 16,143 evidence | 3,014 entities, 11,781 assertions, 6,354 evidence |
 | Compile | 13.7 s cold, 3.2 s cached | 8 s cold, 4 s cached |
 | Share from function-level detail (Symbol entities, the assertions that touch them, and evidence only they use) | 64% | 87% |
@@ -184,6 +188,9 @@ What it costs in Git, measured on the StackGraph clone by committing the bundle,
 | Append a function to one file | 87 | +1 KiB |
 | Insert one line at the top of an 8,611-line file | 3,602 (1,801 rows rewritten) | +37 KiB |
 | Edit the README only | 24 | within repacking noise |
+| *Architecture tier, on a fresh clone repacked with `git gc --aggressive`:* | | |
+| First commit of `knowledge/` | All | +1.2 MB on 7.7 MB of source (+16%) |
+| Insert one line at the top of the same file | 98 | +3 KiB |
 
 Git's delta compression keeps later commits small, so the lasting cost is the first snapshot and the review noise. The line-insert case rewrites every evidence row in the file because spans hold absolute line and byte offsets. `.gitattributes` marks `knowledge/` as generated, so GitHub collapses these diffs in pull requests.
 
@@ -194,7 +201,7 @@ Options, with what each saves on StackGraph:
 | A. Omit default values (format `rkp-bundle/2` records the defaults once; the reader fills them in). **Built** | 21.5 → 15.1 MB raw; gzipped 3.25 → 3.10 MB | Small: writer, `hydrate` and the TypeScript reader. Rows stay readable |
 | B. A plus row-number references and file indexes for blobs | → 12.8 MB raw, 2.8 MB gzipped | Medium. Rows are no longer readable on their own |
 | C. B plus one array per field (columnar) | → 9.2 MB raw, 2.5 MB gzipped | Medium. Merges by hand become impossible, which they already should be |
-| D. Two tiers: commit the architecture tier (components, endpoints, data, dependencies, deployment, patterns) and keep function-level detail in the gitignored cache, recompiled after clone | 64–87% of the bytes | The engine has to write detail into separate shards so each tier's digests still verify. Call graphs and per-function test links need a local compile on a fresh clone |
+| D. Two tiers: commit the architecture tier (components, endpoints, data, dependencies, deployment, patterns) and keep function-level detail in the gitignored cache, recompiled after clone. **Built, the default** | 15.1 → 6.0 MB raw; gzipped 3.10 → 1.27 MB | Each unit records its reduced shard's digest, so the engine's shards are unchanged. Call graphs and per-function test links need a local compile on a fresh clone |
 | E. Commit inputs only (`config.json`, `overrides.json`, `decisions.jsonl`), recompile on clone | All of `knowledge/` except decisions | A fresh clone shows nothing until it compiles (13 s here). Loses offline browsing and the export use case |
 | F. Evidence spans relative to their enclosing entity | Most of the line-shift churn | An engine change to evidence identity; touches extractors and goldens |
 | G. Keep knowledge on a separate branch or in Git notes, keyed by source tree hash | Main history unchanged | Fetching and pushing that ref becomes part of the workflow |
@@ -202,8 +209,8 @@ Options, with what each saves on StackGraph:
 Recommendation:
 
 1. **A is done.** It keeps the files readable and cuts the working-tree size by 30%. The compressed size, which is roughly what Git stores, falls only 5%, so A alone does not change the 40% figure much.
-2. **Make D the default for what is committed.** It is the only option that cuts the compressed size substantially, and the architecture tier is what review, design and export need. Function-level detail remains available in the editor after a local compile.
-3. **Offer E as a setting** (`"commit": "full" | "architecture" | "inputs"` in `.rkp/config.json`) for very large repositories and for teams that do not want generated files in their history.
+2. **D is done and is the default.** It cuts the compressed size by 59% and the packed-repository cost from 40% to 16%, and the architecture tier is what review, design and export need. Function-level detail is available in the editor after a local compile. `"commit": "full"` in `.rkp/config.json` commits everything instead.
+3. **Offer E as a third value of that setting** (`"commit": "inputs"`) for very large repositories and for teams that do not want generated files in their history.
 4. **Leave B, C, F and G** until a real application shows they are needed. B and C mostly shrink the uncompressed size, which Git does not store; F matters only if review noise becomes a complaint.
 
 ## Open decisions
@@ -211,6 +218,6 @@ Recommendation:
 | Decision | Recommendation | Alternative |
 |---|---|---|
 | Engine | Python, frozen per platform | TypeScript rewrite |
-| What is committed | The architecture tier, with function-level detail recompiled locally (see bundle size) | Full knowledge, or inputs only |
+| What is committed | The architecture tier, with function-level detail recompiled locally. Built as the default; `"commit": "full"` is the alternative | Inputs only (option E) |
 | Hosted product | Keep it as the factory shell over the same engine | Retire it |
 | First reference application | One real ColdFusion application for phases 2 and 3 | Synthetic fixtures only |
