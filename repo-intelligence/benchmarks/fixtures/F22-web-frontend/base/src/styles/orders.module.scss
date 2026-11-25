@@ -1,0 +1,15 @@
+@use "variables" as *;
+
+.page {
+  @include card;
+  color: $brand;
+}
+
+.table {
+  width: 100%;
+  border-color: var(--color-primary);
+
+  @media (min-width: $breakpoint-md) {
+    font-size: 15px;
+  }
+}

@@ -1,0 +1,26 @@
+/* Design tokens shared by the storefront, the checkout and the static pages. */
+:root {
+  --color-primary: #1f6feb;
+  --color-text: #1f2328;
+  --space-2: 8px;
+  --space-4: 16px;
+  --radius-md: 8px;
+  --font-body: Inter, system-ui, sans-serif;
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+
+[data-theme="dark"] {
+  --color-primary: #58a6ff;
+  --color-text: #e6edf3;
+}
+
+@media (max-width: 640px) {
+  :root {
+    --space-4: 12px;
+  }
+}
+
+body {
+  font-family: var(--font-body);
+  color: var(--color-text);
+}

@@ -1,0 +1,10 @@
+{
+  "name": "shop-web",
+  "version": "1.4.0",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "mock-api": "tsx server/mock-api.ts"
+  }
+}

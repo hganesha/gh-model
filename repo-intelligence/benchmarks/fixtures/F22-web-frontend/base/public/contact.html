@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Contact us</title>
+  <link rel="stylesheet" href="../src/styles/tokens.css">
+</head>
+<body>
+  <form name="contact" action="/api/contact" method="post">
+    <input name="email" type="email" required aria-label="Your email">
+    <select name="topic">
+      <option value="order">An order</option>
+      <option value="other">Something else</option>
+    </select>
+    <textarea name="message" maxlength="2000" style="border-color: var(--color-primary)"></textarea>
+    <input type="submit" value="Send">
+  </form>
+  <a href="about.html">Back</a>
+</body>
+</html>

@@ -1,0 +1,1529 @@
+{
+  "fixture": "F22-web-frontend",
+  "description": "Three web front ends in one package: a React storefront (React Router, react-hook-form, Formik, a theme object, CSS custom properties and SCSS), a Vue checkout (Vue Router, v-model, vee-validate style controls) and an Angular back office (Routes with guards and role data, reactive and template-driven forms), plus static HTML pages and a small Express mock API. The web pack must find the screens, forms, controls, design tokens and guarded roles, link forms to the mock API's endpoints, and leave redirects and dynamic targets alone.",
+  "entities": [
+    {
+      "kind": "Screen",
+      "natural_key": {
+        "platform": "web",
+        "name": "/"
+      },
+      "attributes": {
+        "platform_kind": "web:Route"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "Screen",
+      "natural_key": {
+        "platform": "web",
+        "name": "/orders"
+      },
+      "attributes": {
+        "platform_kind": "web:Route"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "Screen",
+      "natural_key": {
+        "platform": "web",
+        "name": "/orders/new"
+      },
+      "attributes": {
+        "platform_kind": "web:Route"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "Screen",
+      "natural_key": {
+        "platform": "web",
+        "name": "/orders/:orderId"
+      },
+      "attributes": {
+        "platform_kind": "web:Route"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "Screen",
+      "natural_key": {
+        "platform": "web",
+        "name": "/search"
+      },
+      "attributes": {
+        "platform_kind": "web:Route"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "Screen",
+      "natural_key": {
+        "platform": "web",
+        "name": "/admin"
+      },
+      "attributes": {
+        "platform_kind": "web:Route"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "Screen",
+      "natural_key": {
+        "platform": "web",
+        "name": "/login"
+      },
+      "attributes": {
+        "platform_kind": "web:Route"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "Screen",
+      "natural_key": {
+        "platform": "web",
+        "name": "/cart"
+      },
+      "attributes": {
+        "platform_kind": "web:Route"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "Screen",
+      "natural_key": {
+        "platform": "web",
+        "name": "/checkout"
+      },
+      "attributes": {
+        "platform_kind": "web:Route"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "Screen",
+      "natural_key": {
+        "platform": "web",
+        "name": "/thanks"
+      },
+      "attributes": {
+        "platform_kind": "web:Route"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "Screen",
+      "natural_key": {
+        "platform": "web",
+        "name": "/backoffice"
+      },
+      "attributes": {
+        "platform_kind": "web:Route"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "Screen",
+      "natural_key": {
+        "platform": "web",
+        "name": "/backoffice/users"
+      },
+      "attributes": {
+        "platform_kind": "web:Route"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "Screen",
+      "natural_key": {
+        "platform": "web",
+        "name": "/backoffice/users/new"
+      },
+      "attributes": {
+        "platform_kind": "web:Route"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "Screen",
+      "natural_key": {
+        "platform": "web",
+        "name": "/backoffice/reports"
+      },
+      "attributes": {
+        "platform_kind": "web:Route"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "Screen",
+      "natural_key": {
+        "platform": "web",
+        "name": "index.html"
+      },
+      "attributes": {
+        "platform_kind": "web:Page"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "Screen",
+      "natural_key": {
+        "platform": "web",
+        "name": "public/about.html"
+      },
+      "attributes": {
+        "platform_kind": "web:Page"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "Screen",
+      "natural_key": {
+        "platform": "web",
+        "name": "public/contact.html"
+      },
+      "attributes": {
+        "platform_kind": "web:Page"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "Screen",
+      "natural_key": {
+        "platform": "web",
+        "name": "src/components/Layout.tsx"
+      },
+      "attributes": {
+        "platform_kind": "web:View"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "Screen",
+      "natural_key": {
+        "platform": "web",
+        "name": "src/pages/NewOrderPage.tsx"
+      },
+      "attributes": {
+        "platform_kind": "web:View"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "Screen",
+      "natural_key": {
+        "platform": "web",
+        "name": "src/pages/LoginPage.tsx"
+      },
+      "attributes": {
+        "platform_kind": "web:View"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "Screen",
+      "natural_key": {
+        "platform": "web",
+        "name": "src/pages/OrdersPage.tsx"
+      },
+      "attributes": {
+        "platform_kind": "web:View"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "Screen",
+      "natural_key": {
+        "platform": "web",
+        "name": "checkout/src/views/CheckoutView.vue"
+      },
+      "attributes": {
+        "platform_kind": "web:View"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "Screen",
+      "natural_key": {
+        "platform": "web",
+        "name": "checkout/src/views/CartView.vue"
+      },
+      "attributes": {
+        "platform_kind": "web:View"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "Screen",
+      "natural_key": {
+        "platform": "web",
+        "name": "backoffice/src/app/users/user-form.component.ts"
+      },
+      "attributes": {
+        "platform_kind": "web:View"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "Screen",
+      "natural_key": {
+        "platform": "web",
+        "name": "backoffice/src/app/users/users.component.html"
+      },
+      "attributes": {
+        "platform_kind": "web:View"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "Form",
+      "natural_key": {
+        "screen": "src/pages/NewOrderPage.tsx",
+        "name": "new-order"
+      },
+      "attributes": {
+        "form_library": "react-hook-form",
+        "submits": [
+          "POST /api/orders"
+        ]
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "Form",
+      "natural_key": {
+        "screen": "src/pages/LoginPage.tsx",
+        "name": "form1"
+      },
+      "attributes": {
+        "form_library": "Form",
+        "submit_handler": "signIn",
+        "submits": [
+          "POST /api/session"
+        ]
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "Form",
+      "natural_key": {
+        "screen": "public/contact.html",
+        "name": "contact"
+      },
+      "attributes": {
+        "method": "POST",
+        "action": "/api/contact"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "Form",
+      "natural_key": {
+        "screen": "public/about.html",
+        "name": "form1"
+      },
+      "attributes": {
+        "method": "GET",
+        "action": "/search"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "Form",
+      "natural_key": {
+        "screen": "checkout/src/views/CheckoutView.vue",
+        "name": "form1"
+      },
+      "attributes": {
+        "submits": [
+          "POST /api/checkout"
+        ]
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "Form",
+      "natural_key": {
+        "screen": "backoffice/src/app/users/user-form.component.ts",
+        "name": "form1"
+      },
+      "attributes": {
+        "submits": [
+          "POST /api/users"
+        ]
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "Form",
+      "natural_key": {
+        "screen": "backoffice/src/app/users/users.component.html",
+        "name": "form1"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "UIControl",
+      "natural_key": {
+        "container": "src/pages/NewOrderPage.tsx#new-order",
+        "name": "customer"
+      },
+      "attributes": {
+        "control_type": "input",
+        "binds": "customer",
+        "validation": [
+          "required"
+        ]
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "UIControl",
+      "natural_key": {
+        "container": "src/pages/NewOrderPage.tsx#new-order",
+        "name": "quantity"
+      },
+      "attributes": {
+        "control_type": "input",
+        "input_type": "number",
+        "validation": [
+          "min",
+          "required"
+        ]
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "UIControl",
+      "natural_key": {
+        "container": "src/pages/NewOrderPage.tsx#new-order",
+        "name": "status"
+      },
+      "attributes": {
+        "control_type": "select"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "UIControl",
+      "natural_key": {
+        "container": "src/pages/NewOrderPage.tsx#new-order",
+        "name": "notes"
+      },
+      "attributes": {
+        "control_type": "textarea"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "UIControl",
+      "natural_key": {
+        "container": "src/pages/NewOrderPage.tsx#new-order",
+        "name": "submit"
+      },
+      "attributes": {
+        "control_type": "button"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "UIControl",
+      "natural_key": {
+        "container": "src/pages/LoginPage.tsx#form1",
+        "name": "password"
+      },
+      "attributes": {
+        "input_type": "password"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "UIControl",
+      "natural_key": {
+        "container": "public/contact.html#contact",
+        "name": "email"
+      },
+      "attributes": {
+        "input_type": "email"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "UIControl",
+      "natural_key": {
+        "container": "public/contact.html#contact",
+        "name": "topic"
+      },
+      "attributes": {
+        "control_type": "select"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "UIControl",
+      "natural_key": {
+        "container": "public/contact.html#contact",
+        "name": "message"
+      },
+      "attributes": {
+        "control_type": "textarea"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "UIControl",
+      "natural_key": {
+        "container": "checkout/src/views/CheckoutView.vue#form1",
+        "name": "form.email"
+      },
+      "attributes": {
+        "binds": "form.email"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "UIControl",
+      "natural_key": {
+        "container": "checkout/src/views/CheckoutView.vue#form1",
+        "name": "form.coupon"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "UIControl",
+      "natural_key": {
+        "container": "checkout/src/views/CheckoutView.vue#form1",
+        "name": "link:/cart"
+      },
+      "attributes": {
+        "control_type": "link",
+        "target": "/cart"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "UIControl",
+      "natural_key": {
+        "container": "backoffice/src/app/users/user-form.component.ts#form1",
+        "name": "email"
+      },
+      "attributes": {
+        "binds": "email"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "UIControl",
+      "natural_key": {
+        "container": "backoffice/src/app/users/user-form.component.ts#form1",
+        "name": "role"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "UIControl",
+      "natural_key": {
+        "container": "backoffice/src/app/users/users.component.html#form1",
+        "name": "query"
+      },
+      "attributes": {
+        "binds": "query"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "UIControl",
+      "natural_key": {
+        "container": "src/components/Layout.tsx",
+        "name": "link:/orders"
+      },
+      "attributes": {
+        "control_type": "link",
+        "target": "/orders"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "UIControl",
+      "natural_key": {
+        "container": "src/components/Layout.tsx",
+        "name": "link:https://help.example.com"
+      },
+      "attributes": {
+        "external": true
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "UIControl",
+      "natural_key": {
+        "container": "public/about.html",
+        "name": "link:contact.html"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "UIControl",
+      "natural_key": {
+        "container": "checkout/src/views/CartView.vue",
+        "name": "link:/checkout"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "UIControl",
+      "natural_key": {
+        "container": "src/pages/OrdersPage.tsx",
+        "name": "link1"
+      },
+      "attributes": {
+        "target": "dynamic"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "StyleToken",
+      "natural_key": {
+        "system": "src/styles/tokens.css",
+        "name": "--color-primary"
+      },
+      "attributes": {
+        "category": "color",
+        "platform_kind": "web:CssVariable"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "StyleToken",
+      "natural_key": {
+        "system": "src/styles/tokens.css",
+        "name": "--space-4"
+      },
+      "attributes": {
+        "category": "spacing"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "StyleToken",
+      "natural_key": {
+        "system": "src/styles/tokens.css",
+        "name": "--radius-md"
+      },
+      "attributes": {
+        "category": "radius"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "StyleToken",
+      "natural_key": {
+        "system": "src/styles/tokens.css",
+        "name": "--font-body"
+      },
+      "attributes": {
+        "category": "font"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "StyleToken",
+      "natural_key": {
+        "system": "src/styles/tokens.css",
+        "name": "--shadow-card"
+      },
+      "attributes": {
+        "category": "shadow"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "StyleToken",
+      "natural_key": {
+        "system": "src/styles/_variables.scss",
+        "name": "$brand"
+      },
+      "attributes": {
+        "category": "color",
+        "platform_kind": "web:ScssVariable"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "StyleToken",
+      "natural_key": {
+        "system": "src/styles/_variables.scss",
+        "name": "$gutter"
+      },
+      "attributes": {
+        "category": "spacing"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "StyleToken",
+      "natural_key": {
+        "system": "src/styles/_variables.scss",
+        "name": "$radius-card"
+      },
+      "attributes": {
+        "category": "radius"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "StyleToken",
+      "natural_key": {
+        "system": "checkout/src/views/CheckoutView.vue",
+        "name": "--accent"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "StyleToken",
+      "natural_key": {
+        "system": "src/theme.ts",
+        "name": "theme.colors.primary"
+      },
+      "attributes": {
+        "category": "color",
+        "platform_kind": "web:ThemeToken"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "StyleToken",
+      "natural_key": {
+        "system": "src/theme.ts",
+        "name": "theme.space.3"
+      },
+      "attributes": {
+        "category": "spacing"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "StyleToken",
+      "natural_key": {
+        "system": "src/theme.ts",
+        "name": "theme.radii.md"
+      },
+      "attributes": {
+        "category": "radius"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "StyleToken",
+      "natural_key": {
+        "system": "src/theme.ts",
+        "name": "theme.fontSizes.heading"
+      },
+      "attributes": {
+        "category": "size"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "StyleToken",
+      "natural_key": {
+        "system": "src/theme.ts",
+        "name": "theme.shadows.card"
+      },
+      "attributes": {
+        "category": "shadow"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "Role",
+      "natural_key": {
+        "realm": "web",
+        "name": "admin"
+      },
+      "attributes": {
+        "platform_kind": "web:Guard"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "Role",
+      "natural_key": {
+        "realm": "web",
+        "name": "support"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "Role",
+      "natural_key": {
+        "realm": "web",
+        "name": "customer"
+      },
+      "since": "M2"
+    }
+  ],
+  "edges": [
+    {
+      "subject": {
+        "kind": "Package",
+        "natural_key": {
+          "ecosystem": "npm",
+          "name": "shop-web",
+          "manifest_dir": ""
+        }
+      },
+      "predicate": "RENDERS",
+      "object": {
+        "kind": "Screen",
+        "natural_key": {
+          "platform": "web",
+          "name": "/orders"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Package",
+        "natural_key": {
+          "ecosystem": "npm",
+          "name": "shop-web",
+          "manifest_dir": ""
+        }
+      },
+      "predicate": "RENDERS",
+      "object": {
+        "kind": "Screen",
+        "natural_key": {
+          "platform": "web",
+          "name": "/checkout"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Package",
+        "natural_key": {
+          "ecosystem": "npm",
+          "name": "shop-web",
+          "manifest_dir": ""
+        }
+      },
+      "predicate": "RENDERS",
+      "object": {
+        "kind": "Screen",
+        "natural_key": {
+          "platform": "web",
+          "name": "/backoffice/users/new"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Package",
+        "natural_key": {
+          "ecosystem": "npm",
+          "name": "shop-web",
+          "manifest_dir": ""
+        }
+      },
+      "predicate": "RENDERS",
+      "object": {
+        "kind": "Screen",
+        "natural_key": {
+          "platform": "web",
+          "name": "public/contact.html"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Package",
+        "natural_key": {
+          "ecosystem": "npm",
+          "name": "shop-web",
+          "manifest_dir": ""
+        }
+      },
+      "predicate": "RENDERS",
+      "object": {
+        "kind": "Screen",
+        "natural_key": {
+          "platform": "web",
+          "name": "src/pages/NewOrderPage.tsx"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Screen",
+        "natural_key": {
+          "platform": "web",
+          "name": "/orders/new"
+        }
+      },
+      "predicate": "CONTAINS",
+      "object": {
+        "kind": "Screen",
+        "natural_key": {
+          "platform": "web",
+          "name": "src/pages/NewOrderPage.tsx"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Screen",
+        "natural_key": {
+          "platform": "web",
+          "name": "/checkout"
+        }
+      },
+      "predicate": "CONTAINS",
+      "object": {
+        "kind": "Screen",
+        "natural_key": {
+          "platform": "web",
+          "name": "checkout/src/views/CheckoutView.vue"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Screen",
+        "natural_key": {
+          "platform": "web",
+          "name": "/backoffice/users/new"
+        }
+      },
+      "predicate": "CONTAINS",
+      "object": {
+        "kind": "Screen",
+        "natural_key": {
+          "platform": "web",
+          "name": "backoffice/src/app/users/user-form.component.ts"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Screen",
+        "natural_key": {
+          "platform": "web",
+          "name": "src/pages/NewOrderPage.tsx"
+        }
+      },
+      "predicate": "CONTAINS",
+      "object": {
+        "kind": "Form",
+        "natural_key": {
+          "screen": "src/pages/NewOrderPage.tsx",
+          "name": "new-order"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Form",
+        "natural_key": {
+          "screen": "src/pages/NewOrderPage.tsx",
+          "name": "new-order"
+        }
+      },
+      "predicate": "CONTAINS",
+      "object": {
+        "kind": "UIControl",
+        "natural_key": {
+          "container": "src/pages/NewOrderPage.tsx#new-order",
+          "name": "quantity"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Screen",
+        "natural_key": {
+          "platform": "web",
+          "name": "public/contact.html"
+        }
+      },
+      "predicate": "CONTAINS",
+      "object": {
+        "kind": "Form",
+        "natural_key": {
+          "screen": "public/contact.html",
+          "name": "contact"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Screen",
+        "natural_key": {
+          "platform": "web",
+          "name": "src/components/Layout.tsx"
+        }
+      },
+      "predicate": "CONTAINS",
+      "object": {
+        "kind": "UIControl",
+        "natural_key": {
+          "container": "src/components/Layout.tsx",
+          "name": "link:/orders"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Form",
+        "natural_key": {
+          "screen": "src/pages/NewOrderPage.tsx",
+          "name": "new-order"
+        }
+      },
+      "predicate": "SUBMITS_TO",
+      "object": {
+        "kind": "Endpoint",
+        "natural_key": {
+          "component_root": "",
+          "protocol": "http",
+          "method": "POST",
+          "route": "/api/orders"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Form",
+        "natural_key": {
+          "screen": "checkout/src/views/CheckoutView.vue",
+          "name": "form1"
+        }
+      },
+      "predicate": "SUBMITS_TO",
+      "object": {
+        "kind": "Endpoint",
+        "natural_key": {
+          "component_root": "",
+          "protocol": "http",
+          "method": "POST",
+          "route": "/api/checkout"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Form",
+        "natural_key": {
+          "screen": "public/about.html",
+          "name": "form1"
+        }
+      },
+      "predicate": "SUBMITS_TO",
+      "object": {
+        "kind": "Screen",
+        "natural_key": {
+          "platform": "web",
+          "name": "/search"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "UIControl",
+        "natural_key": {
+          "container": "src/components/Layout.tsx",
+          "name": "link:/orders"
+        }
+      },
+      "predicate": "NAVIGATES_TO",
+      "object": {
+        "kind": "Screen",
+        "natural_key": {
+          "platform": "web",
+          "name": "/orders"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "UIControl",
+        "natural_key": {
+          "container": "checkout/src/views/CartView.vue",
+          "name": "link:/checkout"
+        }
+      },
+      "predicate": "NAVIGATES_TO",
+      "object": {
+        "kind": "Screen",
+        "natural_key": {
+          "platform": "web",
+          "name": "/checkout"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "UIControl",
+        "natural_key": {
+          "container": "public/about.html",
+          "name": "link:contact.html"
+        }
+      },
+      "predicate": "NAVIGATES_TO",
+      "object": {
+        "kind": "Screen",
+        "natural_key": {
+          "platform": "web",
+          "name": "public/contact.html"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "UIControl",
+        "natural_key": {
+          "container": "backoffice/src/app/users/users.component.html",
+          "name": "link:/backoffice/users/new"
+        }
+      },
+      "predicate": "NAVIGATES_TO",
+      "object": {
+        "kind": "Screen",
+        "natural_key": {
+          "platform": "web",
+          "name": "/backoffice/users/new"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Screen",
+        "natural_key": {
+          "platform": "web",
+          "name": "src/pages/NewOrderPage.tsx"
+        }
+      },
+      "predicate": "NAVIGATES_TO",
+      "object": {
+        "kind": "Screen",
+        "natural_key": {
+          "platform": "web",
+          "name": "/orders"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Screen",
+        "natural_key": {
+          "platform": "web",
+          "name": "checkout/src/views/CheckoutView.vue"
+        }
+      },
+      "predicate": "NAVIGATES_TO",
+      "object": {
+        "kind": "Screen",
+        "natural_key": {
+          "platform": "web",
+          "name": "/thanks"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Screen",
+        "natural_key": {
+          "platform": "web",
+          "name": "src/pages/OrdersPage.tsx"
+        }
+      },
+      "predicate": "STYLED_BY",
+      "object": {
+        "kind": "StyleToken",
+        "natural_key": {
+          "system": "src/styles/tokens.css",
+          "name": "--color-primary"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Screen",
+        "natural_key": {
+          "platform": "web",
+          "name": "src/pages/NewOrderPage.tsx"
+        }
+      },
+      "predicate": "STYLED_BY",
+      "object": {
+        "kind": "StyleToken",
+        "natural_key": {
+          "system": "src/theme.ts",
+          "name": "theme.colors.primary"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Screen",
+        "natural_key": {
+          "platform": "web",
+          "name": "checkout/src/views/CheckoutView.vue"
+        }
+      },
+      "predicate": "STYLED_BY",
+      "object": {
+        "kind": "StyleToken",
+        "natural_key": {
+          "system": "src/styles/_variables.scss",
+          "name": "$gutter"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Screen",
+        "natural_key": {
+          "platform": "web",
+          "name": "checkout/src/views/CheckoutView.vue"
+        }
+      },
+      "predicate": "STYLED_BY",
+      "object": {
+        "kind": "StyleToken",
+        "natural_key": {
+          "system": "checkout/src/views/CheckoutView.vue",
+          "name": "--accent"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Screen",
+        "natural_key": {
+          "platform": "web",
+          "name": "public/about.html"
+        }
+      },
+      "predicate": "STYLED_BY",
+      "object": {
+        "kind": "StyleToken",
+        "natural_key": {
+          "system": "src/styles/tokens.css",
+          "name": "--space-4"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Screen",
+        "natural_key": {
+          "platform": "web",
+          "name": "/admin"
+        }
+      },
+      "predicate": "REQUIRES_ROLE",
+      "object": {
+        "kind": "Role",
+        "natural_key": {
+          "realm": "web",
+          "name": "admin"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Screen",
+        "natural_key": {
+          "platform": "web",
+          "name": "/checkout"
+        }
+      },
+      "predicate": "REQUIRES_ROLE",
+      "object": {
+        "kind": "Role",
+        "natural_key": {
+          "realm": "web",
+          "name": "customer"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Screen",
+        "natural_key": {
+          "platform": "web",
+          "name": "/backoffice"
+        }
+      },
+      "predicate": "REQUIRES_ROLE",
+      "object": {
+        "kind": "Role",
+        "natural_key": {
+          "realm": "web",
+          "name": "support"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Screen",
+        "natural_key": {
+          "platform": "web",
+          "name": "/backoffice/users"
+        }
+      },
+      "predicate": "REQUIRES_ROLE",
+      "object": {
+        "kind": "Role",
+        "natural_key": {
+          "realm": "web",
+          "name": "admin"
+        }
+      },
+      "since": "M2"
+    }
+  ],
+  "absent_entities": [
+    {
+      "kind": "Screen",
+      "natural_key": {
+        "platform": "web",
+        "name": "/old-orders"
+      },
+      "why": "a route whose element is <Navigate> redirects; it renders nothing"
+    },
+    {
+      "kind": "Screen",
+      "natural_key": {
+        "platform": "web",
+        "name": "/backoffice/**"
+      },
+      "why": "the wildcard route only redirects"
+    },
+    {
+      "kind": "Screen",
+      "natural_key": {
+        "platform": "web",
+        "name": "/backoffice/users/:id"
+      },
+      "why": "no such route is declared"
+    },
+    {
+      "kind": "Screen",
+      "natural_key": {
+        "platform": "web",
+        "name": "src/pages/HomePage.tsx"
+      },
+      "why": "a component module with no form and no literal link is not a view of its own"
+    },
+    {
+      "kind": "Screen",
+      "natural_key": {
+        "platform": "web",
+        "name": "src/components/ui.tsx"
+      },
+      "why": "a component library defines controls; it is not a screen"
+    },
+    {
+      "kind": "Screen",
+      "natural_key": {
+        "platform": "web",
+        "name": "checkout/src/views/ThanksView.vue"
+      },
+      "why": "a view with no form and no link is reached through its route only"
+    },
+    {
+      "kind": "Screen",
+      "natural_key": {
+        "platform": "web",
+        "name": "server/mock-api.ts"
+      },
+      "why": "server code is not a screen"
+    },
+    {
+      "kind": "UIControl",
+      "natural_key": {
+        "container": "src/pages/OrdersPage.tsx",
+        "name": "link:/orders/${o.id}"
+      },
+      "why": "a template-literal link target stays dynamic"
+    },
+    {
+      "kind": "Role",
+      "natural_key": {
+        "realm": "web",
+        "name": "RequireRole"
+      },
+      "why": "the guard component's name is a guard attribute, not a role"
+    },
+    {
+      "kind": "StyleToken",
+      "natural_key": {
+        "system": "src/theme.ts",
+        "name": "theme"
+      },
+      "why": "the theme object itself is not a token; its leaves are"
+    },
+    {
+      "kind": "StyleToken",
+      "natural_key": {
+        "system": "src/styles/orders.module.scss",
+        "name": "$brand"
+      },
+      "why": "a stylesheet that uses a variable does not declare it"
+    }
+  ],
+  "exclusions": [],
+  "forbidden_kinds": [
+    "Field",
+    "Table"
+  ],
+  "expected_unknowns": [
+    {
+      "since": "M2",
+      "detail": "src/pages/ReturnsPage.tsx (commit 01) posts to /api/returns, which nothing in this unit serves: an info diagnostic, no SUBMITS_TO edge"
+    },
+    {
+      "since": "M2",
+      "detail": "the Link to `/orders/${o.id}` in src/pages/OrdersPage.tsx is a template literal: a control with target 'dynamic' and a diagnostic, no NAVIGATES_TO edge"
+    },
+    {
+      "since": "M2",
+      "detail": "users.component.ts names its template by templateUrl: counted as the unmodelled construct web:angular-template-url, so the route does not contain the template's view"
+    }
+  ],
+  "expected_conflicts": [],
+  "commits": [
+    {
+      "dir": "01-returns-route",
+      "expect": "a returns route and its page with a form appear",
+      "added_entities": [
+        {
+          "kind": "Screen",
+          "natural_key": {
+            "platform": "web",
+            "name": "/returns"
+          },
+          "since": "M2"
+        },
+        {
+          "kind": "Screen",
+          "natural_key": {
+            "platform": "web",
+            "name": "src/pages/ReturnsPage.tsx"
+          },
+          "since": "M2"
+        },
+        {
+          "kind": "Form",
+          "natural_key": {
+            "screen": "src/pages/ReturnsPage.tsx",
+            "name": "return"
+          },
+          "since": "M2"
+        },
+        {
+          "kind": "UIControl",
+          "natural_key": {
+            "container": "src/pages/ReturnsPage.tsx#return",
+            "name": "orderId"
+          },
+          "since": "M2"
+        }
+      ],
+      "removed_entities": []
+    },
+    {
+      "dir": "02-success-token",
+      "expect": "a new colour token appears",
+      "added_entities": [
+        {
+          "kind": "StyleToken",
+          "natural_key": {
+            "system": "src/styles/tokens.css",
+            "name": "--color-success"
+          },
+          "since": "M2"
+        }
+      ],
+      "removed_entities": []
+    },
+    {
+      "dir": "03-retire-login",
+      "expect": "the login route, its page and its form go away",
+      "added_entities": [],
+      "removed_entities": [
+        {
+          "kind": "Screen",
+          "natural_key": {
+            "platform": "web",
+            "name": "/login"
+          },
+          "since": "M2"
+        },
+        {
+          "kind": "Screen",
+          "natural_key": {
+            "platform": "web",
+            "name": "src/pages/LoginPage.tsx"
+          },
+          "since": "M2"
+        },
+        {
+          "kind": "Form",
+          "natural_key": {
+            "screen": "src/pages/LoginPage.tsx",
+            "name": "form1"
+          },
+          "since": "M2"
+        },
+        {
+          "kind": "UIControl",
+          "natural_key": {
+            "container": "src/pages/LoginPage.tsx#form1",
+            "name": "password"
+          },
+          "since": "M2"
+        }
+      ]
+    }
+  ],
+  "granularity": {
+    "label": "monolithic",
+    "why": "one npm package; its only server code is a single Express mock API",
+    "source": "fixture design"
+  }
+}

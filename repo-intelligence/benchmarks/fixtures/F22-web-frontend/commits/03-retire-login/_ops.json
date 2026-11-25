@@ -1,0 +1,1 @@
+{"message": "storefront: sign in on the hosted page instead", "delete": ["src/pages/LoginPage.tsx"]}
