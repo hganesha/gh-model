@@ -264,7 +264,7 @@ def _integer(value: Any) -> int | None:
 
 class CatalogDump:
     id = "catalog.dump"
-    version = "1.0.0"
+    version = "1.1.0"
 
     def matches(self, path: str) -> bool:
         return path.startswith(INPUT_DIR) and path.lower().endswith((".json", ".csv")) and "/" not in path[len(INPUT_DIR):]
@@ -353,7 +353,8 @@ class _Emitter:
         self.out.append(platform_entity(self.blob, self._at(row), term, natural_key, name, {k: v for k, v in attributes.items() if v is not None}, E1))
 
     def _construct(self, row: _Row, construct_id: str, modelled: bool) -> None:
-        self.out.append(construct(self.blob, self._at(row), construct_id, modelled))
+        # A catalogue dump is a declarative export: what it lists is declared (E1).
+        self.out.append(construct(self.blob, self._at(row), construct_id, modelled, E1))
 
     def _rows(self, section: str) -> list[_Row]:
         kept = []

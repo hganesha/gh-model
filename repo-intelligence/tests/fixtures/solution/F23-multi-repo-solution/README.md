@@ -19,7 +19,8 @@ What a correct load and resolution gives:
 - `/api/customers` is unmatched: no member serves it.
 - The service's `orders` table, and its columns, link exactly to the catalogue's: the
   manifest says the service's tables are in `shopdb`, and the catalogue is `shopdb`'s.
-- `LOG_LEVEL`, read by both repositories, is one configuration key.
+- `LOG_LEVEL`, read from the environment by both repositories, is a candidate (E4): the
+  same name in two members is a lead, and neither declares it for the solution.
 - The catalogue gives tables, a view with the table it reads, columns with their keys, a
   routine with the tables it writes, roles, role membership and table grants.
 

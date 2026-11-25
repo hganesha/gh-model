@@ -18,7 +18,7 @@ from repo_intel import platforms
 from repo_intel.compile.contracts import entity_id
 from repo_intel.compile.ontology import EntityKind, Predicate, check_relation
 from repo_intel.solution import MemberData, SolutionError, SolutionView, nsid, parse_manifest, resolve, split
-from repo_intel.solution.identity import call_path, dataset_key, relational_key
+from repo_intel.solution.identity import call_path, dataset_key, query_method, relational_key
 
 FIXTURE = Path(__file__).parent / "fixtures" / "solution" / "F23-multi-repo-solution"
 CATALOG = FIXTURE / "solution" / ".rkp" / "inputs" / "catalog"
@@ -234,26 +234,70 @@ def test_columns_follow_their_tables():
     assert _rules(r, "same_column") == [(_id(service, "Field", {"table": "orders", "name": "Status"}), _id(catalog, "Field", {"table": "orders", "name": "status"}))]
 
 
-def test_topics_datasets_and_config_keys_match_by_name():
+def test_topics_and_sas_datasets_match_by_name():
     a = _member("producer", [
         ("EventTopic", {"name": "order-events"}, {}), ("EventTopic", {"name": "Audit"}, {}),
         ("Dataset", {"name": "SALES.Daily"}, {"platform": "sas"}), ("Dataset", {"name": "work.tmp"}, {"platform": "sas"}),
         ("Dataset", {"name": "scratch"}, {"platform": "sas"}), ("Dataset", {"name": "exports"}, {}),
-        ("ConfigKey", {"name": "ORDERS_TOPIC"}, {}), ("ConfigKey", {"name": "orders_topic"}, {}),
     ])
     b = _member("consumer", [
         ("EventTopic", {"name": "order-events"}, {}), ("EventTopic", {"name": "audit"}, {}),
-        ("Dataset", {"library": "sales", "name": "daily"}, {}), ("Dataset", {"name": "WORK.tmp"}, {"platform": "sas"}),
+        ("Dataset", {"library": "sales", "name": "daily"}, {"platform": "sas"}), ("Dataset", {"name": "WORK.tmp"}, {"platform": "sas"}),
         ("Dataset", {"name": "scratch"}, {"platform": "sas"}), ("Dataset", {"name": "exports"}, {}),
-        ("ConfigKey", {"name": "ORDERS_TOPIC"}, {}),
     ])
     r = resolve(SolutionView([a, b]))
     assert _rules(r, "same_topic") == [(_id(b, "EventTopic", {"name": "order-events"}), _id(a, "EventTopic", {"name": "order-events"}))], "topic names are compared exactly"
     assert _rules(r, "same_dataset") == [(_id(b, "Dataset", {"library": "sales", "name": "daily"}), _id(a, "Dataset", {"name": "SALES.Daily"}))]
-    assert _rules(r, "same_config_key") == [(_id(b, "ConfigKey", {"name": "ORDERS_TOPIC"}), _id(a, "ConfigKey", {"name": "ORDERS_TOPIC"}))]
     # WORK and one-level SAS names are a program's scratch data; a one-level name elsewhere is a lead only.
     assert _rules(r, "dataset_library_unstated") == [(_id(b, "Dataset", {"name": "exports"}), _id(a, "Dataset", {"name": "exports"}))]
     assert all(link["evidence_class"] == "E3" for link in r.links)
+
+
+def test_a_dotted_dataset_name_is_split_only_when_both_sides_are_sas():
+    """A JCL DSN `MART.SALES` is not a SAS library and member: matching it to SAS
+    `mart.sales` is a lead across platforms, never an exact link."""
+    jcl = _member("jobs", [
+        ("Dataset", {"name": "MART.SALES"}, {"platform": "jcl"}),
+        ("Dataset", {"name": "PROD.ORDERS"}, {"platform": "jcl", "platforms": ["jcl", "sas"]}),  # also declared by SAS
+        ("Dataset", {"name": "spark.events"}, {}),
+    ], role="batch")
+    sas = _member("reports", [
+        ("Dataset", {"name": "mart.sales"}, {"platform": "sas"}),
+        ("Dataset", {"name": "prod.orders"}, {"platform": "sas"}),
+    ], role="batch")
+    spark = _member("lake", [("Dataset", {"name": "spark.events"}, {})])
+    r = resolve(SolutionView([jcl, sas, spark]))
+    assert _rules(r, "same_dataset") == [(_id(sas, "Dataset", {"name": "prod.orders"}), _id(jcl, "Dataset", {"name": "PROD.ORDERS"}))], "both declared by SAS: exact"
+    found = {(c["from_name"], c["to_name"]): c for c in r.candidates if c["rule"] == "dataset_name_only"}
+    assert set(found) == {("mart.sales", "MART.SALES"), ("spark.events", "spark.events")}
+    assert found[("mart.sales", "MART.SALES")]["qualifiers"] == {"name": "mart.sales", "platforms": ["jcl", "sas"]}
+    assert all(c["evidence_class"] == "E4" and c["resolution"] == "candidate" for c in found.values())
+    assert r.canonical(_id(sas, "Dataset", {"name": "mart.sales"})) == _id(sas, "Dataset", {"name": "mart.sales"}), "a candidate is never merged"
+
+
+def test_config_keys_are_one_only_where_a_side_is_authoritative():
+    """`LOG_LEVEL` read by two services may be two settings; the solution's inputs, a
+    `config` or `database` member, or a shared non-default source settles it."""
+    web = _member("web", [("ConfigKey", {"name": "LOG_LEVEL"}, {}), ("ConfigKey", {"name": "shopdsn"}, {"source": "cfml_datasource"}), ("ConfigKey", {"name": "API_URL"}, {"source": "env"})], role="web")
+    service = _member("orders", [("ConfigKey", {"name": "LOG_LEVEL"}, {}), ("ConfigKey", {"name": "shopdsn"}, {"source": "cfml_datasource"}), ("ConfigKey", {"name": "API_URL"}, {"source": "env"})])
+    r = resolve(SolutionView([web, service]))
+    assert _rules(r, "same_config_key") == [(_id(service, "ConfigKey", {"name": "shopdsn"}), _id(web, "ConfigKey", {"name": "shopdsn"}))], "the same non-default source"
+    leads = {(c["from_name"], c["from_member"], c["to_member"]): c for c in r.candidates}
+    assert set(leads) == {("LOG_LEVEL", "orders", "web"), ("API_URL", "orders", "web")}
+    lead = leads[("LOG_LEVEL", "orders", "web")]
+    assert (lead["rule"], lead["evidence_class"], lead["resolution"], lead["qualifiers"]) == ("config_key_name_only", "E4", "candidate", {"name": "LOG_LEVEL"})
+    assert r.canonical(lead["from"]) == lead["from"]
+    # A member that declares configuration for the solution makes every reader one key with it.
+    for authority in (_member("settings", [("ConfigKey", {"name": "LOG_LEVEL"}, {})], role="config"), _member("inputs", [("ConfigKey", {"name": "LOG_LEVEL"}, {})], role="inputs", catalog=True)):
+        r = resolve(SolutionView([web, service, authority]))
+        target = _id(authority, "ConfigKey", {"name": "LOG_LEVEL"})
+        assert sorted(_rules(r, "same_config_key")) == sorted([
+            (_id(service, "ConfigKey", {"name": "shopdsn"}), _id(web, "ConfigKey", {"name": "shopdsn"})),
+            *([(_id(web, "ConfigKey", {"name": "LOG_LEVEL"}), target), (_id(service, "ConfigKey", {"name": "LOG_LEVEL"}), target)] if authority.is_catalog else
+              [(_id(service, "ConfigKey", {"name": "LOG_LEVEL"}), _id(web, "ConfigKey", {"name": "LOG_LEVEL"})), (target, _id(web, "ConfigKey", {"name": "LOG_LEVEL"}))]),
+        ])
+        assert not [c for c in r.candidates if c["from_name"] == "LOG_LEVEL"], "joined through the authority, so no lead between the readers"
+        assert all(x["evidence_class"] == "E3" for x in r.links)
 
 
 def test_name_only_matches_across_kinds_of_store_are_candidates():
@@ -322,13 +366,64 @@ def test_repeated_calls_pool_their_evidence_and_missing_exports_are_reported():
     assert coverage["orders"]["detail"]["available"] is False and coverage["orders"]["denominator"] == 0
 
 
+def _cfc_routes():
+    """The routes the CFML pack gives a component's remote methods, read from its own output."""
+    src = (b'<cfcomponent>\n'
+           b'<cffunction name="getOrder" access="remote" returntype="struct"><cfargument name="id"><cfreturn {}></cffunction>\n'
+           b'<cffunction name="saveOrder" access="remote"><cfargument name="order"><cfreturn true></cffunction>\n'
+           b'<cffunction name="helper" access="private"><cfreturn 1></cffunction>\n'
+           b'</cfcomponent>\n')
+    path = "services/OrderService.cfc"
+    [extractor] = [x for x in platforms.packs()["cfml"].extractors if x.matches(path)]
+    result = extractor.extract(path, src, hashlib.sha256(src).hexdigest())
+    return sorted(o.payload["natural_key"]["route"] for o in result.observations if o.kind == "entity" and o.payload["kind"] == "Endpoint")
+
+
+def test_cfc_remote_methods_are_separate_endpoints():
+    routes = _cfc_routes()
+    assert routes == ["/services/OrderService.cfc?method=getOrder", "/services/OrderService.cfc?method=saveOrder"]
+    caller = entity_id("local/web", "Component", {"root": ""})
+    calls = [
+        {"caller": caller, "path": "/services/OrderService.cfc?method=getOrder", "evidence_ids": ["ev_get"]},
+        {"caller": caller, "path": "https://shop.example.invalid/services/OrderService.cfc?method=SAVEORDER&id=1", "evidence_ids": ["ev_save"]},  # ColdFusion ignores case
+        {"caller": caller, "path": "/gateway/services/OrderService.cfc?method=getOrder", "evidence_ids": ["ev_prefix"]},
+        {"caller": caller, "path": "/services/OrderService.cfc?method=deleteOrder", "evidence_ids": ["ev_delete"]},
+        {"caller": caller, "path": "/services/OrderService.cfc?method={}", "evidence_ids": ["ev_dynamic"]},
+        {"caller": caller, "path": "/services/OrderService.cfc", "evidence_ids": ["ev_bare"]},
+        {"caller": caller, "path": "/api/orders?method=list", "evidence_ids": ["ev_rest"]},  # a REST endpoint: the query is its input
+    ]
+    web = _member("web", [("Component", {"root": ""}, {})], calls=calls)
+    legacy = _member("legacy", [_endpoint("ANY", route) for route in routes] + [_endpoint("GET", "/api/orders")], calls=[])
+    r = resolve(SolutionView([web, legacy]))
+    e = lambda method, route: _id(legacy, "Endpoint", {"component_root": "", "protocol": "http", "method": method, "route": route})
+    get, save = e("ANY", routes[0]), e("ANY", routes[1])
+    links = {(x["rule"], x["to"], tuple(sorted(i for ev in x["evidence"] if ev["member"] == "web" for i in ev["evidence_ids"]))) for x in r.links}
+    assert links == {
+        ("endpoint_path_unique", get, ("ev_get",)),
+        ("endpoint_path_unique", save, ("ev_save",)),
+        ("endpoint_path_unique", e("GET", "/api/orders"), ("ev_rest",)),
+    }, "each call reaches only the remote method it names"
+    assert next(x for x in r.links if x["to"] == save)["qualifiers"] == {"path": "/services/OrderService.cfc", "method": "unstated", "query_method": "saveorder"}
+    assert {(c["rule"], c["to"]) for c in r.candidates} == {("endpoint_path_suffix", get)}
+    assert {(u["reference"], u["reason"]) for u in r.unmatched} == {
+        ("/services/OrderService.cfc?method=deleteorder", "no_endpoint"),
+        ("/services/OrderService.cfc?method={}", "dynamic_url"),
+        ("/services/OrderService.cfc", "no_endpoint"),
+    }
+
+
 def test_key_helpers():
     m = MemberData(id="m", role="r", source="m", repository_id="r", database="Shop")
     assert relational_key(m, {"kind": "Table", "natural_key": {"datastore": "default", "name": "[dbo].[Orders]"}, "attributes": {}}) == ("shop", None, "orders")
     assert relational_key(m, {"kind": "Table", "natural_key": {"datastore": "dw", "name": "x.y"}, "attributes": {}}) == ("dw", "x", "y")
     assert relational_key(m, {"kind": "DataSchema", "natural_key": {"kind": "copybook", "name": "x"}, "attributes": {}}) is None
     assert relational_key(m, {"kind": "Table", "natural_key": {"datastore": "default", "name": "&lib..sales"}, "attributes": {}}) is None
-    assert dataset_key({"natural_key": {"name": "Lib.Member"}, "attributes": {}}) == ("lib", "member")
+    assert dataset_key({"natural_key": {"name": "Lib.Member"}, "attributes": {"platform": "sas"}}) == ("lib", "member")
+    assert dataset_key({"natural_key": {"name": "Lib.Member"}, "attributes": {"platforms": ["jcl", "sas"]}}) == ("lib", "member")
+    assert dataset_key({"natural_key": {"name": "MART.SALES"}, "attributes": {"platform": "jcl"}}) == (None, "mart.sales"), "a JCL DSN is not library.member"
+    assert query_method("/s/OrderService.cfc?method=getOrder&x=1") == ("getorder", False)
+    assert query_method("/s/OrderService.cfc?id=1&method={}") == (None, True)
+    assert query_method("/api/orders") == (None, False)
     assert dataset_key({"natural_key": {"name": "s3://bucket/key.csv"}, "attributes": {}}) == (None, "s3://bucket/key.csv")
     assert dataset_key({"natural_key": {"name": "&src..sales"}, "attributes": {}}) is None
     assert call_path("/api/orders?x=1") == "/api/orders"
@@ -412,10 +507,12 @@ def test_a_json_dump_gives_tables_views_columns_keys_routines_and_roles():
         "db:unique_constraint": (1, 1), "db:foreign_key": (1, 1), "db:check_constraint": (1, 0), "db:routine": (1, 1),
         "db:routine_parameter": (1, 1), "db:routine_lineage": (1, 1), "db:role_membership": (2, 2), "db:sequence": (1, 0), "db:trigger": (1, 0),
     }
-    # Every observation has a span into the file; what the catalogue declares is E1.
+    # Every observation has a span into the file; what the catalogue declares is E1,
+    # construct occurrences included (a dump is a declarative export).
     for o in result.observations:
         assert 0 <= o.evidence.span.start_byte < o.evidence.span.end_byte <= len(data)
-        assert o.kind == "construct" or o.evidence_class == "E1"
+        assert o.evidence_class == "E1", (o.kind, o.payload)
+    assert any(o.kind == "construct" for o in result.observations)
     first = next(o for o in result.observations if o.kind == "entity" and o.payload["natural_key"].get("name") == "orders" and o.payload["kind"] == "Table")
     assert data[first.evidence.span.start_byte:first.evidence.span.end_byte].startswith(b'{"table_catalog": "shopdb", "table_schema": "public", "table_name": "orders"')
 
@@ -563,10 +660,13 @@ def test_the_f23_links(shop_links):
         ("same_column", "orders", "customer_id", "inputs", "customer_id"),
         ("same_column", "orders", "status", "inputs", "status"),
         ("same_column", "orders", "total", "inputs", "total"),
-        ("same_config_key", "orders", "LOG_LEVEL", "web", "LOG_LEVEL"),
     }
     candidates = {(x["rule"], x["to_name"]) for x in r["candidates"]}
-    assert candidates == {("endpoint_method_unstated", "GET /api/orders"), ("endpoint_method_unstated", "POST /api/orders")}
+    assert candidates == {("endpoint_method_unstated", "GET /api/orders"), ("endpoint_method_unstated", "POST /api/orders"), ("config_key_name_only", "LOG_LEVEL")}
+    # Both repositories read LOG_LEVEL from the environment; neither declares it for the
+    # solution, so the shared name is a lead, not proof.
+    config = next(x for x in r["candidates"] if x["rule"] == "config_key_name_only")
+    assert (config["from_member"], config["to_member"], config["evidence_class"], config["predicate"]) == ("orders", "web", "E4", "ALIAS_OF")
     listing = next(x for x in r["candidates"] if x["to_name"] == "GET /api/orders")
     assert len(next(e for e in listing["evidence"] if e["member"] == "web")["evidence_ids"]) == 2, "both calls of /api/orders are cited"
     assert [(u["member"], u["kind"], u["reference"], u["reason"]) for u in r["unmatched"]] == [("web", "http_call", "/api/customers", "no_endpoint")]
@@ -597,7 +697,7 @@ def test_a_copied_bundle_is_hydrated_into_the_solution_cache(shop, tmp_path):
     assert (root / ".rkp" / "cache" / "solution" / "web").is_dir() and not (delivered / "cache").exists()
     assert any(e["kind"] == "Component" for e in solution.view.entities(member="web"))
     r = resolve(solution.view)
-    assert [x["rule"] for x in r.links] == ["same_config_key"], "no calls to link; the config key still matches"
+    assert r.links == [] and [x["rule"] for x in r.candidates] == ["config_key_name_only"], "no calls to link; the config key is still a lead"
     assert [c for c in r.coverage if c["scope"] == "web"][0]["detail"]["available"] is False
 
 
@@ -658,12 +758,12 @@ def test_cli_check_and_links(shop, capsys):
     event = json.loads(line)
     assert code == 0 and event["event"] == "result" and event["ok"] is True and event["solution"] == "shop"
     code, out, _ = _run(capsys, "solution", "links", str(shop))
-    assert code == 0 and out.startswith("solution shop: 7 links, 2 candidates, 1 unmatched")
+    assert code == 0 and out.startswith("solution shop: 6 links, 3 candidates, 1 unmatched")
     assert "endpoint_path_unique: web:Component shop-web -CONSUMES-> orders:Endpoint GET /api/orders/{order_id}" in out
     assert "web: http_call /api/customers (no_endpoint)" in out
     code, out, _ = _run(capsys, "solution", "links", str(shop), "--json")
     event = json.loads(out)
-    assert code == 0 and event["event"] == "result" and len(event["links"]) == 7 and len(event["candidates"]) == 2
+    assert code == 0 and event["event"] == "result" and len(event["links"]) == 6 and len(event["candidates"]) == 3
 
 
 def test_cli_reports_an_invalid_manifest(tmp_path, capsys):
