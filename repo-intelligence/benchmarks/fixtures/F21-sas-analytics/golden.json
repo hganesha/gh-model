@@ -1,0 +1,1336 @@
+{
+ "fixture": "F21-sas-analytics",
+ "description": "SAS analytics with no package manifest: a PROC FORMAT library, shared macros with a parameterised dataset name, a monthly summary that resolves a pinned macro variable, nets returns through WORK, runs PROC SQL, prints a PROC REPORT to an ODS PDF and exports a CSV, a stored process whose %GLOBAL prompts become a form, and native inputs under .rkp/inputs/sas/ (autoexec.sas with LIBNAME and FILENAME, a sasv9.cfg with -SET, a metadata export with a DI job and the stored process's prompts). Every item is due at M2, when the SAS pack lands.",
+ "entities": [
+  {
+   "kind": "Program",
+   "natural_key": {
+    "platform": "sas",
+    "name": "sas/programs/sales_summary.sas"
+   },
+   "since": "M2",
+   "attributes": {
+    "kind": "program",
+    "platform_kind": "sas:Program"
+   }
+  },
+  {
+   "kind": "Program",
+   "natural_key": {
+    "platform": "sas",
+    "name": "sas/formats/sales_formats.sas"
+   },
+   "since": "M2",
+   "attributes": {
+    "kind": "program"
+   }
+  },
+  {
+   "kind": "Program",
+   "natural_key": {
+    "platform": "sas",
+    "name": "sas/macros/sales_macros.sas"
+   },
+   "since": "M2",
+   "attributes": {
+    "kind": "program",
+    "macro_library": true
+   }
+  },
+  {
+   "kind": "Program",
+   "natural_key": {
+    "platform": "sas",
+    "name": "log_step"
+   },
+   "since": "M2",
+   "attributes": {
+    "kind": "macro",
+    "platform_kind": "sas:Macro"
+   }
+  },
+  {
+   "kind": "Program",
+   "natural_key": {
+    "platform": "sas",
+    "name": "month_slice"
+   },
+   "since": "M2",
+   "attributes": {
+    "kind": "macro"
+   }
+  },
+  {
+   "kind": "Program",
+   "natural_key": {
+    "platform": "sas",
+    "name": "sas/stp/regional_report.sas"
+   },
+   "since": "M2",
+   "attributes": {
+    "kind": "program",
+    "platform_kind": "sas:StoredProcess"
+   }
+  },
+  {
+   "kind": "Program",
+   "natural_key": {
+    "platform": "sas",
+    "name": ".rkp/inputs/sas/autoexec.sas"
+   },
+   "since": "M2",
+   "attributes": {
+    "role": "autoexec"
+   }
+  },
+  {
+   "kind": "Dataset",
+   "natural_key": {
+    "name": "raw.sales"
+   },
+   "since": "M2",
+   "attributes": {
+    "platform": "sas"
+   }
+  },
+  {
+   "kind": "Dataset",
+   "natural_key": {
+    "name": "raw.returns"
+   },
+   "since": "M2"
+  },
+  {
+   "kind": "Dataset",
+   "natural_key": {
+    "name": "mart.sales_clean"
+   },
+   "since": "M2",
+   "attributes": {
+    "macro_resolved": true
+   }
+  },
+  {
+   "kind": "Dataset",
+   "natural_key": {
+    "name": "mart.net_sales"
+   },
+   "since": "M2"
+  },
+  {
+   "kind": "Dataset",
+   "natural_key": {
+    "name": "mart.region_summary"
+   },
+   "since": "M2"
+  },
+  {
+   "kind": "Dataset",
+   "natural_key": {
+    "name": "mart.run_log"
+   },
+   "since": "M2"
+  },
+  {
+   "kind": "Dataset",
+   "natural_key": {
+    "name": "mart.sales_{month}"
+   },
+   "since": "M2",
+   "attributes": {
+    "parameterized": true
+   }
+  },
+  {
+   "kind": "ConfigKey",
+   "natural_key": {
+    "name": "libname:raw"
+   },
+   "since": "M2",
+   "attributes": {
+    "engine": "oracle",
+    "platform_kind": "sas:Library"
+   }
+  },
+  {
+   "kind": "ConfigKey",
+   "natural_key": {
+    "name": "libname:mart"
+   },
+   "since": "M2",
+   "attributes": {
+    "engine": "base"
+   }
+  },
+  {
+   "kind": "ConfigKey",
+   "natural_key": {
+    "name": "libname:fmtlib"
+   },
+   "since": "M2",
+   "attributes": {
+    "engine": "base"
+   }
+  },
+  {
+   "kind": "ConfigKey",
+   "natural_key": {
+    "name": "filename:rptdir"
+   },
+   "since": "M2",
+   "attributes": {
+    "device": "disk",
+    "platform_kind": "sas:Fileref"
+   }
+  },
+  {
+   "kind": "ConfigKey",
+   "natural_key": {
+    "name": "sas_env:RPT_ENV"
+   },
+   "since": "M2",
+   "attributes": {
+    "platform_kind": "sas:EnvironmentVariable"
+   }
+  },
+  {
+   "kind": "CodeList",
+   "natural_key": {
+    "platform": "sas",
+    "name": "$region"
+   },
+   "since": "M2",
+   "attributes": {
+    "platform_kind": "sas:Format",
+    "format_type": "value",
+    "entry_count": 5
+   }
+  },
+  {
+   "kind": "CodeList",
+   "natural_key": {
+    "platform": "sas",
+    "name": "amtband"
+   },
+   "since": "M2",
+   "attributes": {
+    "platform_kind": "sas:Format"
+   }
+  },
+  {
+   "kind": "CodeList",
+   "natural_key": {
+    "platform": "sas",
+    "name": "$regcode"
+   },
+   "since": "M2",
+   "attributes": {
+    "platform_kind": "sas:Informat"
+   }
+  },
+  {
+   "kind": "CodeList",
+   "natural_key": {
+    "platform": "sas",
+    "name": "pctfmt"
+   },
+   "since": "M2",
+   "attributes": {
+    "platform_kind": "sas:PictureFormat",
+    "fidelity": "unmapped"
+   }
+  },
+  {
+   "kind": "Report",
+   "natural_key": {
+    "platform": "sas",
+    "name": "region_summary.pdf"
+   },
+   "since": "M2",
+   "attributes": {
+    "platform_kind": "sas:OdsDocument",
+    "destination": "pdf",
+    "procedures": [
+     "report"
+    ]
+   }
+  },
+  {
+   "kind": "Report",
+   "natural_key": {
+    "platform": "sas",
+    "name": "region_summary.csv"
+   },
+   "since": "M2",
+   "attributes": {
+    "platform_kind": "sas:ExportFile",
+    "format": "csv"
+   }
+  },
+  {
+   "kind": "Report",
+   "natural_key": {
+    "platform": "sas",
+    "name": "sas/stp/regional_report.sas#output"
+   },
+   "since": "M2",
+   "attributes": {
+    "platform_kind": "sas:StoredProcessOutput",
+    "procedures": [
+     "print"
+    ]
+   }
+  },
+  {
+   "kind": "Screen",
+   "natural_key": {
+    "platform": "sas",
+    "name": "sas/stp/regional_report.sas"
+   },
+   "since": "M2",
+   "attributes": {
+    "platform_kind": "sas:PromptPage"
+   }
+  },
+  {
+   "kind": "Form",
+   "natural_key": {
+    "screen": "sas/stp/regional_report.sas",
+    "name": "prompts"
+   },
+   "since": "M2",
+   "attributes": {
+    "platform_kind": "sas:PromptGroup"
+   }
+  },
+  {
+   "kind": "UIControl",
+   "natural_key": {
+    "container": "sas/stp/regional_report.sas#prompts",
+    "name": "region"
+   },
+   "since": "M2",
+   "attributes": {
+    "platform_kind": "sas:Prompt",
+    "required": true
+   }
+  },
+  {
+   "kind": "UIControl",
+   "natural_key": {
+    "container": "sas/stp/regional_report.sas#prompts",
+    "name": "min_amount"
+   },
+   "since": "M2",
+   "attributes": {
+    "prompt_type": "numeric"
+   }
+  },
+  {
+   "kind": "Job",
+   "natural_key": {
+    "framework": "sas",
+    "name": "monthly_sales"
+   },
+   "since": "M2",
+   "attributes": {
+    "platform_kind": "sas:MetadataJob",
+    "type": "di_job"
+   }
+  },
+  {
+   "kind": "Task",
+   "natural_key": {
+    "framework": "sas",
+    "job": "monthly_sales",
+    "name": "load_formats"
+   },
+   "since": "M2"
+  },
+  {
+   "kind": "Task",
+   "natural_key": {
+    "framework": "sas",
+    "job": "monthly_sales",
+    "name": "summarise"
+   },
+   "since": "M2",
+   "attributes": {
+    "transformation": "User Written Code"
+   }
+  }
+ ],
+ "edges": [
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "sas",
+     "name": "sas/programs/sales_summary.sas"
+    }
+   },
+   "predicate": "CALLS",
+   "object": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "sas",
+     "name": "sas/macros/sales_macros.sas"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "sas",
+     "name": "sas/programs/sales_summary.sas"
+    }
+   },
+   "predicate": "CALLS",
+   "object": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "sas",
+     "name": "month_slice"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "sas",
+     "name": "sas/programs/sales_summary.sas"
+    }
+   },
+   "predicate": "CALLS",
+   "object": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "sas",
+     "name": "log_step"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "sas",
+     "name": "month_slice"
+    }
+   },
+   "predicate": "CALLS",
+   "object": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "sas",
+     "name": "log_step"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "sas",
+     "name": "sas/programs/sales_summary.sas"
+    }
+   },
+   "predicate": "READS_FROM",
+   "object": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "raw.sales"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "sas",
+     "name": "sas/programs/sales_summary.sas"
+    }
+   },
+   "predicate": "READS_FROM",
+   "object": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "raw.returns"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "sas",
+     "name": "sas/programs/sales_summary.sas"
+    }
+   },
+   "predicate": "WRITES_TO",
+   "object": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "mart.sales_clean"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "sas",
+     "name": "sas/programs/sales_summary.sas"
+    }
+   },
+   "predicate": "WRITES_TO",
+   "object": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "mart.net_sales"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "sas",
+     "name": "sas/programs/sales_summary.sas"
+    }
+   },
+   "predicate": "WRITES_TO",
+   "object": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "mart.region_summary"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "sas",
+     "name": "log_step"
+    }
+   },
+   "predicate": "WRITES_TO",
+   "object": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "mart.run_log"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "sas",
+     "name": "month_slice"
+    }
+   },
+   "predicate": "WRITES_TO",
+   "object": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "mart.sales_{month}"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "sas",
+     "name": "month_slice"
+    }
+   },
+   "predicate": "READS_FROM",
+   "object": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "mart.sales_clean"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "sas",
+     "name": "sas/programs/sales_summary.sas"
+    }
+   },
+   "predicate": "REFERENCES_CONFIG",
+   "object": {
+    "kind": "ConfigKey",
+    "natural_key": {
+     "name": "libname:mart"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "sas",
+     "name": "sas/programs/sales_summary.sas"
+    }
+   },
+   "predicate": "REFERENCES_CONFIG",
+   "object": {
+    "kind": "ConfigKey",
+    "natural_key": {
+     "name": "libname:raw"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "sas",
+     "name": ".rkp/inputs/sas/autoexec.sas"
+    }
+   },
+   "predicate": "REFERENCES_CONFIG",
+   "object": {
+    "kind": "ConfigKey",
+    "natural_key": {
+     "name": "libname:fmtlib"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "sas",
+     "name": ".rkp/inputs/sas/autoexec.sas"
+    }
+   },
+   "predicate": "REFERENCES_CONFIG",
+   "object": {
+    "kind": "ConfigKey",
+    "natural_key": {
+     "name": "sas_env:RPT_ENV"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "sas",
+     "name": "sas/formats/sales_formats.sas"
+    }
+   },
+   "predicate": "WRITES_TO",
+   "object": {
+    "kind": "CodeList",
+    "natural_key": {
+     "platform": "sas",
+     "name": "$region"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "sas",
+     "name": "sas/formats/sales_formats.sas"
+    }
+   },
+   "predicate": "WRITES_TO",
+   "object": {
+    "kind": "CodeList",
+    "natural_key": {
+     "platform": "sas",
+     "name": "amtband"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "sas",
+     "name": "sas/formats/sales_formats.sas"
+    }
+   },
+   "predicate": "WRITES_TO",
+   "object": {
+    "kind": "CodeList",
+    "natural_key": {
+     "platform": "sas",
+     "name": "$regcode"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "sas",
+     "name": "sas/programs/sales_summary.sas"
+    }
+   },
+   "predicate": "READS_FROM",
+   "object": {
+    "kind": "CodeList",
+    "natural_key": {
+     "platform": "sas",
+     "name": "$region"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "sas",
+     "name": "sas/programs/sales_summary.sas"
+    }
+   },
+   "predicate": "READS_FROM",
+   "object": {
+    "kind": "CodeList",
+    "natural_key": {
+     "platform": "sas",
+     "name": "amtband"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "sas",
+     "name": "sas/stp/regional_report.sas"
+    }
+   },
+   "predicate": "READS_FROM",
+   "object": {
+    "kind": "CodeList",
+    "natural_key": {
+     "platform": "sas",
+     "name": "$region"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "sas",
+     "name": "sas/programs/sales_summary.sas"
+    }
+   },
+   "predicate": "PRODUCES",
+   "object": {
+    "kind": "Report",
+    "natural_key": {
+     "platform": "sas",
+     "name": "region_summary.pdf"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "sas",
+     "name": "sas/programs/sales_summary.sas"
+    }
+   },
+   "predicate": "PRODUCES",
+   "object": {
+    "kind": "Report",
+    "natural_key": {
+     "platform": "sas",
+     "name": "region_summary.csv"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "sas",
+     "name": "sas/stp/regional_report.sas"
+    }
+   },
+   "predicate": "PRODUCES",
+   "object": {
+    "kind": "Report",
+    "natural_key": {
+     "platform": "sas",
+     "name": "sas/stp/regional_report.sas#output"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "sas",
+     "name": "sas/stp/regional_report.sas"
+    }
+   },
+   "predicate": "READS_FROM",
+   "object": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "mart.net_sales"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "mart.sales_clean"
+    }
+   },
+   "predicate": "DERIVED_FROM",
+   "object": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "raw.sales"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "mart.net_sales"
+    }
+   },
+   "predicate": "DERIVED_FROM",
+   "object": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "mart.sales_clean"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "mart.net_sales"
+    }
+   },
+   "predicate": "DERIVED_FROM",
+   "object": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "raw.returns"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "mart.region_summary"
+    }
+   },
+   "predicate": "DERIVED_FROM",
+   "object": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "mart.net_sales"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "mart.sales_{month}"
+    }
+   },
+   "predicate": "DERIVED_FROM",
+   "object": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "mart.sales_clean"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Screen",
+    "natural_key": {
+     "platform": "sas",
+     "name": "sas/stp/regional_report.sas"
+    }
+   },
+   "predicate": "CONTAINS",
+   "object": {
+    "kind": "Form",
+    "natural_key": {
+     "screen": "sas/stp/regional_report.sas",
+     "name": "prompts"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Form",
+    "natural_key": {
+     "screen": "sas/stp/regional_report.sas",
+     "name": "prompts"
+    }
+   },
+   "predicate": "CONTAINS",
+   "object": {
+    "kind": "UIControl",
+    "natural_key": {
+     "container": "sas/stp/regional_report.sas#prompts",
+     "name": "region"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Form",
+    "natural_key": {
+     "screen": "sas/stp/regional_report.sas",
+     "name": "prompts"
+    }
+   },
+   "predicate": "CONTAINS",
+   "object": {
+    "kind": "UIControl",
+    "natural_key": {
+     "container": "sas/stp/regional_report.sas#prompts",
+     "name": "min_amount"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Form",
+    "natural_key": {
+     "screen": "sas/stp/regional_report.sas",
+     "name": "prompts"
+    }
+   },
+   "predicate": "SUBMITS_TO",
+   "object": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "sas",
+     "name": "sas/stp/regional_report.sas"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "sas",
+     "name": "monthly_sales"
+    }
+   },
+   "predicate": "CONTAINS",
+   "object": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "sas",
+     "job": "monthly_sales",
+     "name": "load_formats"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "sas",
+     "name": "monthly_sales"
+    }
+   },
+   "predicate": "CONTAINS",
+   "object": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "sas",
+     "job": "monthly_sales",
+     "name": "summarise"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "sas",
+     "job": "monthly_sales",
+     "name": "summarise"
+    }
+   },
+   "predicate": "DEPENDS_ON",
+   "object": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "sas",
+     "job": "monthly_sales",
+     "name": "load_formats"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "sas",
+     "job": "monthly_sales",
+     "name": "load_formats"
+    }
+   },
+   "predicate": "RUNS",
+   "object": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "sas",
+     "name": "sas/formats/sales_formats.sas"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "sas",
+     "job": "monthly_sales",
+     "name": "summarise"
+    }
+   },
+   "predicate": "RUNS",
+   "object": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "sas",
+     "name": "sas/programs/sales_summary.sas"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "sas",
+     "job": "monthly_sales",
+     "name": "summarise"
+    }
+   },
+   "predicate": "READS_FROM",
+   "object": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "raw.sales"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "sas",
+     "job": "monthly_sales",
+     "name": "summarise"
+    }
+   },
+   "predicate": "WRITES_TO",
+   "object": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "mart.region_summary"
+    }
+   },
+   "since": "M2"
+  }
+ ],
+ "absent_entities": [
+  {
+   "kind": "Dataset",
+   "natural_key": {
+    "name": "work.returns_by_sale"
+   },
+   "why": "WORK is SAS's temporary library"
+  },
+  {
+   "kind": "Dataset",
+   "natural_key": {
+    "name": "work.sorted_sales"
+   },
+   "why": "an OUT= in WORK is temporary"
+  },
+  {
+   "kind": "Dataset",
+   "natural_key": {
+    "name": "returns_by_sale"
+   },
+   "why": "a one-level name is a WORK dataset"
+  },
+  {
+   "kind": "Dataset",
+   "natural_key": {
+    "name": "sorted_sales"
+   },
+   "why": "a one-level name in PROC SQL is a WORK dataset"
+  },
+  {
+   "kind": "Dataset",
+   "natural_key": {
+    "name": "&mart..sales_clean"
+   },
+   "why": "a macro variable the file pins (%LET mart = mart) is resolved, not kept as text"
+  },
+  {
+   "kind": "Dataset",
+   "natural_key": {
+    "name": "{mart}.sales_clean"
+   },
+   "why": "a resolved macro variable leaves no placeholder"
+  },
+  {
+   "kind": "Dataset",
+   "natural_key": {
+    "name": "mart.sales_x_____"
+   },
+   "why": "the masked macro variable must not leak into a name"
+  },
+  {
+   "kind": "ConfigKey",
+   "natural_key": {
+    "name": "libname:/sasdata/sales/mart"
+   },
+   "why": "library paths are never recorded"
+  },
+  {
+   "kind": "CodeList",
+   "natural_key": {
+    "platform": "sas",
+    "name": "datetime"
+   },
+   "why": "built-in formats are not reference data"
+  },
+  {
+   "kind": "CodeList",
+   "natural_key": {
+    "platform": "sas",
+    "name": "comma"
+   },
+   "why": "built-in formats are not reference data"
+  },
+  {
+   "kind": "Program",
+   "natural_key": {
+    "platform": "sas",
+    "name": "sysget"
+   },
+   "why": "a macro function is not a macro"
+  },
+  {
+   "kind": "Program",
+   "natural_key": {
+    "platform": "sas",
+    "name": "stpbegin"
+   },
+   "why": "%STPBEGIN is a SAS-supplied macro, modelled as the stored process's output"
+  },
+  {
+   "kind": "Report",
+   "natural_key": {
+    "platform": "sas",
+    "name": "sas/programs/sales_summary.sas#report1"
+   },
+   "why": "a PROC REPORT inside an open ODS document belongs to that document"
+  }
+ ],
+ "exclusions": [],
+ "forbidden_kinds": [
+  "Package",
+  "Component"
+ ],
+ "expected_unknowns": [
+  {
+   "since": "M2",
+   "detail": "month_slice names mart.sales_&month from its parameter: kept as mart.sales_{month}, parameterized, with a diagnostic"
+  },
+  {
+   "since": "M2",
+   "detail": "&nregions is set by SELECT INTO at run time: the %PUT stays a template"
+  },
+  {
+   "since": "M2",
+   "detail": "the stored process's prompts come from its caller: &region and &min_amount stay dynamic"
+  }
+ ],
+ "expected_conflicts": [],
+ "commits": [
+  {
+   "dir": "01-churn-model",
+   "expect": "A churn program fits a logistic model and scores customers",
+   "added_entities": [
+    {
+     "kind": "Program",
+     "natural_key": {
+      "platform": "sas",
+      "name": "sas/programs/churn.sas"
+     },
+     "since": "M2"
+    },
+    {
+     "kind": "Dataset",
+     "natural_key": {
+      "name": "mart.churn_coef"
+     },
+     "since": "M2"
+    },
+    {
+     "kind": "Dataset",
+     "natural_key": {
+      "name": "mart.churn_scores"
+     },
+     "since": "M2"
+    },
+    {
+     "kind": "Dataset",
+     "natural_key": {
+      "name": "mart.customer_history"
+     },
+     "since": "M2"
+    }
+   ],
+   "removed_entities": []
+  },
+  {
+   "dir": "02-channel-format",
+   "expect": "A new $channel format joins the format library",
+   "added_entities": [
+    {
+     "kind": "CodeList",
+     "natural_key": {
+      "platform": "sas",
+      "name": "$channel"
+     },
+     "since": "M2"
+    }
+   ],
+   "removed_entities": []
+  },
+  {
+   "dir": "03-retire-stored-process",
+   "expect": "The stored process, its prompts, its output and the metadata export are gone",
+   "added_entities": [],
+   "removed_entities": [
+    {
+     "kind": "Program",
+     "natural_key": {
+      "platform": "sas",
+      "name": "sas/stp/regional_report.sas"
+     },
+     "since": "M2"
+    },
+    {
+     "kind": "Screen",
+     "natural_key": {
+      "platform": "sas",
+      "name": "sas/stp/regional_report.sas"
+     },
+     "since": "M2"
+    },
+    {
+     "kind": "Form",
+     "natural_key": {
+      "screen": "sas/stp/regional_report.sas",
+      "name": "prompts"
+     },
+     "since": "M2"
+    },
+    {
+     "kind": "UIControl",
+     "natural_key": {
+      "container": "sas/stp/regional_report.sas#prompts",
+      "name": "region"
+     },
+     "since": "M2"
+    },
+    {
+     "kind": "Report",
+     "natural_key": {
+      "platform": "sas",
+      "name": "sas/stp/regional_report.sas#output"
+     },
+     "since": "M2"
+    },
+    {
+     "kind": "Job",
+     "natural_key": {
+      "framework": "sas",
+      "name": "monthly_sales"
+     },
+     "since": "M2"
+    }
+   ]
+  }
+ ],
+ "decision_cases": [],
+ "granularity": {
+  "label": null,
+  "why": "batch analytics programs, not a deployed application",
+  "source": "fixture design"
+ }
+}
