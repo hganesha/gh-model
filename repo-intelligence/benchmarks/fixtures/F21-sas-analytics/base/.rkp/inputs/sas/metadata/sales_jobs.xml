@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Exported from SAS Management Console: the monthly sales job and the regional stored process. -->
+<Export>
+  <Job Name="monthly_sales">
+    <Step Name="load_formats" Program="sas/formats/sales_formats.sas" Transformation="User Written Code"/>
+    <Step Name="summarise" Program="sas/programs/sales_summary.sas" Transformation="User Written Code">
+      <Source Table="raw.sales"/>
+      <Source Table="raw.returns"/>
+      <Target Table="mart.region_summary"/>
+    </Step>
+  </Job>
+  <StoredProcess Name="Regional sales" SourceFile="sas/stp/regional_report.sas" Server="SASApp - Logical Stored Process Server">
+    <Prompt Name="region" Type="Text" Required="true"/>
+    <Prompt Name="min_amount" Type="Numeric"/>
+  </StoredProcess>
+</Export>

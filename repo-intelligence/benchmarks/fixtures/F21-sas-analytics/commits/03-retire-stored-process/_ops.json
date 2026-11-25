@@ -1,0 +1,1 @@
+{"message": "Retire the regional stored process (moved to Visual Analytics)", "delete": ["sas/stp/regional_report.sas", ".rkp/inputs/sas/metadata/sales_jobs.xml"]}
