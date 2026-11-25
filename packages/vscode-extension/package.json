@@ -148,9 +148,10 @@
   },
   "scripts": {
     "build": "npm run build:extension && npm run build:webview && npm run build:tests",
-    "build:extension": "esbuild src/extension.ts --bundle --platform=node --target=node20 --format=cjs --external:vscode --sourcemap --outfile=dist/extension.js",
+    "build:bundle": "npm run build --workspace @rkp/bundle",
+    "build:extension": "npm run build:bundle && esbuild src/extension.ts --bundle --platform=node --target=node20 --format=cjs --external:vscode --sourcemap --outfile=dist/extension.js",
     "build:tests": "tsc -p tsconfig.test.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit && tsc -p webview/tsconfig.json",
+    "typecheck": "npm run build:bundle && tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit && tsc -p webview/tsconfig.json",
     "test": "npm run build && node out/test/runTest.js",
     "package": "npm run build:extension && npm run build:webview && vsce package --no-dependencies --skip-license --out dist/rkp-vscode.vsix",
     "build:webview": "node scripts/build-webview.mjs --minify",
