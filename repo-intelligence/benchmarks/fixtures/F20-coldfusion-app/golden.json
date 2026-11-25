@@ -456,6 +456,28 @@
   {
    "kind": "UIControl",
    "natural_key": {
+    "container": "index.cfm",
+    "name": "link:orders/list.cfm~2"
+   },
+   "since": "M2",
+   "attributes": {
+    "control": "link"
+   }
+  },
+  {
+   "kind": "UIControl",
+   "natural_key": {
+    "container": "index.cfm",
+    "name": "link:https://help.example.com"
+   },
+   "since": "M2",
+   "attributes": {
+    "control": "link"
+   }
+  },
+  {
+   "kind": "UIControl",
+   "natural_key": {
     "container": "orders/list.cfm#filter",
     "name": "submit"
    },
@@ -1390,6 +1412,24 @@
     "kind": "Program",
     "natural_key": {
      "platform": "cfml",
+     "name": "login.cfm"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "cfml",
+     "name": "orders/save.cfm"
+    }
+   },
+   "predicate": "NAVIGATES_TO",
+   "object": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "cfml",
      "name": "orders/list.cfm"
     }
    },
@@ -1492,7 +1532,7 @@
     "container": "index.cfm",
     "name": "link:https://help.example.com/orderdesk"
    },
-   "why": "a link to another site is not navigation inside the application"
+   "why": "a link to another host is named by its scheme and host only: its path, query and user information are not kept"
   },
   {
    "kind": "Endpoint",

@@ -7,7 +7,7 @@
   WHERE o.status = <cfqueryparam value="#url.status#" cfsqltype="cf_sql_varchar">
   ORDER BY o.placed_on DESC
 </cfquery>
-<form name="filter" action="list.cfm" method="get">
+<form name="filter" action="list.cfm?view=f20-planted-view" method="get">
   <select name="status">
     <option value="open">Open</option>
     <option value="shipped">Shipped</option>

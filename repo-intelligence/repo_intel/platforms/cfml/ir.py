@@ -209,7 +209,7 @@ def literal_prefix(e: Expr | None) -> tuple[str | None, bool]:
     `"save.cfm?id=#id#"` gives ("save.cfm", True): only the query string is dynamic."""
     s = lit_str(e)
     if s is not None:
-        return re.split(r"[?#]", s, 1)[0], True
+        return re.split(r"[?#]", s, maxsplit=1)[0], True
     if isinstance(e, dict) and e.get("e") == "template" and e["parts"] and isinstance(e["parts"][0], str):
         head = e["parts"][0]
         if "?" in head:
@@ -362,7 +362,10 @@ def tag_statements(ctx: Ctx, name: str, attrs: dict[str, Expr], body: list[Stmt]
         return [{"op": "assign", "at": at, "target": assign_target(ctx, target), "value": call}]
     if name == "httpparam":
         ctx.construct(cid, a, b)
-        return [{"op": "call", "at": at, "httpparam": True, "call": {"e": "struct", "fields": clean_attrs(attrs)}}]
+        # A literal parameter value is a request value (a query value, a header such as
+        # Authorization, a form field): it is not copied. A computed value stays.
+        fields = {k: v for k, v in clean_attrs(attrs).items() if not (k == "value" and lit_str(v) is not None)}
+        return [{"op": "call", "at": at, "httpparam": True, "call": {"e": "struct", "fields": fields}}]
     if name == "invoke":
         return invoke(ctx, attrs, body or [], a, b)
     if name == "invokeargument":
