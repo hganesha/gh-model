@@ -116,12 +116,13 @@ test("indexes behaviour rows by owner and skips tables it does not know", async 
     params: [], body: [{ op: "exit", at: [0, 4] }], evidence_ids: ["ev_1"], evidence_class: "E2",
   });
   const root = await writeBundle({ ...manifest, bundle_format: "rkp-bundle/2", units: [{ ...manifest.units[0], behaviors: 2 }] }, {
-    "units/root.jsonl": [...unitRows, behavior("bhv_2", "ent_a"), behavior("bhv_1", "ent_a"), { table: "something_newer", id: "x" }],
+    "units/root.jsonl": [...unitRows, { ...behavior("bhv_2", "ent_a"), kind: "data_step" }, behavior("bhv_1", "ent_a"), { table: "something_newer", id: "x" }],
   });
   const bundle = await loadBundle(root);
   assert.ok(bundle);
   assert.deepEqual(bundle.behaviorOf("ent_a").map((b) => b.id), ["bhv_1", "bhv_2"]);
   assert.equal(bundle.behaviorOf("ent_a")[0]?.language, "cfml");
+  assert.deepEqual(bundle.behaviorOf("ent_a").map((b) => b.kind), [undefined, "data_step"], "a unit's kind is kept when it has one");
   assert.deepEqual(bundle.behaviorOf("ent_b"), []);
   assert.equal(bundle.entities.size, 2);
 });

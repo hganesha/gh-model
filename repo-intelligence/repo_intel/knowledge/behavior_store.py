@@ -5,14 +5,15 @@ its shard's `behaviors` table, keyed by the entity that owns it (a Symbol or Pro
 
     {"id": "bhv_...", "owner": <entity id>, "artifact": <entity id of the file>,
      "schema": "rkp-behavior/1", "language": ..., "params": [...], "body": [...],
+     "kind": "data_step" (only when the pack gave one),
      "evidence_ids": [<evidence id>], "evidence_class": "E2"}
 
 This module loads those rows for an entity and walks their statements to summarise what
 the code says it does: the functions and components it calls by name, the SQL it runs
 (with the tables a simple scanner finds), what it includes, where it redirects and what it
 writes on each output channel. The summary is read from the code as written: a target
-held in a variable stays dynamic and is counted, never guessed. Nothing here adds
-relations to the graph.
+held in a variable, or a table name built from text substituted into the SQL, stays
+dynamic and is counted, never guessed. Nothing here adds relations to the graph.
 
 Behaviour is function-level detail: an architecture-tier bundle does not commit it
 (repo_intel.knowledge.bundle.DETAIL_TABLES), so a fresh clone has none until it compiles.
@@ -21,6 +22,7 @@ Behaviour is function-level detail: an architecture-tier bundle does not commit 
 from __future__ import annotations
 
 import re
+from collections import Counter
 from collections.abc import Iterable, Mapping
 from typing import Any
 
@@ -56,8 +58,9 @@ def load(store: ObjectStore, manifest: Manifest, entity_id: str) -> list[dict[st
 # ------------------------------------------------------------------ SQL tables
 
 # One SQL token. Strings and comments are matched so that their contents are never read as
-# names; an identifier may be quoted ("x", [x], `x`) and qualified (schema.table).
-_PART = r'(?:"[^"]*"|\[[^\]]*\]|`[^`]*`|[A-Za-z_#&@:$][\w#&@$]*)'
+# names; an identifier may be quoted ("x", [x], `x`) and qualified (schema.table). A `:name`
+# inside a word (`orders_:region`) stays part of it: the lowering put a substitution there.
+_PART = r'(?:"[^"]*"|\[[^\]]*\]|`[^`]*`|[A-Za-z_#&@:$](?:[\w#&@$]|:(?=[A-Za-z_]))*)'
 _SQL_TOKEN = re.compile(
     r"(?P<space>\s+)|(?P<comment>--[^\n]*|/\*.*?(?:\*/|$))|(?P<string>'(?:[^']|'')*'?)"
     rf"|(?P<ident>{_PART}(?:\s*\.\.?\s*{_PART})*)|(?P<punct>[(),;])|(?P<other>.)",
@@ -69,7 +72,9 @@ _STOP = frozenset("""
     JOIN INNER LEFT RIGHT FULL CROSS OUTER NATURAL ON USING SET VALUES VALUE SELECT WHEN THEN
     FOR AS WITH LATERAL ONLY DEFAULT OUTPUT FROM INTO UPDATE DELETE INSERT MERGE TABLE TOP
 """.split())
-_MAIN = ("SELECT", "INSERT", "UPDATE", "DELETE", "MERGE", "UPSERT", "REPLACE")
+_MAIN = ("SELECT", "INSERT", "UPDATE", "DELETE", "MERGE", "UPSERT", "REPLACE", "CREATE")
+# Words between CREATE and TABLE or VIEW: CREATE OR REPLACE GLOBAL TEMPORARY TABLE ...
+_CREATE_MODIFIERS = frozenset({"OR", "REPLACE", "GLOBAL", "LOCAL", "TEMP", "TEMPORARY", "UNLOGGED", "MATERIALIZED", "RECURSIVE"})
 # Functions whose argument list uses FROM: EXTRACT(YEAR FROM d), TRIM(x FROM y), ...
 _FROM_FUNCTIONS = frozenset({"EXTRACT", "SUBSTRING", "TRIM", "POSITION", "OVERLAY"})
 _PSEUDO_TABLES = frozenset({"DUAL"})
@@ -91,25 +96,71 @@ def _name(text: str) -> str:
     return re.sub(r"\s*(\.\.?)\s*", r"\1", unquoted)
 
 
+_QUOTED = re.compile(r'"[^"]*"|\[[^\]]*\]|`[^`]*`')
+
+
 def _dynamic(text: str) -> bool:
-    """A name built at run time (#var# in CFML, &var in SAS) cannot be read from the text."""
-    return "#" in text or "&" in text
+    """A name built at run time cannot be read from the text: #var# in CFML, &var in SAS, or a
+    `:name` parameter that is only part of the name (`orders_:region`, `:schema.orders`)."""
+    return "#" in text or "&" in text or ":" in _QUOTED.sub("", text)
 
 
 def _variable(text: str) -> bool:
-    """A host or bind variable (:name, @name): never a table."""
-    return text[:1] in (":", "@")
+    """A host or bind variable on its own (:name, @name): never a table."""
+    return re.fullmatch(r"[:@][\w$]+", text) is not None
 
 
-def sql_tables(sql: str) -> dict[str, Any]:
-    """The tables a SQL text names after FROM, JOIN, USING, INTO and UPDATE, by a token scan.
+def _inline(param: Any) -> bool:
+    """A parameter whose text is substituted into the SQL before it runs, not bound.
+
+    The pack says so with `"inline": true`. A SAS macro variable is always substituted as
+    text (PROC SQL has no bind parameters), so a parameter whose value is one counts too.
+    """
+    if not isinstance(param, dict) or not isinstance(param.get("name"), str):
+        return False
+    value = param.get("value")
+    return param.get("inline") is True or (isinstance(value, dict) and value.get("e") == "var" and value.get("scope") == "macro")
+
+
+def mark_inline(sql: str, params: Iterable[Any] = ()) -> str:
+    """The SQL with each inline parameter written back as a substitution, `:name` -> `#name#`.
+
+    A lowering writes CFML `orders_#url.region#` and SAS `orders_&region` as
+    `orders_:region`; marking the substitution keeps the scanner from reading `orders_` as
+    the table, and lists `orders_#region#` as dynamic instead. A placeholder that is longer
+    than any parameter's name (`:region_2024` for `#region#_2024`) is matched by its longest
+    inline prefix. Bind parameters and `::type` casts are left as they are.
+    """
+    params = [p for p in params if isinstance(p, dict) and isinstance(p.get("name"), str)]
+    inline = {p["name"] for p in params if _inline(p)}
+    if not inline:
+        return sql
+    bound = {p["name"] for p in params} - inline
+    longest = sorted(inline, key=lambda n: (-len(n), n))
+
+    def mark(m: re.Match[str]) -> str:
+        word = m.group(1)
+        if word in inline:
+            return f"#{word}#"
+        if word in bound:
+            return m.group()
+        prefix = next((n for n in longest if word.startswith(n)), None)
+        return f"#{prefix}#{word[len(prefix):]}" if prefix else m.group()
+
+    return re.sub(r"(?<!:):([A-Za-z_]\w*)", mark, sql)
+
+
+def sql_tables(sql: str, params: Iterable[Any] = ()) -> dict[str, Any]:
+    """The tables a SQL text names after FROM, JOIN, USING, INTO, UPDATE and CREATE, by a token scan.
 
     `reads` are tables after FROM, JOIN and USING; `writes` the targets of INSERT/SELECT
-    INTO, UPDATE, MERGE INTO and DELETE FROM. Names made at run time are listed under
-    `dynamic` as written and not resolved. Common table expressions are not tables.
-    `statement` is the main statement's keyword, lower-case.
+    INTO, UPDATE, MERGE INTO, DELETE FROM and CREATE TABLE/VIEW. Names made at run time are
+    listed under `dynamic` as written and not resolved: `#x#` and `&x` substitutions, a word
+    with a `:name` in it, and every `params` entry marked inline (see `mark_inline`).
+    Common table expressions are not tables. `statement` is the main statement's keyword,
+    lower-case.
     """
-    toks = _tokens(sql)
+    toks = _tokens(mark_inline(sql, params))
     up = [t.upper() if k == "ident" else t for k, t in toks]
 
     # The main statement, and the names of common table expressions (`name [(cols)] AS (`).
@@ -121,7 +172,7 @@ def sql_tables(sql: str) -> dict[str, Any]:
             depth += 1
         elif text == ")":
             depth = max(0, depth - 1)
-        elif depth == 0 and kind == "ident" and u not in _STOP:
+        elif depth == 0 and kind == "ident" and u not in _STOP and (not i or up[i - 1] not in ("TABLE", "VIEW", "EXISTS")):
             j = i + 1
             if j < len(toks) and toks[j][1] == "(":  # an optional column list
                 level = 0
@@ -201,6 +252,15 @@ def sql_tables(sql: str) -> dict[str, Any]:
             table_at(i + 1, True, as_list=False, call_ok=True)
         elif u == "UPDATE" and nxt != "SET" and prev not in ("FOR", "KEY", "THEN", "ON"):
             table_at(i + 1, True, as_list=False, call_ok=False)
+        elif u == "CREATE":
+            j = i + 1
+            while j < len(toks) and up[j] in _CREATE_MODIFIERS:
+                j += 1
+            if j < len(toks) and up[j] in ("TABLE", "VIEW"):
+                j += 1
+                if up[j:j + 3] == ["IF", "NOT", "EXISTS"]:
+                    j += 3
+                table_at(j, True, as_list=False, call_ok=True)  # a column list may follow the name
     return {"statement": statement.lower(), "reads": sorted(reads), "writes": sorted(writes), "dynamic": sorted(dynamic)}
 
 
@@ -247,9 +307,15 @@ def _callee(node: Mapping[str, Any]) -> tuple[str, str] | None:
     return (name, "function") if name else None
 
 
-def _target(stmt: Mapping[str, Any], unit_id: str) -> dict[str, Any]:
+def _origin(unit: Mapping[str, Any], stmt: Mapping[str, Any]) -> dict[str, Any]:
+    """Where a fact comes from: the unit's row id, its kind when it has one, and the span."""
+    kind = unit.get("kind")
+    return {"behavior_id": unit["id"], **({"unit_kind": kind} if isinstance(kind, str) else {}), "at": stmt.get("at")}
+
+
+def _target(stmt: Mapping[str, Any], unit: Mapping[str, Any]) -> dict[str, Any]:
     literal = _literal(stmt.get("target"))
-    out: dict[str, Any] = {"behavior_id": unit_id, "at": stmt.get("at")}
+    out: dict[str, Any] = _origin(unit, stmt)
     if literal is not None:
         out["target"] = literal
     else:
@@ -262,8 +328,10 @@ def summarize(units: list[Mapping[str, Any]]) -> dict[str, Any]:
     """What the behaviour units of one entity state, in source order within each unit.
 
     Calls are aggregated by callee; queries, includes and redirects are listed with the
-    unit and span they come from; outputs are counted by channel. Calls, includes and
-    redirects whose target is computed are counted as dynamic, not resolved.
+    unit (and its `kind`, as `unit_kind`, when it has one) and span they come from; outputs
+    are counted by channel and units by kind. Calls, includes and redirects whose target is
+    computed are counted as dynamic, not resolved; so are table names a query builds from
+    inline parameters (`inline_params`).
     """
     calls: dict[tuple[str, str], int] = {}
     dynamic_calls = 0
@@ -287,20 +355,21 @@ def summarize(units: list[Mapping[str, Any]]) -> dict[str, Any]:
             elif e == "platform":
                 constructs[node["construct"]] = constructs.get(node["construct"], 0) + 1
             if op == "query":
-                found_tables = sql_tables(node["sql"])
+                params = [p for p in node.get("params", []) if isinstance(p, dict) and isinstance(p.get("name"), str)]
                 query: dict[str, Any] = {
-                    "behavior_id": unit["id"], "at": node.get("at"), "sql": node["sql"],
+                    **_origin(unit, node), "sql": node["sql"],
                     "datasource": node.get("datasource") if isinstance(node.get("datasource"), str) else None,
-                    "params": [p["name"] for p in node.get("params", []) if isinstance(p, dict) and isinstance(p.get("name"), str)],
-                    **found_tables,
+                    "params": [p["name"] for p in params],
+                    "inline_params": [p["name"] for p in params if _inline(p)],
+                    **sql_tables(node["sql"], params),
                 }
                 if isinstance(node.get("target"), dict) and _dotted(node["target"]):
                     query["result"] = _dotted(node["target"])
                 queries.append(query)
             elif op == "include":
-                includes.append(_target(node, unit["id"]))
+                includes.append(_target(node, unit))
             elif op == "redirect":
-                redirects.append(_target(node, unit["id"]))
+                redirects.append(_target(node, unit))
             elif op == "output":
                 channel = node.get("channel") if isinstance(node.get("channel"), str) else "unknown"
                 outputs[channel] = outputs.get(channel, 0) + 1
@@ -309,6 +378,7 @@ def summarize(units: list[Mapping[str, Any]]) -> dict[str, Any]:
     return {
         "units": len(units),
         "languages": sorted({u["language"] for u in units}),
+        "unit_kinds": dict(sorted(Counter(u["kind"] for u in units if isinstance(u.get("kind"), str)).items())),
         "statements": statements,
         "calls": [{"callee": name, "kind": kind, "count": n} for (name, kind), n in sorted(calls.items())],
         "dynamic_calls": dynamic_calls,

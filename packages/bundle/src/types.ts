@@ -62,6 +62,9 @@ export interface Unknown {
   coverage_ref: string;
 }
 
+/** What a unit of behaviour is, when one owner has several (repo_intel.compile.behavior.UNIT_KINDS). */
+export type BehaviorKind = "function" | "page" | "macro" | "data_step" | "sql_step" | "proc_step" | "open_code" | "handler";
+
 /**
  * One unit of behaviour (repo_intel.compile.behavior) for the entity `owner`: a function,
  * page, DATA step or macro as statements. Function-level detail, so only a full bundle has
@@ -73,6 +76,8 @@ export interface Behavior {
   artifact: string;
   schema: string;
   language: string;
+  /** Absent when the pack did not say; a newer engine may add kinds, so read unknown ones as text. */
+  kind?: BehaviorKind | (string & {});
   params: Record<string, unknown>[];
   body: Record<string, unknown>[];
   evidence_ids: string[];
