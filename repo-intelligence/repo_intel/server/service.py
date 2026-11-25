@@ -51,6 +51,9 @@ PLANES = {
     "ai": ["AIComponent", "ModelEndpoint", "PromptArtifact", "MLModel"],
     "tests": ["Test"],
     "deployment": ["BuildTarget", "Pipeline", "DeploymentUnit", "Environment", "InfrastructureResource", "ConfigKey"],
+    "experience": ["Screen", "Form", "UIControl", "StyleToken", "Report"],
+    "business": ["BusinessRule", "Workflow", "CodeList", "Requirement", "Feature"],
+    "security": ["Role", "Permission"],
 }
 
 

@@ -64,15 +64,33 @@ def _discover() -> list[Extractor]:
     return sorted(found, key=lambda e: e.id)
 
 
-EXTRACTORS: list[Extractor] = _discover()
+def _with_packs(found: list[Extractor]) -> list[Extractor]:
+    """Add platform packs' extractors (repo_intel.platforms) and drop the ones they supersede."""
+    from repo_intel import platforms
+
+    replaced = platforms.superseded()
+    unknown = replaced - {e.id for e in found}
+    assert not unknown, f"platform packs supersede unknown extractors {sorted(unknown)}"
+    merged = [e for e in found if e.id not in replaced] + platforms.pack_extractors()
+    ids = [e.id for e in merged]
+    assert len(ids) == len(set(ids)), f"duplicate extractor id in {ids}"
+    return sorted(merged, key=lambda e: e.id)
+
+
+EXTRACTORS: list[Extractor] = _with_packs(_discover())
 _EXTRACTOR_VERSIONS: dict[tuple[str, str, type], str] = {}
 
 
 def extractor_version(extractor: Extractor) -> str:
-    """Declared version plus a digest of the extractor's code."""
+    """Declared version plus a digest of the extractor's code (and of its platform pack's vocabulary)."""
     key = (extractor.id, extractor.version, type(extractor))
     if key not in _EXTRACTOR_VERSIONS:
-        _EXTRACTOR_VERSIONS[key] = f"{extractor.version}+{code_digest(type(extractor))[:12]}"
+        from repo_intel import platforms
+
+        # A platform pack's vocabulary and construct list shape its extractors' output.
+        pack = next((p for p in platforms.packs().values() if extractor in p.extractors), None)
+        code = code_digest(type(extractor)) if pack is None else digest([code_digest(type(extractor)), platforms.pack_fingerprint(pack)]).split(":")[1]
+        _EXTRACTOR_VERSIONS[key] = f"{extractor.version}+{code[:12]}"
     return _EXTRACTOR_VERSIONS[key]
 
 

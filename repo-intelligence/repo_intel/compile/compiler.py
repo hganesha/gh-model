@@ -123,6 +123,15 @@ def _unit_compile(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, An
         attributes = {"language": s["language"], "parsed": s["parsed"]}
         if traits:
             attributes["code_traits"] = [{**o["payload"], "evidence_id": shard.cite(o["evidence"])} for o in traits]
+        # Platform constructs this file shows, and how many were modelled (repo_intel.platforms).
+        constructs: dict[str, dict[str, int]] = {}
+        for o in s["observations"]:
+            if o["kind"] == "construct":
+                count = constructs.setdefault(o["payload"]["construct"], {"seen": 0, "modelled": 0})
+                count["seen"] += 1
+                count["modelled"] += 1 if o["payload"]["modelled"] else 0
+        if constructs:
+            attributes["constructs"] = dict(sorted(constructs.items()))
         art = shard.entity(Entity.make(repo, EntityKind.ARTIFACT, {"path": s["path"]}, posixpath.basename(s["path"]), attributes=attributes, evidence_ids=[shard.cite(file_ev), *(a["evidence_id"] for a in attributes.get("code_traits", []))]))
         artifact_of[s["path"]] = (art, file_ev["id"])
     standing, redirect = effective_declarations([(s["path"], o) for s in summaries for o in s["observations"] if o["kind"] == "package_declaration" and unit_name(o["payload"]["manifest_dir"]) == unit["name"]])
@@ -377,6 +386,31 @@ def _dependency_capabilities(
     return decisions, coverage
 
 
+def platform_construct_coverage(shards: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+    """`platform_constructs` coverage, one entry per platform seen: occurrences modelled over
+    occurrences seen, with each construct's counts and the constructs looked for but not seen."""
+    from repo_intel import platforms
+
+    by_platform: dict[str, dict[str, dict[str, int]]] = {}
+    for shard in shards.values():
+        for e in shard["entities"]:
+            for construct_id, count in e["attributes"].get("constructs", {}).items() if e["kind"] == EntityKind.ARTIFACT else ():
+                pack = platforms.CONSTRUCTS[construct_id][0].id if construct_id in platforms.CONSTRUCTS else construct_id.split(":")[0]
+                total = by_platform.setdefault(pack, {}).setdefault(construct_id, {"seen": 0, "modelled": 0})
+                total["seen"] += count["seen"]
+                total["modelled"] += count["modelled"]
+    out = []
+    for pack_id, counts in sorted(by_platform.items()):
+        pack = platforms.packs().get(pack_id)
+        looked_for = [c.id for c in pack.constructs] if pack else []
+        out.append(CoverageEntry(
+            domain="platform_constructs", scope=pack_id,
+            numerator=sum(c["modelled"] for c in counts.values()), denominator=sum(c["seen"] for c in counts.values()),
+            detail={"constructs": dict(sorted(counts.items())), "not_seen": sorted(set(looked_for) - set(counts))},
+        ).row())
+    return out
+
+
 def _norm_name(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
 
@@ -540,6 +574,7 @@ def _repo_compile(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, An
             n[0] += 1 if f["attributes"]["parsed"] else 0
             n[1] += 1
         coverage.append(CoverageEntry(domain="parse", scope=name, numerator=sum(v[0] for v in by_lang.values()), denominator=len(files), detail={"by_language": {k: {"parsed": v[0], "files": v[1]} for k, v in sorted(by_lang.items())}}).row())
+    coverage += platform_construct_coverage(shards)
 
     # Repo-level linking: things that cross unit boundaries.
     links: dict[str, dict[str, Any]] = inputs["links"]

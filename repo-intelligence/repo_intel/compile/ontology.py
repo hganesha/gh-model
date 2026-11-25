@@ -49,6 +49,21 @@ class EntityKind(StrEnum):
     ARCHITECTURE_PATTERN = "ArchitecturePattern"
     ANTIPATTERN = "Antipattern"
     FEATURE = "Feature"  # DM08 behaviour hypotheses only, behind a flag that is off by default
+    # Experience (docs/solution-ir-contract.md, added 2026-11-25): what users see and do.
+    # Platform packs map their own constructs (a CFML template, a SAS stored-process
+    # prompt, a React route) onto these with a recorded fidelity.
+    SCREEN = "Screen"  # a page, view or report screen a user reaches; natural key {platform, name}
+    FORM = "Form"  # an input form on a screen; natural key {screen, name}
+    UI_CONTROL = "UIControl"  # an input, button, link or display element; natural key {container, name}
+    STYLE_TOKEN = "StyleToken"  # a design value: colour, type, spacing; natural key {system, name}
+    REPORT = "Report"  # a generated output a person reads: ODS, PDF, spreadsheet; natural key {platform, name}
+    # Business and process meaning. Lifted rules stay hypotheses until an owner confirms them.
+    BUSINESS_RULE = "BusinessRule"  # a validation, calculation or decision; natural key {scope, name}
+    WORKFLOW = "Workflow"  # states and transitions of a business object; natural key {scope, name}
+    CODE_LIST = "CodeList"  # reference data: a lookup table, SAS format, enum; natural key {platform, name}
+    # Security.
+    ROLE = "Role"  # natural key {realm, name}
+    PERMISSION = "Permission"  # natural key {realm, name}
     # Reserved for DM09; not emitted in v1.
     REQUIREMENT = "Requirement"
 
@@ -119,12 +134,23 @@ class Predicate(StrEnum):
     PRODUCES = "PRODUCES"
     SERVES = "SERVES"
     EXHIBITS = "EXHIBITS"
+    # Experience, business and security (docs/solution-ir-contract.md).
+    RENDERS = "RENDERS"  # code produces a screen or report
+    SUBMITS_TO = "SUBMITS_TO"  # a form posts to the endpoint or program that handles it
+    NAVIGATES_TO = "NAVIGATES_TO"  # a link, redirect or route transition
+    BINDS_TO = "BINDS_TO"  # a control shows or edits a field, or offers a code list
+    STYLED_BY = "STYLED_BY"
+    ENFORCES = "ENFORCES"  # code or a control applies a business rule
+    APPLIES_TO = "APPLIES_TO"  # what a business rule or workflow governs
+    REQUIRES_ROLE = "REQUIRES_ROLE"
+    GRANTS = "GRANTS"  # a role grants a permission
 
 
 K = EntityKind
 _CODE = {K.COMPONENT, K.PACKAGE, K.SYMBOL, K.NOTEBOOK, K.PROGRAM}
 _WORK = {K.JOB, K.TASK}  # scheduled or triggered batch work
-_DATA = {K.TABLE, K.STORAGE_RESOURCE, K.DATA_SCHEMA, K.DATASET}
+_DATA = {K.TABLE, K.STORAGE_RESOURCE, K.DATA_SCHEMA, K.DATASET, K.CODE_LIST}
+_UI = {K.SCREEN, K.FORM, K.UI_CONTROL}
 _ANY = set(K)
 
 
@@ -142,7 +168,7 @@ def _r(subjects, objects, functional=False, weakest=EvidenceClass.E5) -> Relatio
 
 P = Predicate
 RELATIONS: dict[Predicate, RelationSchema] = {
-    P.CONTAINS: _r({K.REPOSITORY, K.PACKAGE, K.COMPONENT, K.DATA_SCHEMA, K.TABLE, K.INTERFACE, K.JOB}, _ANY, weakest=EvidenceClass.E3),
+    P.CONTAINS: _r({K.REPOSITORY, K.PACKAGE, K.COMPONENT, K.DATA_SCHEMA, K.TABLE, K.INTERFACE, K.JOB, K.SCREEN, K.FORM, K.WORKFLOW}, _ANY, weakest=EvidenceClass.E3),
     # DEFINED_IN carries the class of the declaration it comes from, so a heuristically
     # read entity (a namespace taken as an environment) is not presented as supported.
     P.DEFINED_IN: _r(_ANY - {K.REPOSITORY, K.ARTIFACT}, {K.ARTIFACT}),
@@ -172,11 +198,22 @@ RELATIONS: dict[Predicate, RelationSchema] = {
     # Data and ML work (spec §8.2).
     P.RUNS: _r(_WORK | {K.NOTEBOOK}, {K.NOTEBOOK, K.ARTIFACT, K.PACKAGE, K.SYMBOL, K.JOB, K.PROGRAM}),
     P.DERIVED_FROM: _r({K.DATASET, K.TABLE}, {K.DATASET, K.TABLE}),
-    P.PRODUCES: _r(_CODE | _WORK, {K.ML_MODEL}),
+    P.PRODUCES: _r(_CODE | _WORK, {K.ML_MODEL, K.REPORT}),
     P.SERVES: _r({K.DEPLOYMENT_UNIT, K.COMPONENT}, {K.ML_MODEL}),
     # What the compiled knowledge shows a pattern applies to. Never weaker than a heuristic:
     # a pattern is derived from facts, or decided by DM11, which records the model's part.
     P.EXHIBITS: _r({K.REPOSITORY, K.COMPONENT, K.INTERFACE, K.EVENT_TOPIC, K.TABLE, K.DATASET, K.JOB, K.DEPLOYMENT_UNIT, K.INFRASTRUCTURE_RESOURCE, K.ML_MODEL}, {K.ARCHITECTURE_PATTERN, K.ANTIPATTERN}),
+    # Experience, business and security (docs/solution-ir-contract.md).
+    P.RENDERS: _r(_CODE, {K.SCREEN, K.REPORT}),
+    P.SUBMITS_TO: _r({K.FORM}, {K.ENDPOINT, K.PROGRAM, K.SYMBOL, K.SCREEN}),
+    P.NAVIGATES_TO: _r(_UI, {K.SCREEN, K.ENDPOINT, K.PROGRAM}),
+    P.BINDS_TO: _r({K.UI_CONTROL, K.FORM}, {K.FIELD, K.CODE_LIST, K.CONFIG_KEY}),
+    P.STYLED_BY: _r(_UI | {K.REPORT}, {K.STYLE_TOKEN}),
+    P.ENFORCES: _r(_CODE | _UI | _WORK | {K.TABLE, K.FIELD}, {K.BUSINESS_RULE}),
+    # A rule governs data, a screen or a step; a workflow governs a table or dataset's rows.
+    P.APPLIES_TO: _r({K.BUSINESS_RULE, K.WORKFLOW}, _DATA | _UI | {K.FIELD, K.ENDPOINT, K.TASK, K.PROGRAM}),
+    P.REQUIRES_ROLE: _r(_CODE | _UI | {K.ENDPOINT, K.REPORT, K.DATASET, K.TABLE, K.JOB}, {K.ROLE}),
+    P.GRANTS: _r({K.ROLE}, {K.PERMISSION, K.ROLE}),
 }
 assert set(RELATIONS) == set(Predicate)
 FUNCTIONAL: frozenset[Predicate] = frozenset(p for p, schema in RELATIONS.items() if schema.functional)
