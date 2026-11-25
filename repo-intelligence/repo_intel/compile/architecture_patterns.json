@@ -1,6 +1,6 @@
 {
  "key": "arch-taxonomy-v1",
- "version": "1.1.0",
+ "version": "1.2.0",
  "source": "docs/architecture-pattern-taxonomy.md (Software Architecture Pattern Taxonomy v1, 2026-11-24); antipattern ids assigned here",
  "concerns": [
   {
@@ -2658,7 +2658,10 @@
    "name": "Timeout and Deadline Propagation",
    "intent": "Bound waiting and carry an end-to-end time budget across dependency calls.",
    "family": "10.01",
-   "observability": "repository"
+   "observability": "repository",
+   "detectors": [
+    "resilience"
+   ]
   },
   {
    "id": "arch-0213",
@@ -2667,7 +2670,10 @@
    "name": "Circuit Breaker",
    "intent": "Stop repeated calls to a failing dependency and probe for recovery.",
    "family": "10.01",
-   "observability": "repository"
+   "observability": "repository",
+   "detectors": [
+    "resilience"
+   ]
   },
   {
    "id": "arch-0214",
@@ -2676,7 +2682,10 @@
    "name": "Bulkhead",
    "intent": "Separate resources or execution pools so one failing workload cannot consume all capacity.",
    "family": "10.02",
-   "observability": "repository"
+   "observability": "repository",
+   "detectors": [
+    "resilience"
+   ]
   },
   {
    "id": "arch-0215",
@@ -2904,7 +2913,10 @@
    "name": "Rate Limiting",
    "intent": "Bound allowed activity over a defined interval or token budget.",
    "family": "11.03",
-   "observability": "repository"
+   "observability": "repository",
+   "detectors": [
+    "resilience"
+   ]
   },
   {
    "id": "arch-0240",

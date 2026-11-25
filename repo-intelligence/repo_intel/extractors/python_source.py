@@ -48,6 +48,9 @@ _BUILTINS = frozenset(dir(__import__("builtins")))
 MODEL_CALL = re.compile(r"(^|\.)(messages\.create|chat\.completions\.create|completions\.create|responses\.create|generate_content|converse|invoke_model)$")
 # A comparison against one of these names bounds a loop (turns < MAX_TURNS, steps >= limit).
 LOOP_BOUND = re.compile(r"max|limit|turn|step|iter|budget|attempt|count|remaining", re.I)
+HTTP_CALLS = {"get", "post", "put", "patch", "delete", "head", "options", "request", "send", "stream", "urlopen"}
+HTTP_CLIENTS = {"Client", "AsyncClient", "Session", "ClientSession", "ClientTimeout", "Timeout", "PoolManager"}
+WAIT_BOUNDS = {"wait_for", "timeout", "fail_after", "move_on_after"}
 
 
 def _text(node: Node | None) -> str:
@@ -106,6 +109,26 @@ def _args(call: Node) -> tuple[list[Node], dict[str, Node]]:
 def _callee(node: Node | None) -> str:
     """Dotted text of a call's function ("op.create_table"), or "" if `node` is not a call."""
     return _text(node.child_by_field_name("function")) if node is not None and node.type == "call" else ""
+
+
+def _enclosing(node: Node) -> str:
+    """`f`, `Class.method` or `<module>`: the top-level function or method `node` is in."""
+    names: list[str] = []
+    current = node.parent
+    while current is not None:
+        if current.type in ("function_definition", "class_definition") and current.child_by_field_name("name") is not None:
+            names.append(_text(current.child_by_field_name("name")))
+        current = current.parent
+    names.reverse()
+    return ".".join(names[:2]) if names else "<module>"
+
+
+def _assigned(call: Node) -> str | None:
+    """The name a call's result is assigned to (`pool = ...`, `self.pool = ...`)."""
+    parent = call.parent
+    if parent is not None and parent.type == "assignment" and parent.child_by_field_name("right") == call:
+        return _text(parent.child_by_field_name("left"))
+    return None
 
 
 def _ancestors(node: Node, stop: Node | None) -> Iterator[Node]:
@@ -277,7 +300,7 @@ SQL_CALLS = {"text", "execute", "exec_driver_sql"}
 
 class PythonSource:
     id = "python.source"
-    version = "1.6.0"
+    version = "1.7.0"
 
     def __init__(self) -> None:
         self._parser = Parser(_LANGUAGE)
@@ -309,6 +332,7 @@ class PythonSource:
             run.migration(statements, nodes)
         run.config_keys(nodes)
         run.string_constants(statements)
+        run.resilience(nodes)
         if run.messaging:
             run.topic_uses(nodes)
         base = posixpath.basename(path)
@@ -870,6 +894,49 @@ class _Run:
             open_ended = condition is not None and (_text(condition) in ("True", "1") or condition.type == "identifier" or (condition.type == "not_operator" and condition.named_child_count == 1 and condition.named_children[0].type == "identifier"))
             bounded = any(n.type == "comparison_operator" and any(LOOP_BOUND.search(_text(i)) for i in _walk(n) if i.type in ("identifier", "attribute")) for n in inside)
             trait(loop.child_by_field_name("condition") or loop, {"trait": "agent_loop", "bounded": not open_ended or bounded})
+
+    def resilience(self, nodes: list[Node]) -> None:
+        """Resilience policies (spec §8.8), anywhere in the file: circuit breakers (pybreaker,
+        aiobreaker, circuitbreaker), concurrency limits (bounded semaphores and pools, the parts
+        of a bulkhead), timeouts on outbound calls and waits, and rate limiters (slowapi,
+        flask-limiter, fastapi-limiter inbound; aiolimiter and ratelimit outbound). Each is a
+        library's own construct, never a dependency alone."""
+        has = lambda *markers: any(m.encode() in self.data for m in markers)
+        http = has("requests", "httpx", "aiohttp", "urllib")
+        trait = lambda node, payload: self.emit(obs("code_trait", self.blob, self.at(node), {"function": _enclosing(node), **payload}, ast_node_kind=node.type))
+        for node in nodes:
+            if node.type == "decorator" and node.named_children:
+                expression = node.named_children[0]
+                name = _last(_callee(expression) or _text(expression))
+                if name == "circuit" and has("circuitbreaker"):
+                    trait(node, {"trait": "circuit_breaker", "library": "circuitbreaker"})
+                elif name == "limits" and has("ratelimit"):
+                    trait(node, {"trait": "rate_limit", "library": "ratelimit", "direction": "outbound"})
+                continue
+            if node.type != "call":
+                continue
+            callee = _callee(node)
+            head, last = callee.split(".")[0], _last(callee)
+            positional, keywords = _args(node)
+            if last in ("CircuitBreaker", "AsyncCircuitBreakerFactory") and has("pybreaker", "aiobreaker", "purgatory"):
+                trait(node, {"trait": "circuit_breaker", "library": "pybreaker" if has("pybreaker") else "aiobreaker" if has("aiobreaker") else "purgatory"})
+            elif last in ("Semaphore", "BoundedSemaphore") and positional:
+                trait(node, {"trait": "concurrency_limit", "name": _assigned(node) or last, "construct": callee})
+            elif last in ("ThreadPoolExecutor", "ProcessPoolExecutor") and ("max_workers" in keywords or positional):
+                trait(node, {"trait": "concurrency_limit", "name": _assigned(node) or last, "construct": callee})
+            elif last == "Limiter" and has("slowapi", "flask_limiter"):
+                trait(node, {"trait": "rate_limit", "library": "slowapi" if has("slowapi") else "flask-limiter", "direction": "inbound"})
+            elif last == "RateLimiter" and has("fastapi_limiter"):
+                trait(node, {"trait": "rate_limit", "library": "fastapi-limiter", "direction": "inbound"})
+            elif last == "AsyncLimiter" and has("aiolimiter"):
+                trait(node, {"trait": "rate_limit", "library": "aiolimiter", "direction": "outbound"})
+            elif last in WAIT_BOUNDS and head in ("asyncio", "anyio", "async_timeout", "trio") and (positional or "timeout" in keywords):
+                trait(node, {"trait": "timeout", "construct": callee, "deadline": False})
+            elif "timeout" in keywords and _text(keywords["timeout"]) != "None":
+                if has("grpc") and last not in HTTP_CLIENTS and head not in ("requests", "httpx", "aiohttp"):
+                    trait(node, {"trait": "timeout", "construct": "grpc call", "deadline": True})  # gRPC sends it on as the call's deadline
+                elif http and (head in ("requests", "httpx", "aiohttp", "urllib3") or last in HTTP_CALLS or last in HTTP_CLIENTS):
+                    trait(node, {"trait": "timeout", "construct": callee, "deadline": False})
 
     def test(self, name: str, definition: Node) -> None:
         start = definition.child_by_field_name("name")

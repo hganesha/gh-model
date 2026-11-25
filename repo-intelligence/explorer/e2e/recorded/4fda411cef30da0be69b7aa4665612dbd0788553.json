@@ -1,6 +1,0 @@
-{
- "method": "GET",
- "path": "/v1/snapshots/sha256:ae5fe1d4dcb3f7b3696549031c749cfcc3df44d965fefba2ebd9910c256df7c2/entities?plane=architecture&kind=ArchitecturePattern&limit=60",
- "status": 200,
- "body": "{\"entities\":[{\"id\":\"ent_rui3dppizuhp2eggthpgqryzhm\",\"kind\":\"ArchitecturePattern\",\"name\":\"Monolithic architecture\",\"attributes\":{\"kind\":\"style\",\"family\":\"Deployment granularity\",\"intent\":\"Package the application as one primary deployable unit; internal structure may vary.\",\"concern\":\"System composition and topology\",\"terminology\":\"established\",\"classification_path\":\"01.01\"},\"natural_key\":{\"id\":\"arch-0001\",\"catalog\":\"arch-taxonomy-v1\"},\"evidence_ids\":[]},{\"id\":\"ent_xifprtlcnenp4kprwsj5jyalcg\",\"kind\":\"ArchitecturePattern\",\"name\":\"Representational State Transfer\",\"attributes\":{\"kind\":\"style\",\"family\":\"Interface semantics\",\"intent\":\"Use resource representations and a uniform interface under REST constraints.\",\"concern\":\"APIs and service interaction\",\"terminology\":\"established\",\"classification_path\":\"04.01\"},\"natural_key\":{\"id\":\"arch-0067\",\"catalog\":\"arch-taxonomy-v1\"},\"evidence_ids\":[]}],\"truncated\":false}"
-}

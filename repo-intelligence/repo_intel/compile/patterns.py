@@ -882,6 +882,60 @@ def _code_traits(g: Graph) -> list[Finding]:
     return out
 
 
+_GATEWAY_LIMITS = re.compile(r"usage_?plan|UsagePlan|throttl|rate_?limit|RateLimit", re.I)
+
+
+@detector("resilience")
+def _resilience(g: Graph) -> list[Finding]:
+    """Resilience policies the extractors read as library constructs (circuit breakers,
+    bulkheads and bounded pools, timeouts and deadlines, rate limiters), and gateway usage
+    plans that throttle. Each shows the policy is in the code, not that it is tuned or that
+    it holds under load: E4."""
+    hits: dict[tuple[str, str], list[tuple[str, str, str]]] = {}
+    pools: dict[str, dict[str, tuple[str, str, str]]] = {}
+    deadlines: dict[str, bool] = {}
+    for f in g.of_kind(K.ARTIFACT):
+        for t in f["attributes"].get("code_traits", []):
+            subject = g.owner(f["id"])
+            if subject is None:
+                continue
+            where = f"{f['natural_key'].get('path')}:{t.get('function')}"
+            hit = (f["id"], t["evidence_id"], where)
+            kind = t["trait"]
+            if kind == "circuit_breaker":
+                hits.setdefault(("arch-0213", subject), []).append((*hit[:2], f"{where} ({t.get('library')})"))
+            elif kind == "bulkhead":
+                hits.setdefault(("arch-0214", subject), []).append((*hit[:2], f"{where} ({t.get('library')} bulkhead)"))
+            elif kind == "concurrency_limit":
+                pools.setdefault(subject, {}).setdefault(f"{f['natural_key'].get('path')}:{t.get('name')}", hit)
+            elif kind == "timeout":
+                hits.setdefault(("arch-0212", subject), []).append((*hit[:2], f"{where} ({t.get('construct')})"))
+                deadlines[subject] = deadlines.get(subject, False) or bool(t.get("deadline"))
+            elif kind == "rate_limit":
+                direction = f", {t['direction']}" if t.get("direction") else ""
+                hits.setdefault(("arch-0239", subject), []).append((*hit[:2], f"{where} ({t.get('library')}{direction})"))
+    for subject, named in pools.items():  # separate bounded pools in one component partition its capacity
+        if len(named) > 1:
+            hits.setdefault(("arch-0214", subject), []).extend((h[0], h[1], f"{name} (bounded pool)") for name, h in named.items())
+    repo = g.of_kind(K.REPOSITORY)
+    for r in g.of_kind(K.INFRASTRUCTURE_RESOURCE):
+        if repo and _GATEWAY_LIMITS.search(str(r["natural_key"].get("type", ""))) and r.get("evidence_ids"):
+            hits.setdefault(("arch-0239", repo[0]["id"]), []).append((r["id"], r["evidence_ids"][0], f"{r['natural_key'].get('type')} {r['natural_key'].get('name')} (gateway)"))
+    basis = {
+        "arch-0213": "wraps dependency calls in a circuit breaker in {}",
+        "arch-0214": "partitions capacity with bulkheads or separate bounded pools in {}",
+        "arch-0212": "bounds waits with timeouts in {}",
+        "arch-0239": "limits request rates in {}",
+    }
+    out = []
+    for (target, subject), found in sorted(hits.items()):
+        text = basis[target].format(", ".join(sorted({h[2] for h in found})))
+        if target == "arch-0212":
+            text += "; a deadline is carried on to downstream calls" if deadlines.get(subject) else "; no deadline is seen carried on to downstream calls"
+        out.append(Finding(target, subject, "E4", text, tuple(sorted({h[0] for h in found})), evidence=tuple(sorted({h[1] for h in found}))))
+    return out
+
+
 def detect(g: Graph, catalogue: PatternCatalogue) -> list[Finding]:
     """Every finding of every detector the catalogue references, in a stable order."""
     owners: dict[str, set[str]] = {}

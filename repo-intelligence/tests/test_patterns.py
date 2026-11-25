@@ -269,6 +269,9 @@ def test_code_traits_cite_the_exact_spans():
     assert found["anti-0007"].subject == "c" and found["anti-0007"].evidence == ("ev_retry",)
 
 
+RUNTIME = ("retry", "unbounded_fanout", "agent_loop")
+
+
 def test_extractors_read_retry_fanout_and_agent_loop_traits():
     from repo_intel.extractors.python_source import PythonSource
     from repo_intel.extractors.typescript_source import TypeScriptSource
@@ -301,7 +304,7 @@ def capped(client, messages):
             break
         r = client.messages.create(model="m", messages=messages, tools=TOOLS)
 '''
-    traits = [(o.payload["function"], o.payload["trait"], o.payload.get("backoff", o.payload.get("bounded"))) for o in PythonSource().extract("a.py", py, "b").observations if o.kind == "code_trait"]
+    traits = [(o.payload["function"], o.payload["trait"], o.payload.get("backoff", o.payload.get("bounded"))) for o in PythonSource().extract("a.py", py, "b").observations if o.kind == "code_trait" and o.payload["trait"] in RUNTIME]
     assert traits == [("fast", "retry", False), ("slow", "retry", True), ("fan", "unbounded_fanout", None), ("agent", "agent_loop", False), ("capped", "agent_loop", True)]
     ts = b'''import axiosRetry from "axios-retry";
 axiosRetry(axios, { retries: 3 });
@@ -310,8 +313,103 @@ export async function agent() {
   while (true) { const r = await client.chat.completions.create({ model: "m", messages, tools }); messages.push(r); }
 }
 '''
-    traits = [(o.payload["trait"], o.payload.get("backoff", o.payload.get("bounded"))) for o in TypeScriptSource().extract("a.ts", ts, "b").observations if o.kind == "code_trait"]
+    traits = [(o.payload["trait"], o.payload.get("backoff", o.payload.get("bounded"))) for o in TypeScriptSource().extract("a.ts", ts, "b").observations if o.kind == "code_trait" and o.payload["trait"] in RUNTIME]
     assert traits == [("retry", False), ("unbounded_fanout", None), ("agent_loop", False)]
+
+
+def _resilience_targets(traits_by_file):
+    shard = _module_graph(list(traits_by_file), [])
+    for e in shard["entities"]:
+        if e["kind"] == "Artifact":
+            e["attributes"]["code_traits"] = [{"function": "f", **t, "evidence_id": f"ev_{e['id']}_{i}"} for i, t in enumerate(traits_by_file[e["id"]])]
+    return {f.target: f for f in detect(Graph.build([shard]), load_patterns()) if f.detector == "resilience"}
+
+
+def test_resilience_policies_are_patterns_of_the_component():
+    found = _resilience_targets({
+        "gateway.py": [{"trait": "circuit_breaker", "library": "pybreaker"}, {"trait": "timeout", "construct": "httpx.post", "deadline": False}],
+        "api.py": [{"trait": "rate_limit", "library": "slowapi", "direction": "inbound"}],
+        "pools.py": [{"trait": "concurrency_limit", "name": "inventory"}, {"trait": "concurrency_limit", "name": "payments"}],
+    })
+    assert set(found) == {"arch-0212", "arch-0213", "arch-0214", "arch-0239"}
+    assert all(f.subject == "c" and f.evidence_class == "E4" for f in found.values())
+    assert found["arch-0213"].evidence == ("ev_gateway.py_0",), "a finding cites the construct's own span"
+    assert "no deadline is seen carried on" in found["arch-0212"].basis
+    assert "bounded pool" in found["arch-0214"].basis
+
+
+def test_one_bounded_pool_is_not_a_bulkhead_and_a_propagated_deadline_is_said():
+    found = _resilience_targets({"a.go": [{"trait": "concurrency_limit", "name": "sem"}, {"trait": "timeout", "construct": "context.WithTimeout", "deadline": True}]})
+    assert "arch-0214" not in found, "one limit bounds work; it does not partition capacity"
+    assert "a deadline is carried on to downstream calls" in found["arch-0212"].basis
+    assert "arch-0214" in _resilience_targets({"a.ts": [{"trait": "bulkhead", "library": "cockatiel"}]}), "an explicit bulkhead is one"
+
+
+def _traits(extractor, path, source):
+    return [(o.payload["function"], o.payload["trait"]) for o in extractor.extract(path, source, "b").observations if o.kind == "code_trait" and o.payload["trait"] not in RUNTIME]
+
+
+def test_extractors_read_resilience_policies_in_five_languages():
+    from repo_intel.extractors.python_source import PythonSource
+    from repo_intel.extractors.source_dotnet import DotnetSource
+    from repo_intel.extractors.source_go import GoSource
+    from repo_intel.extractors.source_jvm import JvmSource
+    from repo_intel.extractors.typescript_source import TypeScriptSource
+    assert _traits(PythonSource(), "a.py", b"""import httpx, pybreaker
+from slowapi import Limiter
+breaker = pybreaker.CircuitBreaker(fail_max=5)
+limiter = Limiter(key_func=key)
+def call():
+    return httpx.get("http://x", timeout=2)
+def untimed():
+    return httpx.get("http://x")
+""") == [("<module>", "circuit_breaker"), ("<module>", "rate_limit"), ("call", "timeout")]
+    assert _traits(TypeScriptSource(), "a.ts", b"""import CircuitBreaker from "opossum";
+import rateLimit from "express-rate-limit";
+import { bulkhead } from "cockatiel";
+import pLimit from "p-limit";
+const b = new CircuitBreaker(call);
+app.use(rateLimit({ max: 10 }));
+const bh = bulkhead(4);
+const limit = pLimit(2);
+export async function call() { return fetch("http://x", { signal: AbortSignal.timeout(1000) }); }
+""") == [("<module>", "circuit_breaker"), ("<module>", "rate_limit"), ("<module>", "bulkhead"), ("<module>", "concurrency_limit"), ("call", "timeout")]
+    assert _traits(JvmSource(), "A.java", b"""import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+public class A {
+  @CircuitBreaker(name = "inv")
+  @Bulkhead(name = "inv")
+  public String reserve(String sku) { return client.get(sku); }
+  @RateLimiter(name = "inv")
+  public void list() { stub.withDeadlineAfter(2, TimeUnit.SECONDS).list(); }
+}
+""") == [("reserve", "circuit_breaker"), ("reserve", "bulkhead"), ("list", "rate_limit"), ("list", "timeout")]
+    assert _traits(DotnetSource(), "A.cs", b"""using Polly;
+public class A {
+  public void Configure(IServiceCollection s) {
+    var cb = Policy.Handle<Exception>().CircuitBreakerAsync(5, TimeSpan.FromSeconds(30));
+    var bh = Policy.BulkheadAsync(10);
+    s.AddHttpClient("x").ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(2));
+  }
+  [EnableRateLimiting("fixed")]
+  public IActionResult Get() { return Ok(); }
+}
+""") == [("Configure", "circuit_breaker"), ("Configure", "bulkhead"), ("Get", "rate_limit"), ("Configure", "timeout")]
+    assert _traits(GoSource(), "a.go", b"""package a
+import ("context"; "github.com/sony/gobreaker"; "golang.org/x/time/rate")
+var cb = gobreaker.NewCircuitBreaker(gobreaker.Settings{})
+var lim = rate.NewLimiter(10, 5)
+func call(ctx context.Context) {
+	ctx, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+}
+""") == [("call", "timeout"), ("<module>", "circuit_breaker"), ("<module>", "rate_limit")]
+
+
+def test_a_library_named_without_its_construct_is_not_a_policy():
+    from repo_intel.extractors.python_source import PythonSource
+    from repo_intel.extractors.typescript_source import TypeScriptSource
+    assert _traits(PythonSource(), "a.py", b"import pybreaker\nimport slowapi\ndef f():\n    return 1\n") == []
+    assert _traits(TypeScriptSource(), "a.ts", b'import CircuitBreaker from "x";\nconst b = new CircuitBreaker(f);\n') == [], "a CircuitBreaker class from an unknown library"
 
 
 def test_import_edges_join_the_files_of_a_unit(polyglot):

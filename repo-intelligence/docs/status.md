@@ -132,7 +132,7 @@ Fixtures F16 (protobuf, GraphQL and AsyncAPI implemented in Go, Kotlin, C#, Ruby
 
 ## Architecture patterns (after M3)
 
-The architecture pattern taxonomy (`docs/architecture-pattern-taxonomy.md`) is a pinned catalogue of 390 patterns and 9 antipatterns (spec §8.8). Detectors over the compiled graph look for 32 entries and all 9 antipatterns; DM11 (`dm.deployment-granularity`) chooses among monolithic, modular monolith, service-based and microservices. Findings are `ArchitecturePattern` and `Antipattern` entities linked by `EXHIBITS`, `supported` only when the finding is itself a parsed fact (E3) and `inferred` otherwise. 49 entries a repository cannot show (organisational, runtime and control-plane patterns) are marked `beyond_repository` and excluded from the coverage denominator. The Explorer shows both kinds on the Architecture plane, and its recorded replay responses include them.
+The architecture pattern taxonomy (`docs/architecture-pattern-taxonomy.md`) is a pinned catalogue of 390 patterns and 9 antipatterns (spec §8.8). Detectors over the compiled graph look for 36 entries and all 9 antipatterns; DM11 (`dm.deployment-granularity`) chooses among monolithic, modular monolith, service-based and microservices. Findings are `ArchitecturePattern` and `Antipattern` entities linked by `EXHIBITS`, `supported` only when the finding is itself a parsed fact (E3) and `inferred` otherwise. 49 entries a repository cannot show (organisational, runtime and control-plane patterns) are marked `beyond_repository` and excluded from the coverage denominator. The Explorer shows both kinds on the Architecture plane, and its recorded replay responses include them.
 
 What the detectors read:
 - **Messaging, data, interfaces and deployment:** the graph's existing facts.
@@ -140,9 +140,10 @@ What the detectors read:
 - **CQRS:** symbol-level reads and writes.
 - **Saga, compensating transaction, distributed monolith and chatty chains:** topics and cross-component HTTP calls.
 - **Runtime antipatterns:** retry storm, unbounded concurrency and uncontrolled agent loop are read from new `code_trait` observations in the Python and TypeScript extractors. These record retry policies with or without backoff, unbounded fan-out, and model-calling tool loops with no iteration bound. Each finding cites the exact span and is worded as a condition, not an observed failure.
+- **Resilience patterns:** circuit breaker, bulkhead, timeout and deadline propagation, and rate limiting are read from `code_trait` observations in Python, TypeScript, Java and Kotlin, C# and Go: a library's own construct (pybreaker, opossum, resilience4j, Polly, gobreaker, express-rate-limit, ASP.NET Core rate limiting and others), never a dependency alone. Two separate bounded pools in one component count as a bulkhead; one does not. API gateway usage plans count as rate limiting.
 
 Tests and fixtures:
-- **F19 (architecture styles)** contains every code-level pattern and code-trait antipattern. Three seeded commits each remove one: an upward import breaks the layering, a counted loop bounds the agent, and backoff ends the retry storm.
+- **F19 (architecture styles)** contains every code-level pattern and code-trait antipattern. It also has a circuit breaker and call timeout (payments), one bounded pool per downstream service (orders) and an inbound rate limiter (assistant). Four seeded commits each remove one finding: an upward import breaks the layering, a counted loop bounds the agent, backoff ends the retry storm, and one shared pool ends the bulkhead.
 - **Goldens:** F01, F07, F11–F13, F16, F17 and F19 name the patterns they must exhibit, and four name ones they must not.
 - **Unit tests:** `tests/test_patterns.py` covers the structure and coupling antipatterns on constructed graphs, because no fixture should contain them.
 
@@ -154,8 +155,8 @@ DM11 calibration:
 Known gaps:
 - The structure and DM11 thresholds are placeholders until the reviewed corpus exists (GI-026). A dozen synthetic cases cannot support a recommendation.
 - A live run against Microsoft Decision 1.1 (`benchmarks/results/deployment-granularity-2026-11-25.md`) gave no wrong answers, but its first run would have been wrong on both ambiguous cases. One of those (F17) missed the accept threshold by 0.01. Criteria v2 explains each feature: the model then picks F02 correctly and declines F17. Neither run supports a threshold change.
-- Other resilience patterns, event sourcing, and onion and clean architecture are not looked for yet.
-- Code traits are read only in Python and TypeScript.
+- Fallback, load shedding and the other resilience patterns, event sourcing, and onion and clean architecture are not looked for yet.
+- Retries, fan-out and agent loops are read only in Python and TypeScript. Java, Kotlin, C# and Go resilience policies are read with patterns, not a parser.
 
 ## Deviations from the spec so far
 

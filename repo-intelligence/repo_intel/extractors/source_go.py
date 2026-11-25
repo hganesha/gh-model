@@ -24,7 +24,7 @@ import re
 
 from repo_intel.compile.ontology import EntityKind, Predicate
 from repo_intel.extractors.base import Extraction
-from repo_intel.extractors.textscan import Doc, decode, join_route, looks_like_sql, matching, prefix_at, queue_name, sql_in, unquote, without_comments
+from repo_intel.extractors.textscan import Doc, code_traits, decode, join_route, looks_like_sql, matching, prefix_at, queue_name, sql_in, unquote, without_comments
 
 K = EntityKind
 P = Predicate
@@ -51,9 +51,42 @@ _KAFKA = [
 _GRPC_STRUCT = re.compile(r"""type\s+(\w+)\s+struct\s*\{[^}]*?\b(?:\w+\.)?Unimplemented(\w+)Server\b""")
 
 
+_RESILIENCE_MARKERS = ("gobreaker", "hystrix", "context.WithTimeout", "context.WithDeadline", "Timeout", "x/time/rate", "tollbooth", "httprate", "x/sync/semaphore", "SetLimit", "chan struct{}")
+
+
+def _deadline(m: re.Match) -> dict:
+    """A context deadline derived from the caller's context goes on downstream with it;
+    one from `context.Background()` starts afresh and propagates nothing."""
+    return {"trait": "timeout", "construct": "context." + m.group(1), "deadline": not m.group(2).startswith(("context.Background", "context.TODO"))}
+
+
+def _go_rules(raw: str) -> list:
+    """Resilience policies (spec §8.8) in Go: gobreaker and hystrix-go circuit breakers,
+    context deadlines, http.Client and handler timeouts, x/time/rate, tollbooth and httprate
+    limiters, and weighted semaphores, errgroup limits and buffered-channel semaphores."""
+    rules = [
+        (re.compile(r"\bcontext\.(WithTimeout|WithDeadline)\s*\(\s*([\w.]+(?:\(\))?)"), _deadline, "in"),
+        (re.compile(r"\bhttp\.Client\s*\{[^}]*\bTimeout\s*:|\bhttp\.TimeoutHandler\s*\(|\b(?:Read|Write)Timeout\s*:"), lambda m: {"trait": "timeout", "construct": "http.TimeoutHandler" if "Handler" in m.group(0) else "http.Server" if "Read" in m.group(0) or "Write" in m.group(0) else "http.Client", "deadline": False}, "in"),
+        (re.compile(r"\bmake\s*\(\s*chan\s+struct\s*\{\s*\}\s*,\s*\w+\s*\)"), {"trait": "concurrency_limit", "name": "buffered channel", "construct": "chan struct{}"}, "in"),
+    ]
+    if "gobreaker" in raw:
+        rules.append((re.compile(r"\bgobreaker\.New(?:TwoStep)?CircuitBreaker\b"), {"trait": "circuit_breaker", "library": "gobreaker"}, "in"))
+    if "hystrix" in raw:
+        rules.append((re.compile(r"\bhystrix\.(?:Go|Do|GoC|DoC)\s*\("), {"trait": "circuit_breaker", "library": "hystrix-go"}, "in"))
+    if "x/time/rate" in raw:
+        rules.append((re.compile(r"\brate\.NewLimiter\s*\("), {"trait": "rate_limit", "library": "x/time/rate"}, "in"))
+    if "tollbooth" in raw or "httprate" in raw:
+        rules.append((re.compile(r"\b(?:tollbooth\.(?:NewLimiter|LimitHandler|LimitFuncHandler)|httprate\.Limit\w*)\s*\("), {"trait": "rate_limit", "library": "tollbooth" if "tollbooth" in raw else "httprate", "direction": "inbound"}, "in"))
+    if "x/sync/semaphore" in raw:
+        rules.append((re.compile(r"\bsemaphore\.NewWeighted\s*\("), {"trait": "concurrency_limit", "name": "semaphore", "construct": "semaphore.NewWeighted"}, "in"))
+    if "errgroup" in raw:
+        rules.append((re.compile(r"\.SetLimit\s*\(\s*\w+"), {"trait": "concurrency_limit", "name": "errgroup", "construct": "errgroup.SetLimit"}, "in"))
+    return rules
+
+
 class GoSource:
     id = "go.source"
-    version = "1.0.0"
+    version = "1.1.0"
 
     def matches(self, path: str) -> bool:
         return path.endswith(".go") and not path.endswith(".pb.go") and not path.endswith("_grpc.pb.go")
@@ -66,7 +99,8 @@ class GoSource:
         has_sql = any(m in raw for m in ('"database/sql"', "sqlx", "pgx", "gorm.io", "TableName()"))
         has_kafka = any(m in raw for m in ("kafka-go", "sarama", "confluent-kafka-go"))
         has_grpc = "Unimplemented" in raw
-        if not (imports or has_sql or has_kafka or has_grpc):
+        has_resilience = any(m in raw for m in _RESILIENCE_MARKERS)
+        if not (imports or has_sql or has_kafka or has_grpc or has_resilience):
             return Extraction(parsed=False)
         text = without_comments(raw, "go")
         d = Doc(path, data, blob, text)
@@ -94,6 +128,8 @@ class GoSource:
                 receiver, service = m.group(1), m.group(2)
                 for fm in re.finditer(rf"""func\s*\(\s*\w*\s*\*?{receiver}\s*\)\s*([A-Z]\w*)\s*\(""", text):
                     d.endpoint(d.at(fm.start(1), fm.end(1)), "RPC", f"/{service}/{fm.group(1)}", "grpc-go", f"{receiver}.{fm.group(1)}", protocol="grpc")
+        if has_resilience:
+            code_traits(d, _go_rules(raw), "go")
         if not d.out:
             return Extraction(parsed=False)
         return d.done() if d.resolved or d.unresolved else Extraction(d.out)

@@ -160,7 +160,7 @@ def test_dependency_capability_coverage_on_fixture_bases(compiled):
         assert (coverage["numerator"], coverage["denominator"]) == (len(classified), len(declared))
         all_declared.update(declared.values())
         all_classified.update(declared[subject] for subject in classified)
-    assert (len(all_classified), len(all_declared)) == (42, 55)
+    assert (len(all_classified), len(all_declared)) == (42, 57)
 
 
 def test_configuration_values_never_enter_the_graph(compiled):

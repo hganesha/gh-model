@@ -1,0 +1,6 @@
+{
+ "method": "GET",
+ "path": "/v1/snapshots/sha256:b198e1859449d93564cd6448cec00c52287211237d55f20662d95e5e415587d1/entities?plane=deployment&kind=ConfigKey&limit=60",
+ "status": 200,
+ "body": "{\"entities\":[{\"id\":\"ent_4bwoh2zeadqa7i3zam3ej5iow5\",\"kind\":\"ConfigKey\",\"name\":\"API_URL\",\"attributes\":{},\"natural_key\":{\"name\":\"API_URL\"},\"evidence_ids\":[\"ev_qkiyapl45r5qq4yg2sop527uwo\"]},{\"id\":\"ent_ysgpws5qjff5j4n7zzxihrwkcs\",\"kind\":\"ConfigKey\",\"name\":\"DATABASE_URL\",\"attributes\":{},\"natural_key\":{\"name\":\"DATABASE_URL\"},\"evidence_ids\":[\"ev_42cxc4ywsyrkqfdzwcvxjpulj2\"]},{\"id\":\"ent_z34mzuklskwlnpy64k6yk7qphc\",\"kind\":\"ConfigKey\",\"name\":\"PORT\",\"attributes\":{},\"natural_key\":{\"name\":\"PORT\"},\"evidence_ids\":[\"ev_6mteebdnziyqftomaj4qu4isc6\"]}],\"truncated\":false}"
+}

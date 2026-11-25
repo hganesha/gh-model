@@ -3,5 +3,7 @@ name = "payments-service"
 version = "0.1.0"
 dependencies = [
     "confluent-kafka>=2.10",
+    "httpx>=0.28",
+    "pybreaker>=1.2",
     "tenacity>=9.0",
 ]

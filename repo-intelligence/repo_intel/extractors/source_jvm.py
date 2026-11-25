@@ -33,7 +33,7 @@ import re
 
 from repo_intel.compile.ontology import EntityKind, EvidenceClass, Predicate
 from repo_intel.extractors.base import Extraction
-from repo_intel.extractors.textscan import Doc, decode, join_route, keyword_arg, looks_like_sql, matching, prefix_at, queue_name, snake, sql_in, string_args, unquote, without_comments
+from repo_intel.extractors.textscan import Doc, code_traits, decode, join_route, keyword_arg, looks_like_sql, matching, prefix_at, queue_name, snake, sql_in, string_args, unquote, without_comments
 
 K = EntityKind
 P = Predicate
@@ -175,7 +175,53 @@ _KTOR_VERB = re.compile(r"""\b(get|post|put|delete|patch|head|options)\s*(?:\(\s
 _SPARK_READ = re.compile(r"""\b(?:read\s*\.\s*table|\.table)\s*\(\s*"([\w.`]+)"\s*\)""")
 _SPARK_WRITE = re.compile(r"""\.(?:saveAsTable|insertInto)\s*\(\s*"([\w.`]+)"\s*\)""")
 _SPARK_SQL = re.compile(r"""\bspark\s*\.\s*sql\s*\(\s*(\"\"\"(?:.|\n)*?\"\"\"|"(?:[^"\\\n]|\\.)*")""")
-_MARKERS = (b"Mapping", b"@Path", b"@Get", b"@Post", b"@Controller", b"@Entity", b"Listener", b"Template", b"ImplBase", b"@Query", b"@Dgs", b"@Schema", b"io.ktor", b"jdbc", b"Jdbc", b"createNativeQuery", b"spark", b"KafkaProducer", b"executeQuery", b"prepareStatement")
+_RESILIENCE_MARKERS = ("resilience4j", "Hystrix", "faulttolerance", "Timeout", "withDeadline", "Semaphore", "newFixedThreadPool", "Bucket4j", "bucket4j")
+_ANNOTATION_ARGS = r"\b(?:\s*\([^)]*\))?"
+
+
+def _jvm_library(raw: str) -> str | None:
+    return "resilience4j" if "resilience4j" in raw else "microprofile-fault-tolerance" if "faulttolerance" in raw else None
+
+
+def _assigned(text: str, at: int) -> str | None:
+    m = re.search(r"(\w+)\s*=\s*(?:new\s+)?$", text[max(0, at - 120):at])
+    return m.group(1) if m else None
+
+
+def _jvm_rules(raw: str, text: str) -> list:
+    """Resilience policies (spec §8.8) in Java and Kotlin: resilience4j, MicroProfile Fault
+    Tolerance and Hystrix annotations and builders, client and gRPC timeouts, bounded pools
+    and semaphores, and Bucket4j rate limits."""
+    lib = _jvm_library(raw)
+    rules = []
+    if lib:
+        rules += [
+            (re.compile("@CircuitBreaker" + _ANNOTATION_ARGS), {"trait": "circuit_breaker", "library": lib}, "on"),
+            (re.compile("@Bulkhead" + _ANNOTATION_ARGS), {"trait": "bulkhead", "library": lib}, "on"),
+            (re.compile("@(?:TimeLimiter|Timeout)" + _ANNOTATION_ARGS), {"trait": "timeout", "construct": lib, "deadline": False}, "on"),
+            (re.compile("@RateLimiter" + _ANNOTATION_ARGS), {"trait": "rate_limit", "library": lib}, "on"),
+        ]
+    if "resilience4j" in raw:
+        rules += [
+            (re.compile(r"\bCircuitBreaker\.of(?:Defaults)?\s*\("), {"trait": "circuit_breaker", "library": "resilience4j"}, "in"),
+            (re.compile(r"\b(?:ThreadPool)?Bulkhead\.of(?:Defaults)?\s*\("), {"trait": "bulkhead", "library": "resilience4j"}, "in"),
+            (re.compile(r"\bTimeLimiter\.of(?:Defaults)?\s*\("), {"trait": "timeout", "construct": "resilience4j", "deadline": False}, "in"),
+            (re.compile(r"\bRateLimiter\.of(?:Defaults)?\s*\("), {"trait": "rate_limit", "library": "resilience4j"}, "in"),
+        ]
+    if "Hystrix" in raw:
+        rules.append((re.compile(r"@HystrixCommand" + _ANNOTATION_ARGS), {"trait": "circuit_breaker", "library": "hystrix"}, "on"))
+    if "ucket4j" in raw:
+        rules.append((re.compile(r"\bBucket(?:4j)?\.builder\s*\("), {"trait": "rate_limit", "library": "bucket4j"}, "in"))
+    rules += [
+        (re.compile(r"\.(?:connectTimeout|readTimeout|responseTimeout|callTimeout|setConnectTimeout|setReadTimeout|setConnectionRequestTimeout|setResponseTimeout)\s*\("), lambda m: {"trait": "timeout", "construct": m.group(0).strip(".( "), "deadline": False}, "in"),
+        (re.compile(r"\.(?:timeout)\s*\(\s*Duration\."), {"trait": "timeout", "construct": "timeout(Duration)", "deadline": False}, "in"),
+        (re.compile(r"\.withDeadline(?:After)?\s*\("), {"trait": "timeout", "construct": "grpc deadline", "deadline": True}, "in"),
+        (re.compile(r"\bnew\s+Semaphore\s*\(\s*\d+|\bExecutors\.newFixedThreadPool\s*\(\s*\d+"), lambda m: {"trait": "concurrency_limit", "name": _assigned(text, m.start()) or m.group(0).split("(")[0].replace("new ", "").strip(), "construct": m.group(0).split("(")[0].replace("new ", "").strip()}, "in"),
+    ]
+    return rules
+
+
+_MARKERS = (b"Mapping", b"@Path", b"@Get", b"@Post", b"@Controller", b"@Entity", b"Listener", b"Template", b"ImplBase", b"@Query", b"@Dgs", b"@Schema", b"io.ktor", b"jdbc", b"Jdbc", b"createNativeQuery", b"spark", b"KafkaProducer", b"executeQuery", b"prepareStatement", *(m.encode() for m in _RESILIENCE_MARKERS))
 
 
 def _literal(raw: str) -> str | None:
@@ -186,7 +232,7 @@ def _literal(raw: str) -> str | None:
 
 class JvmSource:
     id = "jvm.source"
-    version = "1.0.0"
+    version = "1.1.0"
 
     def matches(self, path: str) -> bool:
         return posixpath.splitext(path)[1].lower() in _LEXERS and not posixpath.basename(path).endswith(".gradle.kts")
@@ -364,6 +410,8 @@ class JvmSource:
                 else:
                     d.unresolved += 1
 
+        if any(m in raw for m in _RESILIENCE_MARKERS):
+            code_traits(d, _jvm_rules(raw, text), "c")
         if unresolved_routes:
             d.observe("route_summary", d.whole(), {"unresolved": unresolved_routes})
         if not d.out:

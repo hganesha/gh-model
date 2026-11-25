@@ -24,7 +24,7 @@ import re
 
 from repo_intel.compile.ontology import EntityKind
 from repo_intel.extractors.base import Extraction
-from repo_intel.extractors.textscan import Doc, decode, join_route, keyword_arg, looks_like_sql, matching, queue_name, sql_in, string_args, unquote, without_comments
+from repo_intel.extractors.textscan import Doc, code_traits, decode, join_route, keyword_arg, looks_like_sql, matching, queue_name, sql_in, string_args, unquote, without_comments
 
 K = EntityKind
 
@@ -84,16 +84,43 @@ def _groups(text: str) -> list[tuple[int, int, dict[str, str | None], str, str |
         i = max(j, m.end())
 
 
+_RESILIENCE_MARKERS = ("Polly", "Resilience", "RateLimit", "Timeout", "CancelAfter", "SemaphoreSlim", "deadline:")
+
+
+def _dotnet_rules(raw: str, text: str) -> list:
+    """Resilience policies (spec §8.8) in C#: Polly v7 policies and v8 pipelines,
+    Microsoft.Extensions.Http.Resilience, ASP.NET Core rate limiting, HttpClient and
+    cancellation timeouts, gRPC deadlines and bounded SemaphoreSlims."""
+    polly = "Polly" in raw or "Resilience" in raw
+    rules = []
+    if polly:
+        rules += [
+            (re.compile(r"\b(?:Advanced)?CircuitBreaker(?:Async)?\s*(?:<[^>]*>)?\s*\(|\.AddCircuitBreaker\s*\("), {"trait": "circuit_breaker", "library": "polly"}, "in"),
+            (re.compile(r"\bBulkhead(?:Async)?\s*(?:<[^>]*>)?\s*\(|\.AddConcurrencyLimiter\s*\("), {"trait": "bulkhead", "library": "polly"}, "in"),
+            (re.compile(r"\bPolicy\s*\.\s*Timeout(?:Async)?\s*(?:<[^>]*>)?\s*\(|\.AddTimeout\s*\("), {"trait": "timeout", "construct": "polly", "deadline": False}, "in"),
+            (re.compile(r"\.AddStandardResilienceHandler\s*\("), [{"trait": "circuit_breaker", "library": "Microsoft.Extensions.Http.Resilience"}, {"trait": "timeout", "construct": "standard resilience handler", "deadline": False}], "in"),
+        ]
+    rules += [
+        (re.compile(r"\.AddRateLimiter\s*\("), {"trait": "rate_limit", "library": "polly" if polly and "AspNetCore.RateLimiting" not in raw else "aspnetcore", **({} if polly and "AspNetCore.RateLimiting" not in raw else {"direction": "inbound"})}, "in"),
+        (re.compile(r"\[EnableRateLimiting\b[^\]]*\]"), {"trait": "rate_limit", "library": "aspnetcore", "direction": "inbound"}, "on"),
+        (re.compile(r"\.RequireRateLimiting\s*\("), {"trait": "rate_limit", "library": "aspnetcore", "direction": "inbound"}, "in"),
+        (re.compile(r"\.Timeout\s*=\s*TimeSpan\.|\.CancelAfter\s*\(|new\s+CancellationTokenSource\s*\(\s*TimeSpan\."), lambda m: {"trait": "timeout", "construct": "HttpClient.Timeout" if "Timeout" in m.group(0) else "CancelAfter", "deadline": False}, "in"),
+        (re.compile(r"\bdeadline\s*:\s*DateTime"), {"trait": "timeout", "construct": "grpc deadline", "deadline": True}, "in"),
+        (re.compile(r"\bnew\s+SemaphoreSlim\s*\(\s*\d+"), lambda m: {"trait": "concurrency_limit", "name": (re.search(r"(\w+)\s*=\s*$", text[max(0, m.start() - 120):m.start()]) or [None, "SemaphoreSlim"])[1], "construct": "SemaphoreSlim"}, "in"),
+    ]
+    return rules
+
+
 class DotnetSource:
     id = "dotnet.source"
-    version = "1.0.0"
+    version = "1.1.0"
 
     def matches(self, path: str) -> bool:
         return path.endswith(".cs") and not path.endswith((".Designer.cs", ".g.cs"))
 
     def extract(self, path, data, blob):
         raw = decode(data)
-        if raw is None or not any(m in raw for m in ("Http", "Map", "DbSet", "Sql", "Query", "Execute", "Base", "Produce", "Subscribe", "CreateSender", "CreateReceiver", "CreateProcessor", "[Table")):
+        if raw is None or not any(m in raw for m in ("Http", "Map", "DbSet", "Sql", "Query", "Execute", "Base", "Produce", "Subscribe", "CreateSender", "CreateReceiver", "CreateProcessor", "[Table", *_RESILIENCE_MARKERS)):
             return Extraction(parsed=False)
         text = without_comments(raw, "csharp")
         d = Doc(path, data, blob, text)
@@ -177,6 +204,8 @@ class DotnetSource:
                 topic = queue_name(lit) if lit is not None else queue_name(consts[arg.split(".")[-1]]) if arg.split(".")[-1] in consts else None
                 d.topic(d.at(m.start(), m.end()), role, transport, topic, arg if lit is None and topic is None and re.fullmatch(r"[A-Za-z_][\w.]*", arg) else None)
 
+        if any(m in raw for m in _RESILIENCE_MARKERS):
+            code_traits(d, _dotnet_rules(raw, text), "c")
         if not d.out:
             return Extraction(parsed=False)
         return d.done() if d.resolved or d.unresolved else Extraction(d.out)

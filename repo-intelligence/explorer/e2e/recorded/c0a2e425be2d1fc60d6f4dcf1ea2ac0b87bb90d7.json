@@ -1,0 +1,6 @@
+{
+ "method": "GET",
+ "path": "/v1/snapshots/sha256:91978e6f299ed2d2b754ce276b232189fc57a34b8c94770d5e1da3f0c3bcbe3f/entities?plane=architecture&kind=Repository&limit=1",
+ "status": 200,
+ "body": "{\"entities\":[{\"id\":\"ent_fhx2fwu6ot5fyxzms7xsaa7qko\",\"kind\":\"Repository\",\"name\":\"local/75d457dde4be\",\"attributes\":{\"topology\":\"single\",\"topology_status\":\"supported\",\"topology_decision_ref\":\"dec_7ghlkxbobtebdax2npy7pyq7zm\"},\"natural_key\":{},\"evidence_ids\":[]}],\"truncated\":false}"
+}

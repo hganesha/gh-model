@@ -234,3 +234,41 @@ def keyword_arg(args: str, *names: str) -> str | None:
 
 def snake(name: str) -> str:
     return re.sub(r"(?<=[a-z0-9])([A-Z])", r"_\1", name).lower()
+
+
+# -- code traits ------------------------------------------------------------------
+
+_DECLARATIONS = {
+    # a method or function header ending in its body's `{`: Java, Kotlin, C#
+    "c": re.compile(r"\b(?!(?:if|for|foreach|while|switch|catch|using|lock|return|new|else|do|try|synchronized|when|fun|typeof|nameof|sizeof|default)\b)([A-Za-z_]\w*)\s*\((?:[^;{}()]|\([^;{}()]*\))*\)\s*(?::\s*[\w<>?,.\[\] ]+)?(?:throws\s+[\w.,\s]+)?\{"),
+    "go": re.compile(r"\bfunc\s*(?:\([^)]*\)\s*)?([A-Za-z_]\w*)\s*\([^{]*\{"),
+}
+
+
+class Functions:
+    """The functions of a file, found by their headers, with the span of each body."""
+
+    def __init__(self, text: str, style: str):
+        self._bodies = [(m.start(), matching(text, m.end() - 1), m.group(1), m.end()) for m in _DECLARATIONS[style].finditer(text)]
+
+    def around(self, pos: int) -> str:
+        """The innermost function whose body holds `pos`, else `<module>`."""
+        inside = [(start, name) for start, end, name, body in self._bodies if body <= pos < end]
+        return max(inside)[1] if inside else "<module>"
+
+    def after(self, pos: int) -> str:
+        """The first function declared after `pos`: the one an annotation or attribute is on."""
+        return next((name for start, end, name, body in self._bodies if start >= pos), "<module>")
+
+
+def code_traits(d: Doc, rules, style: str) -> None:
+    """Code traits (spec §8.8) from pattern rules: each rule is (pattern, make, placement),
+    where make turns a match into a payload, a list of payloads or None, and placement says
+    whether the construct sits in a function body ("in") or annotates the next one ("on")."""
+    functions = Functions(d.text, style)
+    for pattern, make, placement in rules:
+        for m in pattern.finditer(d.text):
+            made = make(m) if callable(make) else [dict(x) for x in make] if isinstance(make, list) else dict(make)
+            for payload in made if isinstance(made, list) else [made] if made else []:
+                function = functions.after(m.end()) if placement == "on" else functions.around(m.start())
+                d.observe("code_trait", d.at(m.start(), m.end()), {"function": function, **payload})

@@ -1,6 +1,6 @@
 {
  "fixture": "F19-architecture-styles",
- "description": "Three services built in recognisable architecture styles (layered with CQRS and a saga, hexagonal, an agent service), with antipattern conditions planted on purpose. The pattern goldens are what the detectors of spec §8.8 must find; each seeded commit removes one.",
+ "description": "Three services built in recognisable architecture styles (layered with CQRS, a saga and a bulkhead, hexagonal with a circuit breaker and timeouts, a rate-limited agent service), with antipattern conditions planted on purpose. The pattern goldens are what the detectors of spec §8.8 must find; each seeded commit removes one.",
  "entities": [
   {
    "kind": "Package",
@@ -264,6 +264,74 @@
     }
    },
    "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Component",
+    "natural_key": {
+     "root": "services/payments"
+    }
+   },
+   "predicate": "EXHIBITS",
+   "object": {
+    "kind": "ArchitecturePattern",
+    "natural_key": {
+     "catalog": "arch-taxonomy-v1",
+     "id": "arch-0213"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Component",
+    "natural_key": {
+     "root": "services/payments"
+    }
+   },
+   "predicate": "EXHIBITS",
+   "object": {
+    "kind": "ArchitecturePattern",
+    "natural_key": {
+     "catalog": "arch-taxonomy-v1",
+     "id": "arch-0212"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Component",
+    "natural_key": {
+     "root": "services/orders"
+    }
+   },
+   "predicate": "EXHIBITS",
+   "object": {
+    "kind": "ArchitecturePattern",
+    "natural_key": {
+     "catalog": "arch-taxonomy-v1",
+     "id": "arch-0214"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Component",
+    "natural_key": {
+     "root": "services/assistant"
+    }
+   },
+   "predicate": "EXHIBITS",
+   "object": {
+    "kind": "ArchitecturePattern",
+    "natural_key": {
+     "catalog": "arch-taxonomy-v1",
+     "id": "arch-0239"
+    }
+   },
+   "since": "M2"
   }
  ],
  "absent_entities": [
@@ -361,6 +429,21 @@
      "natural_key": {
       "catalog": "arch-antipatterns-v1",
       "id": "anti-0007"
+     },
+     "since": "M2"
+    }
+   ]
+  },
+  {
+   "dir": "04-shared-pool",
+   "expect": "the two per-service pools become one shared pool, so the bulkhead is gone",
+   "added_entities": [],
+   "removed_entities": [
+    {
+     "kind": "ArchitecturePattern",
+     "natural_key": {
+      "catalog": "arch-taxonomy-v1",
+      "id": "arch-0214"
      },
      "since": "M2"
     }
