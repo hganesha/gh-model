@@ -8,15 +8,19 @@ a partial clone must already hold every blob `wanted_blobs` names.
 The exclusion policy is part of the commit, so it is pinned and hashed with it:
 built-in vendored/generated directories and binary extensions, then
 `.gitattributes` `linguist-generated` / `linguist-vendored` (set or unset, as
-GitHub reads them), then the repository's own `.rkp/exclude` globs.
+GitHub reads them), then the repository's own `.rkp/exclude` globs. The files the
+knowledge bundle writes under `.rkp/` (`repo_intel.knowledge.bundle`; see `in_bundle`)
+are left out entirely, so committing the bundle does not change what it describes.
 """
 
 from __future__ import annotations
 
 import fnmatch
+import hashlib
 import os
 import posixpath
 import re
+import stat
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -30,11 +34,13 @@ MAX_PARSE_BYTES = 1_000_000
 EXCLUDED_DIRS = {"node_modules", "vendor", "dist", "build", ".next", "__pycache__", ".venv", "target"}
 BINARY_EXT = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".woff", ".woff2", ".ttf", ".mp4", ".pdf", ".zip", ".gz", ".jar", ".so", ".dylib", ".exe"}
 POLICY_FILE = ".rkp/exclude"
+BUNDLE_OUTPUT_DIRS = (".rkp/knowledge/", ".rkp/knowledge.new/", ".rkp/knowledge.old/", ".rkp/cache/")
+BUNDLE_FILES = frozenset({".rkp/config.json", ".rkp/overrides.json", ".rkp/.gitignore", ".rkp/.gitattributes"})
 POLICY_VERSION = "exclusions-v2"
 _SHA = re.compile(r"^[0-9a-f]{40}([0-9a-f]{24})?$")
 
 # GIT_NO_LAZY_FETCH: in a partial-clone mirror a missing blob is an error, never a network call.
-_ENV = {"GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": os.devnull, "GIT_TERMINAL_PROMPT": "0", "GIT_NO_LAZY_FETCH": "1", "PATH": os.environ.get("PATH", "")}
+_ENV = {"GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": os.devnull, "GIT_TERMINAL_PROMPT": "0", "GIT_NO_LAZY_FETCH": "1", "GIT_OPTIONAL_LOCKS": "0", "PATH": os.environ.get("PATH", "")}
 
 
 def _git(repo: Path, *args: str, stdin: bytes | None = None) -> bytes:
@@ -130,6 +136,17 @@ class ExclusionPolicy:
         return reason
 
 
+def in_bundle(path: str) -> bool:
+    """A path the knowledge bundle writes or keys itself on (`repo_intel.knowledge.bundle`).
+
+    These are never input to a compile, not even as an exclusion: otherwise committing
+    the knowledge would change the source tree hash it is keyed by. Owner overrides are
+    an input, but through the override set hash, not as source. Other `.rkp/` files
+    (`exclude`, `business.yaml`) are read as before.
+    """
+    return path.startswith(BUNDLE_OUTPUT_DIRS) or path in BUNDLE_FILES
+
+
 def _listing(repo: Path, commit_sha: str) -> list[tuple[str, str, str, str]]:
     # No --long: sizes come from the blobs read, so excluded blobs need never be present locally.
     out = _git(repo, "ls-tree", "-r", "-z", commit_sha)
@@ -137,7 +154,9 @@ def _listing(repo: Path, commit_sha: str) -> list[tuple[str, str, str, str]]:
     for record in filter(None, out.split(b"\0")):
         meta, path = record.split(b"\t", 1)
         mode, obj_type, oid = meta.decode().split()
-        tree.append((path.decode("utf-8", "surrogateescape"), mode, obj_type, oid))
+        name = path.decode("utf-8", "surrogateescape")
+        if not in_bundle(name):
+            tree.append((name, mode, obj_type, oid))
     tree.sort()
     return tree
 
@@ -208,6 +227,82 @@ def snapshot_commit(store: ObjectStore, repo_path: str | os.PathLike[str], commi
     tree = _listing(repo, commit_sha)
     policy_oids, rest = wanted_blobs(repo, commit_sha)
     blobs = _read_blobs(repo, sorted(set(policy_oids + rest)))
+    return {"commit_sha": commit_sha, **_path_manifest(store, tree, blobs)}
+
+
+def _git_blob_oid(data: bytes) -> str:
+    return hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest()
+
+
+def _git_blob_oid_of_file(path: Path, size: int) -> str:
+    digest_ = hashlib.sha1(b"blob %d\0" % size)
+    with open(path, "rb") as stream:
+        for chunk in iter(lambda: stream.read(1 << 20), b""):
+            digest_.update(chunk)
+    return digest_.hexdigest()
+
+
+def snapshot_worktree(store: ObjectStore, repo_path: str | os.PathLike[str], base_commit: str) -> dict[str, Any]:
+    """The path manifest of the working tree as it is on disk, uncommitted changes included.
+
+    The same as `snapshot_commit` would give for a commit of every tracked and untracked,
+    not ignored file, so the source tree hash matches once those changes are committed
+    (Git's clean filters, such as line-ending conversion, are not applied). Nothing is
+    written to the repository: object IDs are computed, not stored. Excluded files are
+    hashed as a stream and never held in memory. `base_commit` is the commit it is on top of.
+    """
+    if not _SHA.match(base_commit):
+        raise ValueError("base_commit must be a full lowercase hex SHA")
+    repo = Path(repo_path)
+    staged = {}
+    for record in filter(None, _git(repo, "ls-files", "-z", "--stage").split(b"\0")):
+        meta, path = record.split(b"\t", 1)
+        mode, oid, _stage = meta.decode().split()
+        staged[path.decode("utf-8", "surrogateescape")] = (mode, oid)
+    untracked = [p.decode("utf-8", "surrogateescape") for p in filter(None, _git(repo, "ls-files", "-z", "--others", "--exclude-standard").split(b"\0"))]
+
+    listing: list[tuple[str, str, str, Path | None, int]] = []  # path, mode, type, file on disk, size
+    gitlinks: dict[str, str] = {}
+    for name in sorted(set(staged) | set(untracked)):
+        if name.endswith("/") or in_bundle(name):
+            continue
+        if staged.get(name, ("",))[0] == "160000":
+            gitlinks[name] = staged[name][1]
+            listing.append((name, "160000", "commit", None, 0))
+            continue
+        file = repo / name
+        try:
+            info = file.lstat()
+        except FileNotFoundError:
+            continue  # deleted in the working tree
+        if stat.S_ISLNK(info.st_mode):
+            listing.append((name, "120000", "blob", file, 0))
+        elif stat.S_ISREG(info.st_mode):
+            listing.append((name, "100755" if info.st_mode & stat.S_IXUSR else "100644", "blob", file, info.st_size))
+
+    def read(file: Path, mode: str) -> bytes:
+        return os.fsencode(os.readlink(file)) if mode == "120000" else file.read_bytes()
+
+    policy_files = {name: read(file, mode) for name, mode, typ, file, _ in listing if typ == "blob" and mode != "120000" and _is_policy_file(name) and file}
+    policy = ExclusionPolicy.from_files(policy_files)
+    tree: list[tuple[str, str, str, str]] = []
+    blobs: dict[str, bytes] = {}
+    for name, mode, typ, file, size in listing:
+        if typ == "commit":
+            tree.append((name, mode, typ, gitlinks[name]))
+        elif policy.reason(name, mode, typ) is None or mode == "120000":
+            data = read(file, mode)  # type: ignore[arg-type]
+            oid = _git_blob_oid(data)
+            blobs[oid] = data
+            tree.append((name, mode, typ, oid))
+        else:
+            tree.append((name, mode, typ, _git_blob_oid_of_file(file, size)))  # type: ignore[arg-type]
+    tree.sort()
+    return {"commit_sha": base_commit, "working_tree": True, **_path_manifest(store, tree, blobs)}
+
+
+def _path_manifest(store: ObjectStore, tree: list[tuple[str, str, str, str]], blobs: dict[str, bytes]) -> dict[str, Any]:
+    """Entries, exclusions and the source tree hash for a listing whose readable blobs are in `blobs`."""
     policy = ExclusionPolicy.from_files({p: blobs[oid] for p, oid in _policy_paths(tree).items()})
 
     entries: list[dict[str, Any]] = []
@@ -237,4 +332,4 @@ def snapshot_commit(store: ObjectStore, repo_path: str | os.PathLike[str], commi
     body: dict[str, Any] = {"entries": entries, "exclusions": exclusions}
     if policy.rules:  # recorded only when the repository has a policy, so existing hashes stay stable
         body["exclusion_policy"] = policy.digest()
-    return {"commit_sha": commit_sha, **body, "source_tree_hash": digest(body)}
+    return {**body, "source_tree_hash": digest(body)}

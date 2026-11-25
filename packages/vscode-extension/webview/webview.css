@@ -1,0 +1,6 @@
+/* The Explorer's shell, narrowed to one panel: no sidebar, a full-width page, a compact top bar. */
+
+.rkp-webview .workspace { margin-left: 0; }
+.rkp-webview main, .rkp-webview-main { max-width: none; padding: 20px 24px 64px; }
+.rkp-webview .topbar { min-height: 56px; padding: 8px 20px; gap: 12px; flex-wrap: wrap; }
+.rkp-webview .topbar-commit span { margin-left: 6px; }

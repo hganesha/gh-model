@@ -22,6 +22,12 @@ npm --prefix explorer install && npm --prefix explorer run dev
 
 Open http://localhost:3100 and choose **Connect repository**. The [running and testing guide](docs/running.md) has the test suites and the other checks.
 
+Without the server: `rkp compile` writes a repository's knowledge to `.rkp/knowledge/` inside it (`--working-tree` includes uncommitted changes), `rkp status` says whether that is current, and `rkp serve --stdio` answers the Explorer's read API from it. This is what the [VS Code extension](../packages/vscode-extension/README.md) runs. `freeze/build_engine.py` freezes the command line into a folder that needs no Python, for the extension's platform packages.
+
+```bash
+.venv/bin/rkp compile path/to/repository
+```
+
 ## Docs
 
 | Page | What it covers |
@@ -40,11 +46,13 @@ repo_intel/
 ├── compile/      build graph and sandboxed step worker, pipeline, compiler, linking, ontology, contracts, publish gate
 ├── extractors/   file.extract plugins, one module per language or format (base.py documents the interface)
 ├── decisions/    decision models: gateway and provider adapters, runner and ledger, rules, owner overrides
-├── knowledge/    published snapshots over time: registry, projection, deltas, lineage, parity
+├── knowledge/    published snapshots over time: registry, projection, deltas, lineage, parity; the .rkp/ bundle and its local API
+├── cli.py        the `rkp` command line: compile a repository into its .rkp/ bundle, check it, serve it to the Explorer
 ├── storage/      content-addressed object store, SQL migrations, garbage collection, canonical hashing
 ├── workspace/    workspace settings and the cross-repository business map
 └── server/       HTTP API, the service behind it, the one-command server, Temporal workflows
 explorer/         the Explorer (Next.js); all data goes through its server-side proxy to the API
+freeze/           freezes `rkp` into a self-contained folder (PyInstaller) for the VS Code extension
 contracts/        JSON Schemas exported from the contract models
 benchmarks/       fixture repositories with golden labels, and model benchmark results
 deploy/azure/     Azure deployment (Bicep and deploy.sh)

@@ -40,7 +40,6 @@ from repo_intel.storage.hashing import digest
 from repo_intel.decisions import placement
 from repo_intel.decisions.gateway import Gateway
 from repo_intel.decisions.runner import Budget
-from repo_intel.compile.capabilities import CapabilityCatalogue, match_package
 from repo_intel.compile.pipeline import PublishGateError, load_manifest, load_shards, snapshot_key, stage_compile, stage_snapshot, toolchain_hash
 from repo_intel.storage.store import ObjectStore
 
@@ -1059,53 +1058,7 @@ class Service:
         }
 
     def dependency_groups(self, manifest: Manifest) -> dict[str, Any]:
-        entities, edges = business_graph.graph(self.store, manifest)
-        memberships: dict[str, list] = {}
-        for edge in edges.values():
-            if edge["predicate"] == "PROVIDES":
-                memberships.setdefault(edge["object"], []).append(entities[edge["subject"]])
-        classified = {row["id"] for rows in memberships.values() for row in rows}
-        groups = [{
-            "capability": entities[key], "dependencies": sorted(rows, key=lambda r: (r["name"], r["id"])),
-        } for key, rows in memberships.items()]
-        other = sorted((row for key, row in entities.items() if row["kind"] == "ExternalDependency" and key not in classified), key=lambda r: (r["name"], r["id"]))
-        # Where one component declares more than one package for the same capability, name them.
-        adjacent, _ = business_graph.related_graph(entities, edges)
-        overlaps = []
-        for component in (row for row in entities.values() if row["kind"] == "Component"):
-            by_capability: dict[str, set[str]] = {}
-            for contained in adjacent[component["id"]]["CONTAINS"]:
-                if entities.get(contained["object"], {}).get("kind") != "Package":
-                    continue
-                for dependency in adjacent[contained["object"]]["DEPENDS_ON"]:
-                    for provided in adjacent[dependency["object"]]["PROVIDES"]:
-                        if provided["object"] in entities and dependency["object"] in entities:
-                            by_capability.setdefault(provided["object"], set()).add(dependency["object"])
-            overlaps.extend({
-                "component": component, "capability": entities[capability],
-                "dependencies": sorted((entities[d] for d in found), key=lambda r: (r["name"], r["id"])),
-            } for capability, found in by_capability.items() if len(found) > 1)
-        overlaps.sort(key=lambda row: (row["component"]["name"], row["capability"]["name"]))
-        # The catalogue this snapshot was compiled with, not today's: its version and why each package maps.
-        catalogue, rationales = None, {}
-        try:
-            pinned = CapabilityCatalogue.model_validate(self.store.get_json(self.store.get_json(manifest.toolchain_hash)["capability_catalogue_hash"]))
-        except (KeyError, ValueError, FileNotFoundError):
-            pinned = None
-        if pinned is not None:
-            catalogue = {"name": pinned.taxonomy.name, "version": pinned.taxonomy.version}
-            names = {item.key: item.name for item in pinned.capabilities}
-            by_package = pinned.package_mappings()
-            for capability, rows in memberships.items():
-                for dependency in rows:
-                    key = dependency["natural_key"]
-                    for mapping in match_package(by_package, key.get("ecosystem", ""), key.get("name", "")):
-                        if names.get(mapping.capability) == entities[capability]["name"]:
-                            rationales.setdefault(dependency["id"], {})[capability] = mapping.rationale
-        return {
-            "groups": sorted(groups, key=lambda g: g["capability"]["name"]), "unclassified": other, "overlaps": overlaps,
-            "catalogue": catalogue, "rationales": rationales,
-        }
+        return business_graph.dependency_groups(self.store, manifest)
 
     # -- reading a snapshot
 

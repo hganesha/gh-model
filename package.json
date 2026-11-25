@@ -1,0 +1,18 @@
+{
+  "name": "gh-model",
+  "private": true,
+  "description": "Monorepo for the repository knowledge engine and its editor shells. The engine and the Explorer live in repo-intelligence/ and keep their own toolchains; TypeScript packages live in packages/.",
+  "workspaces": [
+    "packages/bundle",
+    "packages/vscode-extension"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "typecheck": "npm run typecheck --workspaces",
+    "test": "npm run test --workspaces",
+    "package:vscode": "npm run package --workspace rkp-vscode"
+  }
+}

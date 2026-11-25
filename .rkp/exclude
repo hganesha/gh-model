@@ -1,0 +1,10 @@
+# Paths the repository knowledge compiler (rkp) does not read in this repository.
+# One glob per line, as in .gitignore; see repo-intelligence/repo_intel/ingest/snapshot.py.
+
+# Secret-scanner tests hold sample secrets on purpose; the publish gate refuses any
+# bundle whose evidence contains a value the scan finds.
+repo-intelligence/tests/test_secrets.py
+
+# Fixture repositories are test data, not part of this application: analysed as part of
+# it, they would add fake services, endpoints and tables to its knowledge.
+repo-intelligence/benchmarks/fixtures/

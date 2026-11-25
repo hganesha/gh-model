@@ -1,0 +1,43 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": [
+      "dom",
+      "dom.iterable",
+      "esnext"
+    ],
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "noUncheckedIndexedAccess": false,
+    "esModuleInterop": true,
+    "isolatedModules": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "@/*": [
+        "../../../repo-intelligence/explorer/*"
+      ],
+      "react": [
+        "../node_modules/@types/react",
+        "../../../node_modules/@types/react"
+      ],
+      "react/*": [
+        "../node_modules/@types/react/*",
+        "../../../node_modules/@types/react/*"
+      ],
+      "lucide-react": [
+        "../../../node_modules/lucide-react"
+      ],
+      "d3-force": [
+        "../../../node_modules/@types/d3-force"
+      ]
+    }
+  },
+  "include": [
+    "*.ts",
+    "*.tsx"
+  ]
+}

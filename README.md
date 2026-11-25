@@ -4,12 +4,31 @@ The GitHub Intelligence Engine: a compiler that turns a repository into evidence
 
 | Where | What |
 |---|---|
-| [`repo-intelligence/`](repo-intelligence/README.md) | The code: the knowledge compiler (`repo_intel`), its API, and the Explorer web UI |
+| [`repo-intelligence/`](repo-intelligence/README.md) | The knowledge compiler (`repo_intel`), its `rkp` command line, its API, and the Explorer web UI |
+| [`packages/bundle/`](packages/bundle) | `@rkp/bundle`: reads a repository's `.rkp/` knowledge bundle in TypeScript |
+| [`packages/vscode-extension/`](packages/vscode-extension/README.md) | The VS Code extension (development preview) |
 | [`docs/architecture.md`](docs/architecture.md) | Decision-model architecture and build specification (v2.0) |
 | [`docs/implementation-plan.md`](docs/implementation-plan.md) | Milestones M0–M5, tickets GI-001 onward, risks and the definition of done |
 | [`docs/business-map-plan.md`](docs/business-map-plan.md) | Business map, connectors and settings: reuse assessment and plan |
-| [`docs/vscode-plugin-plan.md`](docs/vscode-plugin-plan.md) | VS Code plug-in with in-repository storage: design and phased plan (proposal) |
+| [`docs/vscode-plugin-plan.md`](docs/vscode-plugin-plan.md) | Portable knowledge bundle, command-line engine and VS Code plug-in: design and phased plan (proposal) |
+| [`docs/vscode-extension-sharing.md`](docs/vscode-extension-sharing.md) | Packaging the VS Code extension and sharing it privately; what a package exposes |
 | [`docs/meta-harness-catalog.md`](docs/meta-harness-catalog.md) | AI-SDLC Meta-Harness capability catalog v0.3, which the architecture aligns to |
 | [`docs/archive/`](docs/archive) | Superseded designs (architecture v1.0) |
 
 Current status: M0–M3 are built and pass locally; see [repo-intelligence/docs/status.md](repo-intelligence/docs/status.md).
+
+## Monorepo
+
+`repo-intelligence/` keeps its own Python and npm projects and is unchanged in layout. The TypeScript packages under `packages/` are npm workspaces of the root `package.json`:
+
+```bash
+npm install
+```
+
+```bash
+npm run build
+```
+
+```bash
+npm test
+```

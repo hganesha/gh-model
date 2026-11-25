@@ -449,7 +449,9 @@ def _code_roots() -> list[str]:
     import site
 
     candidates = {sys.prefix, sys.base_prefix, sys.exec_prefix, sys.base_exec_prefix, os.path.dirname(os.path.dirname(_real(sys.executable)))}
-    candidates |= set(site.getsitepackages())
+    # A frozen engine (PyInstaller) has no site-packages: its libraries sit beside the executable.
+    candidates |= set(getattr(site, "getsitepackages", list)())
+    candidates.add(getattr(sys, "_MEIPASS", ""))
     candidates.add(str(Path(importlib.import_module(PACKAGE).__file__ or "").parent))
     roots = sorted({_real(c) for c in candidates if c and os.path.isdir(c)})
     # Drop roots nested inside another root.
@@ -493,6 +495,17 @@ def _bwrap_command(bwrap: str, inputs_dir: str) -> list[str]:
     return cmd
 
 
+FROZEN_WORKER_ARG = "__step_worker__"
+
+
+def worker_command() -> list[str]:
+    """How to start a step worker with this interpreter, or with this frozen engine."""
+    if getattr(sys, "frozen", False):
+        # The frozen `rkp` executable dispatches this first argument to step_worker.main.
+        return [_real(sys.executable), FROZEN_WORKER_ARG]
+    return [os.path.normpath(os.path.abspath(sys.executable)), "-I", "-B", "-m", f"{__name__.rsplit('.', 1)[0]}.step_worker"]
+
+
 class _Worker:
     """One sandboxed `repo_intel.compile.step_worker` process, reused across steps.
 
@@ -511,7 +524,7 @@ class _Worker:
         # Normalised: started as `../.venv/bin/python`, the interpreter path runs through a
         # directory bwrap does not mount. Not resolved: a venv's python is a symlink and
         # must keep its venv path to find its site-packages.
-        python = [os.path.normpath(os.path.abspath(sys.executable)), "-I", "-B", "-m", f"{__name__.rsplit('.', 1)[0]}.step_worker", "--inputs", inputs]
+        python = [*worker_command(), "--inputs", inputs]
         if tool == "sandbox-exec":
             cmd = [tool_path, "-p", _seatbelt_profile(inputs), *python]
         elif tool == "landlock":
