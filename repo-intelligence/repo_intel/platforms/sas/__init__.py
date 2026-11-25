@@ -15,7 +15,8 @@ Modules:
 - `macro`: symbolic macro expansion from what the file pins (`&var`, `&&var`, `&var.`);
 - `expr`, `lower`: DATA step and macro statements lowered to the behavioural IR;
 - `analysis`: entities, relations, construct counts and behaviour units for one file;
-- `inputs`: native inputs under `.rkp/inputs/sas/` (metadata exports, `sasv9.cfg`).
+- `inputs`: native inputs under `.rkp/inputs/sas/` (metadata exports, `sasv9.cfg`);
+- `values`: URLs reduced to parameter names and mail addresses removed (contract rule 7).
 
 Pack modules import `repo_intel.extractors` modules only inside functions: pack
 discovery runs while that package is loading.
@@ -34,7 +35,7 @@ class SasSource:
     """`.sas` programs, including `autoexec.sas` and `config.sas` placed under `.rkp/inputs/sas/`."""
 
     id = "sas.source"
-    version = "1.1.0"
+    version = "1.2.0"
 
     def matches(self, path: str) -> bool:
         return path.lower().endswith(".sas")
@@ -196,7 +197,7 @@ CONSTRUCTS = (
     _c("autoexec", "attribute:role", "a program from .rkp/inputs/sas/ (autoexec.sas, config.sas)"),
     # PROC SQL
     _c("proc_sql", "behavior:query", "PROC SQL: one behaviour unit; lineage of its statements"),
-    _c("sql_passthrough", "unmapped", "CONNECT TO / CONNECTION TO / EXECUTE BY: database-side SQL (never recorded)"),
+    _c("sql_passthrough", "unmapped", "CONNECT TO / CONNECTION TO / EXECUTE BY: database-side SQL; the engine is kept (a query's `remote`, a platform node), connection options never"),
     _c("sql_into_macro", "behavior:query", "SELECT ... INTO :macro-variable"),
     _c("dictionary_tables", "unmapped", "DICTIONARY tables: session metadata"),
     # formats
@@ -210,6 +211,7 @@ CONSTRUCTS = (
     *(_c(f"proc_{name}", "behavior:call", text) for name, text in _PROCS.items()),
     *(_c(f"proc_{name}", "unmapped", text) for name, text in _UNMAPPED_PROCS.items()),
     _c("proc_other", "behavior:call", "any other procedure: a call node"),
+    _c("proc_step", "behavior:platform", "in open code or a macro, a reference to a procedure's own unit (the procedure is counted by its sas:proc_<name> construct)"),
     # native inputs
     _c("metadata_job", "entity:Job", "a job or process flow in a metadata export"),
     _c("metadata_step", "entity:Task", "a step of a metadata job"),
@@ -220,7 +222,7 @@ PACK = PlatformPack(
     id="sas",
     name="SAS",
     prefix="sas",
-    version="1.1.0",
+    version="1.2.0",
     terms=TERMS,
     constructs=CONSTRUCTS,
     extractors=(SasSource(), SasInputs()),

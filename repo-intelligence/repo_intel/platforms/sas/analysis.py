@@ -23,7 +23,10 @@ It produces everything `legacy.sas` did, with the same kinds and natural keys
   code, each with its `kind`.
 
 Paths, connection options and option values are never copied: a library keeps its
-engine, a fileref its device, an ODS document or exported file its base name.
+engine, a fileref its device, an ODS document or exported file its base name. A URL
+anywhere in the output keeps its parameter names but never their values, and mail
+addresses are never copied (`values`). What a program under `.rkp/inputs/sas/`
+declares is evidence E1; everything else is parsed (E2).
 """
 
 from __future__ import annotations
@@ -46,6 +49,7 @@ from repo_intel.platforms.sas.lexer import Stmt, Tok, lex, tokens, unquote
 from repo_intel.platforms.sas.lower import Container, DataStep, Lowerer, skip_parens, split_at, toks_of
 from repo_intel.platforms.sas.macro import SENTINEL, Macros, is_dynamic, placeholders, template
 from repo_intel.platforms.sas.parse import Step, parse
+from repo_intel.platforms.sas.values import scrub, scrub_tree
 
 K = EntityKind
 P = Predicate
@@ -123,6 +127,8 @@ def report_ref(name: str) -> dict:
 
 
 def basename(path: str) -> str:
+    """The last part of a path; for a URL, of the URL without user information, query values or fragment."""
+    path = scrub(path)
     return re.split(r"[\\/]", path.rstrip("/\\"))[-1]
 
 
@@ -175,6 +181,9 @@ class Analysis:
         self.file_ref = program_ref(path)
         self.file_used = False
         self.native = path.startswith(NATIVE_PREFIX)
+        # A program under .rkp/inputs/sas/ (autoexec.sas, config.sas) is configuration the
+        # owner exported: what it holds is declared (E1), not parsed from application code.
+        self.ev = E1 if self.native else E2
         self.is_stp = self.lexed.stored_process_marker is not None or any(t.kind == "mac" and t.low == "%stpbegin" for st in self.stmts for t in st.toks)
         self.step_nodes: dict[int, list[dict]] = {}
         self.derivations: list[tuple[list[DsName], list[DsName]]] = []
@@ -208,24 +217,25 @@ class Analysis:
     def owner_name(self, owner: dict) -> str:
         return owner["natural_key"]["name"]
 
-    def entity(self, term: str, key: dict, name: str, attrs: dict, a: int, b: int, ev: EvidenceClass = E2) -> None:
-        self.entities.append(platform_entity(self.blob, self.span(a, b), term, key, name, attrs, ev))
+    def entity(self, term: str, key: dict, name: str, attrs: dict, a: int, b: int) -> None:
+        self.entities.append(platform_entity(self.blob, self.span(a, b), term, key, name, scrub_tree(attrs), self.ev))
 
-    def relation(self, subject: dict, predicate: Predicate, obj: dict, a: int, b: int, qualifiers: dict | None = None, ev: EvidenceClass = E2) -> None:
+    def relation(self, subject: dict, predicate: Predicate, obj: dict, a: int, b: int, qualifiers: dict | None = None) -> None:
         if subject is self.file_ref or subject == self.file_ref:
             self.file_used = True
-        self.relations.append(self.base.relation(self.blob, self.span(a, b), subject, predicate, obj, qualifiers or {}, ev))
+        self.relations.append(self.base.relation(self.blob, self.span(a, b), subject, predicate, obj, qualifiers or {}, self.ev))
 
     def construct(self, a: int, b: int, construct_id: str, modelled: bool) -> None:
         self.constructs.append((a, b, construct_id, modelled))
 
     def diagnostic(self, severity: str, message: str) -> None:
-        self.diagnostics.append(self.base.diagnostic("sas.source", severity, message))
+        self.diagnostics.append(self.base.diagnostic("sas.source", severity, scrub(message)))
 
     def unit(self, a: int, b: int, owner: dict, body: list, kind: str, params: list | None = None) -> None:
         """One behaviour unit; `kind` (data_step, sql_step, proc_step, macro, open_code) tells apart the units of one owner."""
         try:
-            self.behaviors.append(behavior_observation(self.blob, self.span(a, b), owner, LANGUAGE, body, params, kind=kind))
+            # Literals copied from the source keep a URL's parameter names, never its values (rule 7).
+            self.behaviors.append(behavior_observation(self.blob, self.span(a, b), owner, LANGUAGE, scrub_tree(body), scrub_tree(params), kind=kind))
         except ValueError as exc:  # a lowering bug must not lose the rest of the file
             self.diagnostic("error", f"behaviour unit at line {self.line(a)} dropped: {exc}")
 
@@ -786,8 +796,14 @@ class Analysis:
         node: dict[str, Any] = {"op": "call", "at": self.at(step.start, step.end), "call": call}
         if name in UNMAPPED_PROCS:
             node = {"op": "platform", "construct": cid, "at": self.at(step.start, step.end), "detail": {"procedure": name}}
-        self.step_nodes[index] = [node]
+        self.proc_reference(index, step, name or "unknown")
         self.unit(step.start, step.end, owner, [node], "proc_step")
+
+    def proc_reference(self, index: int, step: Step, name: str) -> None:
+        """What open code or the enclosing macro holds for a procedure: a reference to the
+        procedure's own unit, as for DATA steps and PROC SQL, so its call is stated once."""
+        at = self.at(step.start, step.end)
+        self.step_nodes[index] = [{"op": "platform", "construct": "sas:proc_step", "at": at, "detail": {"unit": at, "proc": name}}]
 
     def produce(self, owner: dict, report: str, a: int, b: int) -> None:
         key = (self.owner_name(owner), report)
@@ -860,6 +876,15 @@ class Analysis:
             if st.kind.startswith("global:") or w in ("reset", "validate", "describe"):
                 continue
             raw = self.clean[toks[0].start : st.end].rstrip().rstrip(";")
+            by = _EXECUTE_BY.search(raw) if w == "execute" else None
+            if by:
+                # EXECUTE (...) BY engine runs wholly in the database: not a query of this
+                # program, and its text names the database's tables, not SAS datasets.
+                engine = by.group(1).lower()
+                self.construct(toks[0].start, st.end, "sas:sql_passthrough", False)
+                self.diagnostic("info", f"EXECUTE BY {engine} at line {self.line(toks[0].start)} runs in the database: what it reads and writes is not linked")
+                body.append({"op": "platform", "construct": "sas:sql_passthrough", "at": at, "detail": {"action": "execute", "engine": engine}})
+                continue
             reads, writes, node = self.sql_statement(raw, toks[0].start, st, owner, at)
             body.append(node)
             all_reads += [d.name for d in reads]
@@ -882,22 +907,18 @@ class Analysis:
         scope = st.scope
         engine = None
         masked = sas_sql(raw)
-        c = _CONNECTION.search(masked)
-        if c:
-            engine = c.group(1).lower()
+        pos = 0
+        while (c := _CONNECTION.search(masked, pos)) is not None:
+            engine = engine or c.group(1).lower()
             close = skip_parens_text(masked, c.end() - 1)
             # The database-side query is the database's own text, in its own dialect, naming
             # database tables rather than SAS datasets: lineage sees a subquery, and the
             # tables it names are not linked (no libref says which SAS library they are).
             masked = masked[: c.start()] + "(select 1)".ljust(close - c.start()) + masked[close:]
+            pos = c.start() + 1
             self.construct(offset + c.start(), offset + close, "sas:sql_passthrough", False)
-            self.diagnostic("info", f"pass-through query to {engine} at line {self.line(offset + c.start())} runs in the database: the tables it reads are not linked")
-        elif raw.lower().startswith("execute") and _EXECUTE_BY.search(raw):
-            engine = _EXECUTE_BY.search(raw).group(1).lower()
-            self.construct(offset, offset + len(raw), "sas:sql_passthrough", False)
-            self.diagnostic("info", f"EXECUTE BY {engine} at line {self.line(offset)} runs in the database: what it reads and writes is not linked")
-            masked = ""
-        found = self.sqlmod.lineage(masked) if masked else self.sqlmod.Lineage()
+            self.diagnostic("info", f"pass-through query to {c.group(1).lower()} at line {self.line(offset + c.start())} runs in the database: the tables it reads are not linked")
+        found = self.sqlmod.lineage(masked)
         self.unresolved += found.unresolved
         reads, writes = [], []
         for role, items in (("write", found.writes), ("read", found.reads)):
@@ -942,10 +963,14 @@ class Analysis:
                 params.append({"name": name, "value": value, "type": "string", "inline": True})
             return ":" + name
 
-        sql = re.sub(r"\s+", " ", _MACRO_RUN.sub(parameter, raw)).strip()
+        # URLs in the text keep their parameter names, never values (rule 7). Scrubbed before
+        # parameters are made, so a reference in a query value never becomes one.
+        sql = re.sub(r"\s+", " ", _MACRO_RUN.sub(parameter, scrub(raw))).strip()
         node: dict[str, Any] = {"op": "query", "at": at, "sql": sql, "params": params}
         if engine:
+            # Part of the text runs in that database: consumers read no table names from it.
             node["datasource"] = engine
+            node["remote"] = engine
         if writes:
             node["target"] = writes[0].expr
         return reads, writes, node
@@ -986,7 +1011,7 @@ class Analysis:
         if reads or writes:
             self.derivations.append((writes, reads))
         node = {"op": "call", "at": self.at(step.start, step.end), "call": {"e": "call", "callee": {"e": "name", "name": "format", "kind": "procedure"}, "args": [{"e": "lit", "value": n, "type": "string"} for n in defined]}}
-        self.step_nodes[index] = [node]
+        self.proc_reference(index, step, "format")
         self.unit(step.start, step.end, owner, [node], "proc_step")
 
     def format_definition(self, toks: list[Tok], st: Stmt, owner: dict, library: str | None) -> str | None:
@@ -1108,13 +1133,13 @@ class Analysis:
         self.entity("sas:PromptGroup", form, "prompts", {"stored_process": path}, first.start, first.end)
         screen_ref = {"kind": "Screen", "natural_key": screen, "name": basename(path)}
         form_ref = {"kind": "Form", "natural_key": form, "name": "prompts"}
-        self.relations.append(self.base.relation(self.blob, self.span(first.start, first.end), screen_ref, P.CONTAINS, form_ref, {}, E2))
-        self.relations.append(self.base.relation(self.blob, self.span(first.start, first.end), form_ref, P.SUBMITS_TO, self.file_ref, {}, E2))
+        self.relations.append(self.base.relation(self.blob, self.span(first.start, first.end), screen_ref, P.CONTAINS, form_ref, {}, self.ev))
+        self.relations.append(self.base.relation(self.blob, self.span(first.start, first.end), form_ref, P.SUBMITS_TO, self.file_ref, {}, self.ev))
         for name, tok in prompts:
             self.construct(tok.start, tok.end, "sas:stp_prompt", True)
             key = {"container": f"{path}#prompts", "name": name}
             self.entity("sas:Prompt", key, name, {"macro_variable": name, "control": "prompt"}, tok.start, tok.end)
-            self.relations.append(self.base.relation(self.blob, self.span(tok.start, tok.end), form_ref, P.CONTAINS, {"kind": "UIControl", "natural_key": key, "name": name}, {}, E2))
+            self.relations.append(self.base.relation(self.blob, self.span(tok.start, tok.end), form_ref, P.CONTAINS, {"kind": "UIControl", "natural_key": key, "name": name}, {}, self.ev))
         self.file_used = True
 
     def open_code(self) -> None:
@@ -1159,7 +1184,7 @@ class Analysis:
                 if src.permanent:
                     if (name, src.name) not in emitted:
                         emitted.add((name, src.name))
-                        self.relations.append(self.base.relation(self.blob, self.span(out.tok.start, out.tok.end), dataset_ref(name), P.DERIVED_FROM, dataset_ref(src.name), {"through_work": True} if src not in producers.get(name, []) else {}, E2))
+                        self.relations.append(self.base.relation(self.blob, self.span(out.tok.start, out.tok.end), dataset_ref(name), P.DERIVED_FROM, dataset_ref(src.name), {"through_work": True} if src not in producers.get(name, []) else {}, self.ev))
                 else:
                     stack.extend(producers.get(src.name, []))
 
@@ -1196,12 +1221,9 @@ class Analysis:
                 role = basename(self.path).lower().split(".")[0]
                 attrs["role"] = "autoexec" if role.startswith("autoexec") else "config" if role.startswith("config") else "input"
                 self.construct(0, 0, "sas:autoexec", True)
-            items.append(platform_entity(self.blob, self.base.whole_file(self.data), term, self.file_ref["natural_key"], self.file_ref["name"], attrs, E2))
+            items.append(platform_entity(self.blob, self.base.whole_file(self.data), term, self.file_ref["natural_key"], self.file_ref["name"], attrs, self.ev))
         items += self.entities + self.relations + self.behaviors
-        # A program under .rkp/inputs/sas/ (autoexec.sas, config.sas) is configuration the
-        # owner exported: what it holds is declared (E1), not parsed from application code.
-        ev = E1 if self.native else E2
-        items += [construct_observation(self.blob, self.span(a, b), cid, modelled, evidence_class=ev) for a, b, cid, modelled in self.constructs]
+        items += [construct_observation(self.blob, self.span(a, b), cid, modelled, evidence_class=self.ev) for a, b, cid, modelled in self.constructs]
         items += self.sqlmod.lineage_summary(self.blob, self.data, self.resolved, self.unresolved)
         return self.base.Extraction(items, self.diagnostics)
 
