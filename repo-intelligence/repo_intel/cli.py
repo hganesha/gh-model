@@ -285,13 +285,17 @@ def _load_bundle(source: _DirectorySource | _GitSource) -> dict[str, Any]:
     data = source.read([*named, *(f"{t}.jsonl" for t in _SIDE_TABLES)])
     problems += [f"{name}: a symbolic link out of the bundle; not read" for name in source.escaped]
 
-    defaults = document.get("row_defaults") or {}  # format 1 wrote every field
+    # Format 1 wrote every field and has no row_defaults; a damaged table is checked by verify.
+    defaults = {k: v for k, v in (document.get("row_defaults") or {}).items() if isinstance(v, dict)} if isinstance(document.get("row_defaults"), dict) else {}
     tables = {name: table for table, name in _ROW_TABLES}
     shards: dict[str, dict[str, Any]] = {}
     written: dict[str, list[tuple[str, dict[str, Any]]]] = {}
     for unit in units:
         file = unit.get("file")
-        if file not in named or unit.get("unit") in shards:
+        if unit.get("unit") in shards:
+            problems.append(f"manifest.json: unit {unit.get('unit')!r} is listed more than once")
+            continue
+        if file not in named:
             continue
         if data.get(file) is None:
             problems.append(f"{file}: named by the manifest but missing")
