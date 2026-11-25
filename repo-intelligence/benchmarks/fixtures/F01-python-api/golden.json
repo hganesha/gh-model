@@ -265,6 +265,38 @@
         }
       },
       "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Repository",
+        "natural_key": {}
+      },
+      "predicate": "EXHIBITS",
+      "object": {
+        "kind": "ArchitecturePattern",
+        "natural_key": {
+          "catalog": "arch-taxonomy-v1",
+          "id": "arch-0001"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Component",
+        "natural_key": {
+          "root": ""
+        }
+      },
+      "predicate": "EXHIBITS",
+      "object": {
+        "kind": "ArchitecturePattern",
+        "natural_key": {
+          "catalog": "arch-taxonomy-v1",
+          "id": "arch-0067"
+        }
+      },
+      "since": "M2"
     }
   ],
   "absent_entities": [
@@ -282,6 +314,14 @@
         "name": "pydantic-settings"
       },
       "why": "only present from commit 02 onward"
+    },
+    {
+      "kind": "Antipattern",
+      "natural_key": {
+        "catalog": "arch-antipatterns-v1",
+        "id": "anti-0004"
+      },
+      "why": "one component uses the customers table; nothing writes it from two deployables"
     }
   ],
   "exclusions": [

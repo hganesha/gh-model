@@ -488,9 +488,134 @@
     }
    },
    "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Component",
+    "natural_key": {
+     "root": "services/orders"
+    }
+   },
+   "predicate": "EXHIBITS",
+   "object": {
+    "kind": "ArchitecturePattern",
+    "natural_key": {
+     "catalog": "arch-taxonomy-v1",
+     "id": "arch-0068"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Component",
+    "natural_key": {
+     "root": "services/catalog"
+    }
+   },
+   "predicate": "EXHIBITS",
+   "object": {
+    "kind": "ArchitecturePattern",
+    "natural_key": {
+     "catalog": "arch-taxonomy-v1",
+     "id": "arch-0069"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "EventTopic",
+    "natural_key": {
+     "name": "invoices"
+    }
+   },
+   "predicate": "EXHIBITS",
+   "object": {
+    "kind": "ArchitecturePattern",
+    "natural_key": {
+     "catalog": "arch-taxonomy-v1",
+     "id": "arch-0085"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Repository",
+    "natural_key": {}
+   },
+   "predicate": "EXHIBITS",
+   "object": {
+    "kind": "ArchitecturePattern",
+    "natural_key": {
+     "catalog": "arch-taxonomy-v1",
+     "id": "arch-0140"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Interface",
+    "natural_key": {
+     "path": "proto/orders/v1/orders.proto",
+     "title": "shop.orders.v1.Orders"
+    }
+   },
+   "predicate": "EXHIBITS",
+   "object": {
+    "kind": "ArchitecturePattern",
+    "natural_key": {
+     "catalog": "arch-taxonomy-v1",
+     "id": "arch-0324"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Component",
+    "natural_key": {
+     "root": "services/billing"
+    }
+   },
+   "predicate": "EXHIBITS",
+   "object": {
+    "kind": "Antipattern",
+    "natural_key": {
+     "catalog": "arch-antipatterns-v1",
+     "id": "anti-0006"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Repository",
+    "natural_key": {}
+   },
+   "predicate": "EXHIBITS",
+   "object": {
+    "kind": "ArchitecturePattern",
+    "natural_key": {
+     "catalog": "arch-taxonomy-v1",
+     "id": "arch-0004"
+    }
+   },
+   "since": "M2"
   }
  ],
- "absent_entities": [],
+ "absent_entities": [
+  {
+   "kind": "ArchitecturePattern",
+   "natural_key": {
+    "catalog": "arch-taxonomy-v1",
+    "id": "arch-0139"
+   },
+   "why": "each service uses only its own tables"
+  }
+ ],
  "exclusions": [],
  "forbidden_kinds": [
   "Symbol"

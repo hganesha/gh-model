@@ -24,7 +24,9 @@ from repo_intel.decisions import dependency as dm_dependency
 from repo_intel.storage.hashing import digest
 from repo_intel.compile.link import link_repo, match_call, normalize_route
 from repo_intel.compile.ontology import AssertionKind, EntityKind, EpistemicStatus, EvidenceClass, Predicate, functional_violations
+from repo_intel.compile.patterns import SERVERLESS_DEPLOYMENT_KINDS, Graph, PatternCatalogue, detect, granularity_features
 from repo_intel.compile.planning import plan_units
+from repo_intel.decisions import architecture as dm_architecture
 from repo_intel.extractors.manifests import effective_declarations
 
 ROOT_UNIT = "@root"
@@ -418,8 +420,11 @@ def _repo_requests(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, A
     links: dict[str, dict[str, Any]] = inputs["links"]
     view = _repo_view(shards)
     requests = []
+    repo_id = Entity.make(repo, EntityKind.REPOSITORY, {}, repo).id
     features, evidence = topology_features(shards)
-    requests.append({"key": "topology", "spec": "dm.repository-topology", "scope": Entity.make(repo, EntityKind.REPOSITORY, {}, repo).id, "features": features, "evidence_ids": evidence})
+    requests.append({"key": "topology", "spec": "dm.repository-topology", "scope": repo_id, "features": features, "evidence_ids": evidence})
+    features, evidence = _granularity_request(shards, links, view)
+    requests.append({"key": "granularity", "spec": dm_architecture.GRANULARITY_SPEC.id, "scope": repo_id, "features": features, "evidence_ids": evidence})
     for name in sorted(links):
         for call in links[name]["exports"]["http_calls"]:
             hits = _http_hits(call, view["endpoints"])
@@ -444,7 +449,31 @@ def _repo_requests(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, A
     return {"requests": requests}
 
 
-REPO_REQUESTS = Step("repo.requests", "0.1.0", _repo_requests)
+def _granularity_request(shards: dict[str, dict[str, Any]], links: dict[str, dict[str, Any]], view: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
+    """DM11 features: serverless functions no component accounts for, and links between components."""
+    functions: dict[str, str] = {}
+    for s in shards.values():
+        for du in s["entities"]:
+            if du["kind"] == EntityKind.DEPLOYMENT_UNIT and du["natural_key"].get("kind") in SERVERLESS_DEPLOYMENT_KINDS and not _deploy_hits(du, view["names_of"]):
+                functions.setdefault(du["natural_key"]["name"], du["evidence_ids"][0] if du["evidence_ids"] else "")
+    component_of = view["component_of"]
+    pairs: set[tuple[str, str, str]] = set()
+    g = Graph.build(shards.values())
+    for t in g.of_kind(EntityKind.EVENT_TOPIC):
+        pubs = {a["subject"] for a in g.incoming(t["id"], "PUBLISHES_TO", EntityKind.COMPONENT)}
+        subs = {a["subject"] for a in g.incoming(t["id"], "SUBSCRIBES_TO", EntityKind.COMPONENT)}
+        pairs |= {(p, s, t["id"]) for p in pubs for s in subs if p != s}
+    for name in sorted(links):
+        for call in links[name]["exports"]["http_calls"]:
+            caller = component_of.get(name)
+            for _, _, unit in ((e, ev, u) for e, ev, u in view["endpoints"] if match_call(call["call_path"], e["natural_key"]["route"])):
+                if caller and component_of.get(unit) not in (None, caller):
+                    pairs.add((caller, component_of[unit], "http"))
+    features, evidence = granularity_features(shards, sorted(functions), len({(p, s) for p, s, _ in pairs}))
+    return features, sorted(set(evidence) | {e for e in functions.values() if e})
+
+
+REPO_REQUESTS = Step("repo.requests", "0.2.0", _repo_requests)
 
 PRECEDENCE = {"E1": 1, "E2": 2, "E3": 2, "E4": 3, "E5": 4}  # declared, parsed or resolved, heuristic, model
 KIND_ORDER = {"observed_fact": 0, "derived_relation": 1, "inferred_relation": 2, "hypothesis": 3}
@@ -591,6 +620,8 @@ def _repo_compile(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, An
         row = Unknown.make(repo_id, "topology", "unknown", topology["abstain_reason"], "decisions:@repo").row()
         g.unknowns[row["id"]] = row
 
+    coverage.append(_architecture(repo, repo_id, shards, g, inputs["pattern_catalogue"], decided["granularity"]))
+
     # Source that belongs to no package: its component boundaries were not determined.
     loose = sum(1 for e in shards.get(ROOT_UNIT, {"entities": []})["entities"] if e["kind"] == EntityKind.ARTIFACT and e["attributes"].get("language") in ("python", "typescript", "javascript"))
     if loose:
@@ -628,11 +659,74 @@ def _repo_compile(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, An
     return {"global_shard": g.rows(), "coverage": coverage, "conflicts": conflicts, "decisions": dependency_decisions, "workspace_exports": workspace_exports}
 
 
+def _architecture(repo: str, repo_id: str, shards: dict[str, dict[str, Any]], g: _Shard, catalogue_data: dict[str, Any], granularity: dict[str, Any]) -> dict[str, Any]:
+    """Patterns and antipatterns the compiled knowledge shows (spec §8.8), and DM11's choice."""
+    catalogue = PatternCatalogue.model_validate(catalogue_data)
+    rows = [*shards.values(), g.rows()]
+    graph = Graph.build(rows)
+    evidence_of = {e["id"]: e for s in rows for e in s["evidence"]}
+    kinds = {"arch": EntityKind.ARCHITECTURE_PATTERN, "anti": EntityKind.ANTIPATTERN}
+
+    def target(entry_id: str) -> str:
+        entry = catalogue.entry(entry_id)
+        if entry_id.startswith("arch-"):
+            family = catalogue.family(entry.family)
+            attributes = {"kind": entry.kind, "classification_path": entry.family, "family": family.name, "concern": catalogue.concern(entry.family[:2]).name, "intent": entry.intent, "terminology": "evolving" if entry.evolving else "established"}
+            key = {"catalog": catalogue.key, "id": entry_id}
+        else:
+            attributes = {"typical_evidence": entry.typical_evidence, "remediation": list(entry.remediation)}
+            key = {"catalog": "arch-antipatterns-v1", "id": entry_id}
+        return g.entity(Entity.make(repo, kinds[entry_id[:4]], key, entry.name, attributes=attributes))
+
+    def cite(ids: list[str]) -> list[str]:
+        return sorted({g.cite(evidence_of[e]) for e in ids if e in evidence_of})
+
+    exhibited: set[str] = set()
+    for f in detect(graph, catalogue):
+        fact_rows = [graph.entities.get(x) or graph.assertion_by_id.get(x) for x in f.facts]
+        cited = cite([e for row in fact_rows if row for e in row["evidence_ids"]])
+        if not cited:
+            continue
+        supported = f.evidence_class == "E3"
+        g.assertion(Assertion.make(
+            f.subject, Predicate.EXHIBITS, target(f.target), qualifiers={"detector": f.detector, "basis": f.basis},
+            assertion_kind=AssertionKind.DERIVED_RELATION,
+            epistemic_status=EpistemicStatus.SUPPORTED if supported else EpistemicStatus.INFERRED,
+            evidence_class=EvidenceClass(f.evidence_class), evidence_ids=cited, resolution="exact" if supported else "candidate",
+        ))
+        exhibited.add(f.target)
+
+    # DM11: a judgement, never more than inferred; the decision ledger records how it was reached.
+    if not granularity["abstained"]:
+        entry_id = dm_architecture.LABEL_TO_ENTRY[granularity["selected_label"]]
+        modelled = granularity["decision_method"] != "rules"
+        cited = cite(granularity["evidence_ids"])
+        if cited:
+            g.assertion(Assertion.make(
+                repo_id, Predicate.EXHIBITS, target(entry_id), qualifiers={"decision": dm_architecture.GRANULARITY_SPEC.id},
+                assertion_kind=AssertionKind.INFERRED_RELATION if modelled else AssertionKind.DERIVED_RELATION,
+                epistemic_status=EpistemicStatus.INFERRED, evidence_class=EvidenceClass.E5 if modelled else EvidenceClass.E4,
+                evidence_ids=cited, resolution="candidate", decision_ref=granularity["decision_id"],
+            ))
+            exhibited.add(entry_id)
+    elif granularity["abstain_reason"] != "no_backend_deployable":
+        row = Unknown.make(repo_id, "deployment_granularity", "unknown", granularity["abstain_reason"] or "undecided", "decisions:@repo").row()
+        g.unknowns[row["id"]] = row
+
+    looked_for = [e for e in catalogue.entries if e.detectors or e.decided_by]
+    observable = [e for e in catalogue.entries if e.observability == "repository"]
+    return CoverageEntry(domain="architecture_patterns", scope="@repo", numerator=len(looked_for), denominator=len(observable), detail={
+        "catalogue": f"{catalogue.key}@{catalogue.version}", "entries": len(catalogue.entries), "beyond_repository": len(catalogue.entries) - len(observable),
+        "antipatterns": len(catalogue.antipatterns), "antipatterns_looked_for": sum(1 for a in catalogue.antipatterns if a.detectors),
+        "exhibited": sorted(x for x in exhibited if x.startswith("arch-")), "antipatterns_exhibited": sorted(x for x in exhibited if x.startswith("anti-")),
+    }).row()
+
+
 def _preference(overrides: Mapping[str, Any], predicate: str, subject: str) -> str | None:
     return next((p["object"] for p in overrides.get("preferences", []) if p["predicate"] == predicate and p["subject"] == subject), None)
 
 
-REPO_COMPILE = Step("repo.compile", "0.6.0", _repo_compile)
+REPO_COMPILE = Step("repo.compile", "0.7.0", _repo_compile)
 
 from repo_intel.compile.link import UNIT_LINK  # noqa: E402
 

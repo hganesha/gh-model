@@ -34,7 +34,7 @@ build-backend = "setuptools.build_meta"
 include = ["repo_intel*"]
 
 [tool.setuptools.package-data]
-repo_intel = ["compile/technical_capabilities.json", "decisions/model_pins.json", "storage/migrations/*.sql"]
+repo_intel = ["compile/technical_capabilities.json", "compile/architecture_patterns.json", "decisions/model_pins.json", "storage/migrations/*.sql"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

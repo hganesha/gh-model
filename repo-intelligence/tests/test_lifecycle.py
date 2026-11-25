@@ -329,7 +329,8 @@ def test_acceptance_14_deleted_repository_leaves_no_content(system, f01, tmp_pat
     client.post("/v1/business-maps/placements", headers=AUTH, json={"expected_version": 1, "lineage_id": subject["lineage_id"], "action": "confirm", "capability_id": "orders"})
     while service.placement_worker is not None:
         time.sleep(0.05)
-    markers = [b"customers", b"create_customer", b"display_name"]  # names only F01 contains
+    # Names only F01 contains. Not the bare word "customers": the tenant-wide pattern catalogue uses it.
+    markers = [b"/customers", b"create_customer", b"display_name"]
     assert all(m in _strings_in_store(store.root) for m in markers)
 
     assert client.delete(f"/v1/repositories/{repo_id}").status_code == 401

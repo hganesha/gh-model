@@ -130,6 +130,12 @@ Java, Go and the other languages below were inventory-only; each now has a front
 
 Fixtures F16 (protobuf, GraphQL and AsyncAPI implemented in Go, Kotlin, C#, Ruby and Swift), F17 (AWS and Azure infrastructure with cloud brokers) and F18 (Bazel, Nx and Turborepo) cover these, each with three seeded commits. F04 (Maven) and F05 (Go) now expect components and endpoints; acceptance test 9 uses F05's Rust crate. `tests/test_extractors_polyglot.py` covers the edge cases. Known gaps: a Lambda or Helm chart is not yet linked to the component whose code it deploys; Kotlin and Java routes built from constants are counted, not resolved; Nx `^target` and Turborepo `^task` dependencies stay attributes until the package graph is joined with the build graph; Pulumi programs in Go and C# are not read.
 
+## Architecture patterns (after M3)
+
+The architecture pattern taxonomy (`docs/architecture-pattern-taxonomy.md`) is now a pinned catalogue of 390 patterns and 9 antipatterns (spec §8.8). Detectors over the compiled graph look for 25 entries and 2 antipatterns; DM11 (`dm.deployment-granularity`) chooses among monolithic, modular monolith, service-based and microservices. Findings are `ArchitecturePattern` and `Antipattern` entities linked by `EXHIBITS`, `supported` only when the finding is itself a parsed fact (E3) and `inferred` otherwise. 49 entries a repository cannot show (organisational, runtime and control-plane patterns) are marked `beyond_repository` and excluded from the coverage denominator. The Explorer shows both kinds on the Architecture plane.
+
+Goldens for F01, F07, F11, F12, F16 and F17 name the patterns each must exhibit, and three name patterns they must not (F01 has no shared database; F07 is not a monolith; F16's services do not share tables). `tests/test_patterns.py` checks the catalogue against the document, each detector on constructed graphs, DM11's rules and verifier, and that a repository with only dependencies exhibits nothing. Known gaps: F13's training pipeline is not found, because `PRODUCES` starts at the package rather than a job; DM11's thresholds are placeholders until calibration; F02's granularity stays an Unknown without a decision model.
+
 ## Deviations from the spec so far
 
 - Contracts are written as Pydantic models and JSON Schemas are exported from them. The spec had it the other way round.

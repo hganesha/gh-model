@@ -273,6 +273,59 @@
     }
    },
    "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "EventTopic",
+    "natural_key": {
+     "name": "orders-queue"
+    }
+   },
+   "predicate": "EXHIBITS",
+   "object": {
+    "kind": "ArchitecturePattern",
+    "natural_key": {
+     "catalog": "arch-taxonomy-v1",
+     "id": "arch-0085"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "EventTopic",
+    "natural_key": {
+     "name": "order-notifications"
+    }
+   },
+   "predicate": "EXHIBITS",
+   "object": {
+    "kind": "ArchitecturePattern",
+    "natural_key": {
+     "catalog": "arch-taxonomy-v1",
+     "id": "arch-0086"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "InfrastructureResource",
+    "natural_key": {
+     "name": "ProcessOrders",
+     "provider": "sam",
+     "type": "AWS::Serverless::Function"
+    }
+   },
+   "predicate": "EXHIBITS",
+   "object": {
+    "kind": "ArchitecturePattern",
+    "natural_key": {
+     "catalog": "arch-taxonomy-v1",
+     "id": "arch-0253"
+    }
+   },
+   "since": "M2"
   }
  ],
  "absent_entities": [

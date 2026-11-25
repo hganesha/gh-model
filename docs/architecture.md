@@ -270,6 +270,7 @@ A decision function is a versioned unit with declared input features, a closed l
 | DM08 | Behavior candidates | component or flow | entry point, route, tests, docs | behavior hypotheses | targeted LLM (open-ended output) | evidence spans, reviewed sample | experimental |
 | DM09 | Requirements lineage | feature | issues, docs, tests, commits | requirement to implementation to test | graph, decision model, targeted LLM | source-linked trace | deferred |
 | DM10 | Change impact | commit delta | KnowledgeDelta, reverse dependencies, tests | affected nodes with uncertainty | deterministic graph; decision model scores borderline nodes | comparison with later observed diffs | yes |
+| DM11 | Deployment granularity | repository | deployable components, unlinked serverless functions, shared written tables, cross-component links | monolithic / modular-monolith / service-based / microservices / unknown (`EXHIBITS` arch-0001–0004, always `inferred`) | rules, then decision model | the label does not contradict the deployable count or data sharing (§8.8) | yes |
 
 Two capability decisions extend this registry. `dm.dependency-capability` derives `ExternalDependency —PROVIDES→ TechnicalCapability` from a declared package and the pinned technical catalogue. `dm.capability-placement` chooses among the owner-defined business capabilities shortlisted for a component. Its decisions are part of the workspace overlay (§18.1). Rules and model choices retain the decision version, evidence and effective model policy in their cache identity.
 
@@ -392,6 +393,8 @@ Legacy code, for migration work (added 2026-11-24): `Program`, natural key `{pla
 - ColdFusion pages and remote component functions are `Endpoint`s that the program `EXPOSES`.
 - SAS `libname`s and ColdFusion data sources are `ConfigKey`s; their connection values are never read.
 
+Architecture (added 2026-11-24): `ArchitecturePattern` and `Antipattern`, natural key `{catalog, id}`, one entity per catalogue entry a repository exhibits (§8.8). The catalogue, not the repository, supplies their name, intent, family and terminology.
+
 Changes from v1: `Application`, `Service` and `Library` are one entity, `Component`, with `component_kind` drawn from the DM03 label set, so there is one vocabulary instead of three. `ConfigKey` is added because environment variables and config keys are how a component is linked to the resources it uses. `Migration` and `Owner` are added because relations already referred to them. `Revision` is dropped as an entity; the snapshot is the revision.
 
 ### 8.2 Relations (v1)
@@ -408,6 +411,8 @@ The data and ML relations:
 `DEPENDS_ON` also links build targets to the build targets they depend on (Bazel `deps`, Nx and Turborepo `dependsOn`).
 
 `READS_FROM` and `WRITES_TO` also take jobs, tasks and notebooks as subjects, and datasets and models as objects. `DEPENDS_ON` also links tasks to their upstream tasks. All of these are declared (E1) or parsed (E2); a read or write whose target is computed at run time is not guessed, but counted against the `data_lineage` coverage domain.
+
+`EXHIBITS` links a repository, component, interface, event topic, table, dataset, job, deployment unit, infrastructure resource or model to an `ArchitecturePattern` or `Antipattern` (§8.8).
 
 Each relation has a schema: permitted subject and object kinds, direction, cardinality (functional or many), permitted qualifiers and the minimum evidence class. Multiple edges and conflicting assertions between the same pair are allowed.
 
@@ -507,6 +512,40 @@ rkp_hash: sha256:…
 ```
 Shards are stored as canonical JSONL (the hashed form). Parquet exports for analytics are derived artifacts and carry no authority.
 
+### 8.8 Architecture patterns and antipatterns
+The pattern catalogue (`compile/architecture_patterns.json`) is generated from `docs/architecture-pattern-taxonomy.md`: 18 concerns, 94 families, 390 entries (`arch-0001`…`arch-0390`, in the document's order) and the 9 antipatterns of its §9 (`anti-0001`…`anti-0009`). It is pinned: its hash is in the toolchain manifest and it reaches `repo.compile` as a declared input. A test checks that the catalogue still matches the document.
+
+**What a repository can show.** Each family is marked `repository` or `beyond_repository`, with a reason for the latter. Organisational and operating models (Team Topologies, Inverse Conway, SRE practice), runtime behaviour (autoscaling policy, chaos engineering, canary analysis) and deployment strategies that live in a control plane are not visible in source, so 49 entries carry no detector, and the catalogue refuses one. Coverage reports this honestly rather than counting those entries as absent.
+
+**Detectors** run over the compiled graph after linking, never over raw files, and each reads only facts other extractors already established. The taxonomy's rule holds: a framework or product name alone is not evidence of a pattern, so no detector fires on a dependency. Each finding names the facts (entities and assertions) it rests on and cites their evidence.
+
+| Detector | Entries | Reads |
+|---|---|---|
+| event-driven | arch-0014 | components that publish to and subscribe from shared topics |
+| channel-semantics | arch-0085 point-to-point, arch-0086 publish-subscribe, arch-0088 event streaming | each topic's transport and its subscribers |
+| dead-letter | arch-0112 dead letter channel | a topic, or a declared queue or topic resource, whose name marks it as a dead-letter channel |
+| load-leveling | arch-0236 queue-based load leveling | a queue a service publishes to and a separate worker consumes |
+| interface-semantics | arch-0067 REST, arch-0068 gRPC, arch-0069 GraphQL | the interface protocol; REST also needs a resource route with a read and a write method |
+| versioned-contract | arch-0324 versioned contract | a contract whose path or title names a version, or routes under a `/vN` prefix |
+| health-endpoint | arch-0314 | a health, liveness or readiness route |
+| api-gateway | arch-0070 API gateway | a managed API gateway declared in infrastructure code |
+| data-ownership | arch-0139 shared database, arch-0140 database per service, anti-0004 uncontrolled shared database | which deployable components read and write which tables; anti-0004 needs two writers |
+| dual-write | anti-0006 dual-write gap | a backend component that writes tables and publishes messages, none of the tables named as an outbox |
+| outbox | arch-0110 transactional outbox | a table named as an outbox that application code writes |
+| n-tier | arch-0016 | a frontend consuming endpoints of a service that reads or writes tables |
+| runtime-packaging | arch-0252 service instance per container, arch-0253 serverless execution | deployment units by kind and image (backing-service images do not count), and declared function resources |
+| batch-and-workflows | arch-0125, arch-0193, arch-0337 | jobs with a schedule or trigger, tasks in declared dependency order, and a job whose tasks, or what they run (one `RUNS` hop), produce a model |
+| model-serving | arch-0333 | a deployment unit or component that `SERVES` a model |
+| analytical-data | arch-0186 ELT, arch-0202 medallion layers, arch-0203 star schema | dbt models; datasets named in bronze, silver and gold layers; fact and dimension table names |
+
+**Status follows the evidence class.** A finding that is itself a parsed fact (two components write one table: a shared database) is E3 and `supported` with `exact` resolution. A finding that needs judgement (whether that sharing is *uncontrolled*, whether a REST-like route set is REST) is E4 and `inferred` with `candidate` resolution. Antipatterns are always E4.
+
+**DM11 deployment granularity** chooses among the four entries of family 01.01. Its features are the backend deployables (service and worker components, and serverless functions no component accounts for), frontend deployables, internal libraries, tables two backend deployables write, and cross-component links (a topic one publishes and another subscribes to, an HTTP call that resolves to another component's endpoint). Rules settle one deployable (monolithic, or ambiguous with modular-monolith when there are internal libraries), shared tables (service-based) and three or more linked backends (microservices). Otherwise the decision model chooses, under the usual gate. A repository shows packaging, not independent deployability, so every DM11 label is `inferred`: E4 from rules, E5 from a model, with the `decision_ref`. The verifier rejects a label the counts contradict, such as microservices that write each other's tables. When DM11 abstains for a reason other than finding no backend, the result is an Unknown (`deployment_granularity`).
+
+**Coverage** domain `architecture_patterns`, scope `@repo`: the numerator is the entries looked for (those with a detector or a decision), the denominator the entries a repository can show. The detail lists the catalogue key, the beyond-repository count, the antipatterns looked for, and what was exhibited.
+
+Phase 1 stops here. Not yet looked for: patterns that need code-level structure (layered and hexagonal boundaries, CQRS, saga), resilience patterns read from library configuration, and the remaining antipatterns (distributed monolith, chatty services and the rest), which need call-graph and deployment facts across components.
+
 ---
 
 ## 9. Knowledge layers, coverage and sampling
@@ -536,6 +575,7 @@ Coverage is a ratio with a stated denominator, reported per domain, per language
 | Deployment refs | image, env and resource references resolved | references declared |
 | Decisions | decisions resolved | decisions planned (abstentions listed by reason) |
 | Data lineage | dataset and table reads and writes whose target is named (a literal, a constant, or a template with named placeholders) | reads, writes and data-moving statements detected, in Spark, SQL, notebooks, orchestrators and legacy code |
+| Architecture patterns | catalogue entries a detector or decision looks for | catalogue entries a repository can show (§8.8) |
 
 Files in unsupported languages, excluded files and unparsed files are counted and listed separately. A consumer's `context_profile` can set a minimum for any of these.
 

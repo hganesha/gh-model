@@ -206,6 +206,70 @@
         }
       },
       "since": "M5"
+    },
+    {
+      "subject": {
+        "kind": "EventTopic",
+        "natural_key": {
+          "name": "orders.created"
+        }
+      },
+      "predicate": "EXHIBITS",
+      "object": {
+        "kind": "ArchitecturePattern",
+        "natural_key": {
+          "catalog": "arch-taxonomy-v1",
+          "id": "arch-0086"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "EventTopic",
+        "natural_key": {
+          "name": "orders.created"
+        }
+      },
+      "predicate": "EXHIBITS",
+      "object": {
+        "kind": "ArchitecturePattern",
+        "natural_key": {
+          "catalog": "arch-taxonomy-v1",
+          "id": "arch-0088"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Repository",
+        "natural_key": {}
+      },
+      "predicate": "EXHIBITS",
+      "object": {
+        "kind": "ArchitecturePattern",
+        "natural_key": {
+          "catalog": "arch-taxonomy-v1",
+          "id": "arch-0014"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Repository",
+        "natural_key": {}
+      },
+      "predicate": "EXHIBITS",
+      "object": {
+        "kind": "ArchitecturePattern",
+        "natural_key": {
+          "catalog": "arch-taxonomy-v1",
+          "id": "arch-0004"
+        }
+      },
+      "since": "M2"
     }
   ],
   "absent_entities": [
@@ -217,6 +281,14 @@
         "manifest_dir": ""
       },
       "why": "three separate packages, none at the root"
+    },
+    {
+      "kind": "ArchitecturePattern",
+      "natural_key": {
+        "catalog": "arch-taxonomy-v1",
+        "id": "arch-0001"
+      },
+      "why": "three services exchange events; not one deployable"
     }
   ],
   "exclusions": [],

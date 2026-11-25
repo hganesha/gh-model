@@ -11,7 +11,8 @@ async function compile(page: Page, file: string) {
   const start = await page.request.post("/api/rkp/repositories", { data: { local_path: fixture, ref: "HEAD" } });
   expect(start.ok()).toBeTruthy();
   const { id } = await start.json();
-  await expect.poll(async () => (await (await page.request.get(`/api/rkp/compilations/${id}`)).json()).status).toBe("complete");
+  // A sandboxed compile on a CI runner can take longer than the 5 s default.
+  await expect.poll(async () => (await (await page.request.get(`/api/rkp/compilations/${id}`)).json()).status, { timeout: 60_000 }).toBe("complete");
 }
 
 test("build and review a value chain, then update and reload settings", async ({ page }) => {
@@ -242,7 +243,8 @@ test("a retracted snapshot is marked and points nowhere it cannot go", async ({ 
   const fixture = await readFile(path.join("test-results", "fixture-path"), "utf8");
   const start = await page.request.post("/api/rkp/repositories", { data: { local_path: fixture, ref: "v0" } });
   const { id } = await start.json();
-  await expect.poll(async () => (await (await page.request.get(`/api/rkp/compilations/${id}`)).json()).status).toBe("complete");
+  // A sandboxed compile on a CI runner can take longer than the 5 s default.
+  await expect.poll(async () => (await (await page.request.get(`/api/rkp/compilations/${id}`)).json()).status, { timeout: 60_000 }).toBe("complete");
 
   await page.goto("/");
   await page.getByRole("button", { name: /Orders fixture/ }).click();
