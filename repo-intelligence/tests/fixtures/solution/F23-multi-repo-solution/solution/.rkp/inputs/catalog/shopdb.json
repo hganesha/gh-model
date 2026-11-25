@@ -1,0 +1,58 @@
+{
+  "database": "shopdb",
+  "dialect": "postgres",
+  "tables": [
+    {"table_catalog": "shopdb", "table_schema": "public", "table_name": "orders", "table_type": "BASE TABLE"},
+    {"table_catalog": "shopdb", "table_schema": "public", "table_name": "customers", "table_type": "BASE TABLE"},
+    {"table_catalog": "shopdb", "table_schema": "audit", "table_name": "order_events", "table_type": "BASE TABLE"},
+    {"table_catalog": "shopdb", "table_schema": "public", "table_name": "order_summary", "table_type": "VIEW"},
+    {"table_catalog": "shopdb", "table_schema": "pg_catalog", "table_name": "pg_class", "table_type": "BASE TABLE"}
+  ],
+  "columns": [
+    {"table_catalog": "shopdb", "table_schema": "public", "table_name": "orders", "column_name": "id", "ordinal_position": 1, "data_type": "integer", "is_nullable": "NO", "column_default": "nextval('orders_id_seq'::regclass)"},
+    {"table_catalog": "shopdb", "table_schema": "public", "table_name": "orders", "column_name": "customer_id", "ordinal_position": 2, "data_type": "integer", "is_nullable": "NO"},
+    {"table_catalog": "shopdb", "table_schema": "public", "table_name": "orders", "column_name": "status", "ordinal_position": 3, "data_type": "text", "is_nullable": "NO", "column_default": "'new'::text"},
+    {"table_catalog": "shopdb", "table_schema": "public", "table_name": "orders", "column_name": "total", "ordinal_position": 4, "data_type": "numeric", "is_nullable": "YES"},
+    {"table_catalog": "shopdb", "table_schema": "public", "table_name": "customers", "column_name": "id", "ordinal_position": 1, "data_type": "integer", "is_nullable": "NO"},
+    {"table_catalog": "shopdb", "table_schema": "public", "table_name": "customers", "column_name": "email", "ordinal_position": 2, "data_type": "text", "is_nullable": "NO"},
+    {"table_catalog": "shopdb", "table_schema": "audit", "table_name": "order_events", "column_name": "order_id", "ordinal_position": 1, "data_type": "integer", "is_nullable": "NO"},
+    {"table_catalog": "shopdb", "table_schema": "audit", "table_name": "order_events", "column_name": "event", "ordinal_position": 2, "data_type": "text", "is_nullable": "NO"},
+    {"table_catalog": "shopdb", "table_schema": "public", "table_name": "order_summary", "column_name": "status", "ordinal_position": 1, "data_type": "text", "is_nullable": "YES"},
+    {"table_catalog": "shopdb", "table_schema": "public", "table_name": "order_summary", "column_name": "orders", "ordinal_position": 2, "data_type": "bigint", "is_nullable": "YES"}
+  ],
+  "views": [
+    {"table_catalog": "shopdb", "table_schema": "public", "table_name": "order_summary", "view_definition": " SELECT orders.status, count(*) AS orders FROM orders GROUP BY orders.status;"}
+  ],
+  "table_constraints": [
+    {"constraint_schema": "public", "constraint_name": "orders_pkey", "table_schema": "public", "table_name": "orders", "constraint_type": "PRIMARY KEY"},
+    {"constraint_schema": "public", "constraint_name": "orders_customer_id_fkey", "table_schema": "public", "table_name": "orders", "constraint_type": "FOREIGN KEY"},
+    {"constraint_schema": "public", "constraint_name": "customers_pkey", "table_schema": "public", "table_name": "customers", "constraint_type": "PRIMARY KEY"},
+    {"constraint_schema": "public", "constraint_name": "customers_email_key", "table_schema": "public", "table_name": "customers", "constraint_type": "UNIQUE"},
+    {"constraint_schema": "public", "constraint_name": "orders_total_check", "table_schema": "public", "table_name": "orders", "constraint_type": "CHECK"}
+  ],
+  "key_column_usage": [
+    {"constraint_schema": "public", "constraint_name": "orders_pkey", "table_schema": "public", "table_name": "orders", "column_name": "id", "ordinal_position": 1},
+    {"constraint_schema": "public", "constraint_name": "orders_customer_id_fkey", "table_schema": "public", "table_name": "orders", "column_name": "customer_id", "ordinal_position": 1},
+    {"constraint_schema": "public", "constraint_name": "customers_pkey", "table_schema": "public", "table_name": "customers", "column_name": "id", "ordinal_position": 1},
+    {"constraint_schema": "public", "constraint_name": "customers_email_key", "table_schema": "public", "table_name": "customers", "column_name": "email", "ordinal_position": 1}
+  ],
+  "constraint_column_usage": [
+    {"constraint_schema": "public", "constraint_name": "orders_customer_id_fkey", "table_schema": "public", "table_name": "customers", "column_name": "id"}
+  ],
+  "routines": [
+    {"routine_catalog": "shopdb", "routine_schema": "public", "routine_name": "close_stale_orders", "specific_schema": "public", "specific_name": "close_stale_orders_16412", "routine_type": "PROCEDURE", "routine_definition": "\n  UPDATE orders SET status = 'closed' WHERE status = 'new';\n  INSERT INTO audit.order_events (order_id, event) SELECT id, 'closed' FROM orders WHERE status = 'closed';\n"}
+  ],
+  "parameters": [
+    {"specific_schema": "public", "specific_name": "close_stale_orders_16412", "ordinal_position": 1, "parameter_mode": "IN", "parameter_name": "older_than_days", "data_type": "integer"}
+  ],
+  "applicable_roles": [
+    {"grantee": "orders_service", "role_name": "orders_writer", "is_grantable": "NO"},
+    {"grantee": "orders_writer", "role_name": "orders_reader", "is_grantable": "NO"}
+  ],
+  "sequences": [
+    {"sequence_catalog": "shopdb", "sequence_schema": "public", "sequence_name": "orders_id_seq", "data_type": "integer"}
+  ],
+  "triggers": [
+    {"trigger_catalog": "shopdb", "trigger_schema": "public", "trigger_name": "orders_audit", "event_manipulation": "UPDATE", "event_object_schema": "public", "event_object_table": "orders"}
+  ]
+}
