@@ -10,6 +10,10 @@ Endpoint a server file declares, a token in an imported stylesheet) are made
 without declaring them (`declare=False`): the compiler keeps such a relation only
 when something in the same unit declares the target, so nothing is guessed into
 existence. They carry evidence class E3 (resolved across files).
+
+`repo_intel.extractors.base` is imported inside functions (`_base()`), never at module
+level: pack discovery runs while `repo_intel.extractors` loads and refuses a pack that is
+still importing (docs/solution-ir-contract.md, section 2, rule 1).
 """
 
 from __future__ import annotations
@@ -22,7 +26,6 @@ from typing import Any
 
 from repo_intel import platforms
 from repo_intel.compile.ontology import EntityKind, EvidenceClass, Predicate
-from repo_intel.extractors.base import PACKAGE, UNIT, Extraction, diagnostic, ref, relation, span
 from repo_intel.platforms.web import styles
 from repo_intel.platforms.web.markup import Attr, Element
 
@@ -31,21 +34,29 @@ P = Predicate
 PLATFORM = "web"
 REALM = "web"
 _TERM_KIND = {"web:Route": K.SCREEN, "web:Page": K.SCREEN, "web:View": K.SCREEN, "web:Form": K.FORM, "web:Control": K.UI_CONTROL,
-              "web:CssVariable": K.STYLE_TOKEN, "web:ScssVariable": K.STYLE_TOKEN, "web:ThemeToken": K.STYLE_TOKEN, "web:Guard": K.ROLE}
+              "web:CssVariable": K.STYLE_TOKEN, "web:ScssVariable": K.STYLE_TOKEN, "web:ThemeToken": K.STYLE_TOKEN, "web:Role": K.ROLE}
+
+
+def _base():
+    """`repo_intel.extractors.base`, imported on use (see the module docstring)."""
+    from repo_intel.extractors import base
+
+    return base
 
 
 def screen_ref(name: str, declare: bool = True) -> dict[str, Any]:
-    return ref(K.SCREEN, {"platform": PLATFORM, "name": name}, name, declare)
+    return _base().ref(K.SCREEN, {"platform": PLATFORM, "name": name}, name, declare)
 
 
 def token_ref(system: str, name: str, declare: bool = True) -> dict[str, Any]:
-    return ref(K.STYLE_TOKEN, {"system": system, "name": name}, name, declare)
+    return _base().ref(K.STYLE_TOKEN, {"system": system, "name": name}, name, declare)
 
 
 def endpoint_ref(method: str, route: str) -> dict[str, Any]:
     """The Endpoint a server in this unit would declare for `method route` (the key the
     TypeScript, Python and other source extractors use), never declared from here."""
-    return ref(K.ENDPOINT, {"component_root": UNIT, "protocol": "http", "method": method, "route": route}, f"{method} {route}", declare=False)
+    base = _base()
+    return base.ref(K.ENDPOINT, {"component_root": base.UNIT, "protocol": "http", "method": method, "route": route}, f"{method} {route}", declare=False)
 
 
 def clean(attrs: dict[str, Any]) -> dict[str, Any]:
@@ -55,31 +66,32 @@ def clean(attrs: dict[str, Any]) -> dict[str, Any]:
 class Out:
     def __init__(self, extractor_id: str, path: str, data: bytes, blob: str):
         self.id, self.path, self.data, self.blob = extractor_id, path, data, blob
-        self.result = Extraction()
+        self._base = _base()
+        self.result = self._base.Extraction()
         self._said: set[str] = set()
         self._related: set[str] = set()
 
     def at(self, a: int, b: int):
-        return span(self.data, a, b)
+        return self._base.span(self.data, a, b)
 
     def construct(self, construct_id: str, a: int, b: int, modelled: bool) -> None:
         self.result.observations.append(platforms.construct(self.blob, self.at(a, b), construct_id, modelled))
 
     def entity(self, term: str, key: dict[str, Any], name: str, a: int, b: int, attrs: dict[str, Any] | None = None) -> dict[str, Any]:
         self.result.observations.append(platforms.platform_entity(self.blob, self.at(a, b), term, key, name, clean(attrs or {})))
-        return ref(_TERM_KIND[term], key, name)
+        return self._base.ref(_TERM_KIND[term], key, name)
 
     def relate(self, subject: dict[str, Any] | str, predicate: Predicate, obj: dict[str, Any] | str, a: int, b: int, qualifiers: dict[str, Any] | None = None, cls: EvidenceClass = EvidenceClass.E2) -> None:
         key = repr((subject, predicate, obj, sorted((qualifiers or {}).items())))
         if key in self._related:  # the same claim again in this file: the first occurrence is its evidence
             return
         self._related.add(key)
-        self.result.observations.append(relation(self.blob, self.at(a, b), subject, predicate, obj, qualifiers, cls))
+        self.result.observations.append(self._base.relation(self.blob, self.at(a, b), subject, predicate, obj, qualifiers, cls))
 
     def diag(self, message: str, severity: str = "info") -> None:
         if message not in self._said:
             self._said.add(message)
-            self.result.diagnostics.append(diagnostic(self.id, severity, message))
+            self.result.diagnostics.append(self._base.diagnostic(self.id, severity, message))
 
 
 @dataclass
@@ -93,7 +105,7 @@ class Owner:
 def renders(out: Out, screen: dict[str, Any], a: int, b: int, component: str | None) -> None:
     """The unit's package RENDERS a screen. A component is a Symbol the linker declares
     with a key one file cannot build, so it is named as a qualifier."""
-    out.relate(PACKAGE, P.RENDERS, screen, a, b, {"component": component} if component else {})
+    out.relate(_base().PACKAGE, P.RENDERS, screen, a, b, {"component": component} if component else {})
 
 
 def emit_roles(out: Out, subject: dict[str, Any], roles: list[tuple[str, int, int]]) -> None:
@@ -102,7 +114,7 @@ def emit_roles(out: Out, subject: dict[str, Any], roles: list[tuple[str, int, in
         if name in seen:
             continue
         seen.add(name)
-        role = out.entity("web:Guard", {"realm": REALM, "name": name}, name, a, b)
+        role = out.entity("web:Role", {"realm": REALM, "name": name}, name, a, b)
         out.relate(subject, P.REQUIRES_ROLE, role, a, b)
         out.construct("web:route-role", a, b, True)
 
@@ -230,7 +242,10 @@ def emit_ui(out: Out, owner: Owner | None, elements: list[Element], resolve: Sub
         if owner is None:
             continue
         container = f"{owner.name}#{form[0]}" if form else owner.name
-        name = _control_name(el, kind, binds, target, counters, container)
+        # n is the control's position among every control of its type in the container, named
+        # or not, the way a form's `form<n>` counts every form on the screen.
+        n = counters[(container, kind)] = counters.get((container, kind), 0) + 1
+        name = _control_name(el, kind, binds, target, n)
         attrs = {
             "control_type": kind, "tag": el.tag, "input_type": el.lit("type") if el.tag in ("input", "Input", "TextField", "Field") else None,
             "binds": binds, "validation": validation or None, "label": _label(el, kind),
@@ -357,19 +372,28 @@ def _validation(el: Element) -> list[str]:
     return sorted(set(out))
 
 
-def _control_name(el: Element, kind: str, binds: str | None, target: str | None, counters: dict[tuple[str, str], int], container: str) -> str:
-    name = el.lit("name") or el.lit("id") or el.lit("formControlName") or binds
+def _control_name(el: Element, kind: str, binds: str | None, target: str | None, n: int) -> str:
+    """A control's name, in the contract's order of preference: its name, its id, its
+    binding path, `link:<target>` for a link with a literal target, `submit` or
+    `button:<text>` for a button, else `<type><n>` with `n` its position among the
+    container's controls of that type in document order."""
+    name = (el.lit("name") or "").strip() or (el.lit("id") or "").strip() or el.lit("formControlName") or binds
     if name:
         return name
     if kind == "link" and target:
-        return "link:" + (_host(target) if _EXTERNAL.match(target) else target.split("?")[0].split("#")[0])
+        if _EXTERNAL.match(target):
+            return "link:" + _host(target)  # the host only: a path or query on another host can carry identifiers
+        path = target.split("?")[0].split("#")[0]
+        if path:
+            return "link:" + path
+        if target.startswith("#") and len(target) > 1:
+            return "link:" + target  # an anchor on the same page
     if kind == "button":
         if (el.lit("type") or "").lower() == "submit":
             return "submit"
-        if el.text and len(el.text) <= 40 and "{" not in el.text:
-            return "button:" + el.text
-    n = counters.get((container, kind), 0) + 1
-    counters[(container, kind)] = n
+        text = el.text if el.tag not in ("input", "Input") else (el.lit("value") or "").strip()
+        if text and len(text) <= 40 and "{" not in text:
+            return "button:" + text
     return f"{kind}{n}"
 
 

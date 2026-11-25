@@ -14,16 +14,17 @@ K = EntityKind
 TERMS = (
     Term("web:Route", K.SCREEN, "lossy", "a route in router configuration (React Router, Vue Router, Angular) or a file route (Next.js, Nuxt); "
          "name is the full route path; the component, guards, layouts and lazy loading live in attributes"),
-    Term("web:Page", K.SCREEN, "lossy", "a static HTML document; name is its path in the repository"),
+    Term("web:Page", K.SCREEN, "lossy", "a static HTML document; name is its path from the repository root"),
     Term("web:View", K.SCREEN, "lossy", "a component module or template fragment with forms or navigation links whose route, if any, is declared "
-         "in another file; name is its path in the repository. A route that imports it CONTAINS it"),
+         "in another file; name is its path from the repository root. A route that imports it CONTAINS it"),
     Term("web:Form", K.FORM, "lossy", "a <form> element or a form-library form (Formik, react-hook-form, vee-validate, Angular reactive forms)"),
     Term("web:Control", K.UI_CONTROL, "lossy", "an input, select, textarea, button or link, native or from a component library; "
          "the binding, type and validation live in attributes"),
-    Term("web:CssVariable", K.STYLE_TOKEN, "lossy", "a CSS custom property (--name); system is the stylesheet path"),
-    Term("web:ScssVariable", K.STYLE_TOKEN, "lossy", "a top-level SCSS ($name) or LESS (@name) variable; system is the stylesheet path"),
-    Term("web:ThemeToken", K.STYLE_TOKEN, "lossy", "a leaf of an exported theme or design-token object, by its literal key path; system is the module path"),
-    Term("web:Guard", K.ROLE, "lossy", "a role a route guard or guard component names literally; realm is 'web'"),
+    Term("web:CssVariable", K.STYLE_TOKEN, "lossy", "a CSS custom property (--name); system is the stylesheet path from the repository root"),
+    Term("web:ScssVariable", K.STYLE_TOKEN, "lossy", "a top-level SCSS ($name) or LESS (@name) variable; system is the stylesheet path from the repository root"),
+    Term("web:ThemeToken", K.STYLE_TOKEN, "lossy", "a leaf of an exported theme or design-token object, by its literal key path; system is the module path from the repository root"),
+    Term("web:Role", K.ROLE, "exact", "a role name a route (roles, meta.roles, data.roles), route guard or guard component lists literally; "
+         "realm is 'web'. The guard itself is not the role: its name stays in the screen's `guards` attribute"),
 )
 
 
