@@ -10,7 +10,7 @@ import pytest
 
 from repo_intel import extractors  # noqa: F401  (loads the extractors before the pack)
 from repo_intel.compile import behavior
-from repo_intel.compile.ontology import EntityKind, Predicate, check_relation
+from repo_intel.compile.ontology import EntityKind, EvidenceClass, Predicate, check_relation
 from repo_intel.extractors import extract_file  # noqa: F401  (the package is fully loaded)
 from repo_intel.extractors.legacy import Sas
 from repo_intel.platforms import packs, superseded, validate_pack
@@ -319,21 +319,104 @@ def test_units_are_valid_one_per_data_step_sql_step_macro_and_open_code():
     us = units(out)
     for u in us:
         assert behavior.validate_unit(u) == [], behavior.validate_unit(u)
-    owners = [u["owner"]["natural_key"]["name"] for u in us]
-    assert owners.count("sas/prog.sas") == 3  # the DATA step, the PROC SQL step and open code
-    assert owners.count("loop") == 1
-    data_step = next(u for u in us if u["body"] and u["body"][0].get("kind") == "implicit")
+    kinds = sorted((u["owner"]["natural_key"]["name"], u["kind"]) for u in us)
+    assert kinds == [("loop", "macro"), ("sas/prog.sas", "data_step"), ("sas/prog.sas", "open_code"), ("sas/prog.sas", "sql_step")]
+    data_step = next(u for u in us if u["kind"] == "data_step")
     loop = data_step["body"][0]
-    assert loop["op"] == "loop" and loop["detail"]["data"] == ["rpt.final"]
+    assert loop["op"] == "loop" and loop["kind"] == "implicit" and loop["detail"]["data"] == ["rpt.final"]
     ops = {n.get("op") for n in walk_nodes(loop["body"])}
     assert {"if", "switch", "loop", "assign", "declare", "output", "break", "continue"} <= ops
-    sql = next(u for u in us if u["body"] and u["body"][0].get("op") == "query")
+    sql = next(u for u in us if u["kind"] == "sql_step")
     assert [q["op"] for q in sql["body"]] == ["query", "query"]
     pack_constructs = {c.id for c in PACK.constructs}
     for u in us:
         for n in walk_nodes(u["body"]):
             if n.get("op") == "platform" or n.get("e") == "platform":
                 assert n["construct"] in pack_constructs, n["construct"]
+
+
+def test_every_procedure_has_a_proc_step_unit():
+    text = "proc sort data=rpt.a out=rpt.b; by id; run;\nproc format; value $r 'N' = 'North'; run;\nproc fcmp; function f(x); return(x); endsub; run;\n"
+    us = units(run(text))
+    steps = [u for u in us if u["kind"] == "proc_step"]
+    assert len(steps) == 3
+    assert [u["body"][0].get("call", {}).get("callee", {}).get("name") for u in steps[:2]] == ["sort", "format"]
+    assert steps[2]["body"][0] == {**steps[2]["body"][0], "op": "platform", "construct": "sas:proc_fcmp"}
+    for u in us:
+        assert behavior.validate_unit(u) == [], behavior.validate_unit(u)
+        assert u["kind"] in behavior.UNIT_KINDS
+
+
+def test_unresolved_macro_text_in_proc_sql_is_an_inline_parameter():
+    # On F14, `from stage.customers_&month` must say that :month is substituted text.
+    path = "sas/monthly_load.sas"
+    out = run((FIXTURES / "F14-mainframe-sas" / "base" / path).read_text(), path=path)
+    (sql,) = [u for u in units(out) if u["kind"] == "sql_step"]
+    (query,) = sql["body"]
+    assert "from stage.customers_:month " in query["sql"]
+    assert query["params"] == [{"name": "month", "value": {"e": "var", "scope": "macro", "name": "month"}, "type": "string", "inline": True}]
+    # A reference whose value holds other unresolved references, and an indirect one
+    # (&&v&i), are each one parameter named in the SQL, valued by what they expand to.
+    text = "%let t = &a._&b;\nproc sql; create table rpt.x as select * from rpt.y where k = &t and j = &&v&i and m = &t; quit;\n"
+    (sql,) = [u for u in units(run(text)) if u["kind"] == "sql_step"]
+    query = sql["body"][0]
+    assert query["sql"].endswith("where k = :t and j = :v_i and m = :t")
+    params = {p["name"]: p for p in query["params"]}
+    assert set(params) == {"t", "v_i"} and all(p["inline"] is True for p in params.values())
+    assert params["t"]["value"] == {"e": "template", "parts": [{"e": "var", "scope": "macro", "name": "a"}, "_", {"e": "var", "scope": "macro", "name": "b"}]}
+    for p in query["params"]:
+        assert ":" + p["name"] in query["sql"]
+    assert behavior.validate_unit(sql) == []
+
+
+def test_pass_through_sql_is_counted_unmodelled_with_a_diagnostic():
+    text = (
+        "proc sql;\n  connect to oracle (user=scott password=tiger path=db);\n"
+        "  create table rpt.local as select * from connection to oracle (select id from dbo.remote_tbl);\n"
+        "  execute (delete from dbo.stale) by oracle;\n  disconnect from oracle;\nquit;\n"
+    )
+    out = run(text)
+    counts = constructs(out)
+    assert counts.get(("sas:sql_passthrough", False)) == 4  # CONNECT, CONNECTION TO, EXECUTE BY, DISCONNECT
+    assert not counts.get(("sas:sql_passthrough", True))
+    messages = [d.message for d in out.diagnostics]
+    assert any(m.startswith("pass-through query to oracle at line 3") for m in messages), messages
+    assert any(m.startswith("EXECUTE BY oracle at line 4") for m in messages), messages
+    rels = relations(out)
+    assert (prog("sas/prog.sas"), "WRITES_TO", ds("rpt.local")) in rels
+    assert not any("remote_tbl" in r[2][1] or "stale" in r[2][1] for r in rels)
+    assert "tiger" not in json.dumps([o.payload for o in out.observations])
+
+
+def test_constructs_from_declarative_inputs_are_e1():
+    autoexec = ".rkp/inputs/sas/autoexec.sas"
+    out = run((FIXTURES / "F21-sas-analytics" / "base" / autoexec).read_text(), path=autoexec)
+    cs = [o for o in out.observations if o.kind == "construct"]
+    assert cs and {o.evidence_class for o in cs} == {EvidenceClass.E1}
+    assert {o.evidence_class for o in run("libname rpt '/x';\n").observations if o.kind == "construct"} == {EvidenceClass.E2}
+    out = SasInputs().extract(".rkp/inputs/sas/sasv9.cfg", b"-MEMSIZE 4G\n-SET RPT_ENV prod\n", "0" * 64)
+    assert {o.evidence_class for o in out.observations} == {EvidenceClass.E1}
+    path = ".rkp/inputs/sas/metadata/sales_jobs.xml"
+    out = SasInputs().extract(path, (FIXTURES / "F21-sas-analytics" / "base" / path).read_bytes(), "0" * 64)
+    cs = [o for o in out.observations if o.kind == "construct"]
+    assert cs and {o.evidence_class for o in cs} == {EvidenceClass.E1}
+
+
+def test_pack_imports_extractors_only_inside_functions():
+    import ast
+
+    for p in (Path(__file__).resolve().parents[1] / "repo_intel" / "platforms" / "sas").glob("*.py"):
+        tree = ast.parse(p.read_text())
+        for node in tree.body:  # module level only; imports inside functions are allowed
+            if isinstance(node, ast.Import):
+                assert not any(a.name.startswith("repo_intel.extractors") for a in node.names), p.name
+            elif isinstance(node, ast.ImportFrom):
+                assert not (node.module or "").startswith("repo_intel.extractors"), p.name
+        for node in ast.walk(tree):  # nowhere the package root itself
+            if isinstance(node, ast.ImportFrom) and node.module == "repo_intel":
+                assert not any(a.name == "extractors" for a in node.names), p.name
+            if isinstance(node, ast.Import):
+                assert not any(a.name == "repo_intel.extractors" for a in node.names), p.name
 
 
 def test_constructs_are_counted_with_whether_they_were_modelled():
@@ -415,7 +498,7 @@ def test_stored_process_prompts_become_a_form():
     rels = relations(out)
     assert (form, "SUBMITS_TO", prog("stp/sales.sas")) in rels
     assert (form, "CONTAINS", control) in rels
-    (open_code,) = [u for u in units(out) if u["owner"]["natural_key"]["name"] == "stp/sales.sas" and not u["body"][0].get("kind") == "implicit"]
+    (open_code,) = [u for u in units(out) if u["owner"]["natural_key"]["name"] == "stp/sales.sas" and u["kind"] == "open_code"]
     assert [p["name"] for p in open_code["params"]] == ["region", "year"]
 
 

@@ -1,7 +1,8 @@
 """Lower SAS into the behavioural IR (repo_intel.compile.behavior).
 
-One unit per DATA step, per PROC SQL step, per macro definition and for a
-program's open code:
+One unit per DATA step (`kind` data_step), PROC SQL step (sql_step), other
+procedure (proc_step), macro definition (macro) and for a program's open code
+(open_code):
 
 - A DATA step is an `implicit` loop over the datasets its SET, MERGE, UPDATE and
   MODIFY statements read. Inside it: assignments and sum statements, IF/THEN/ELSE,
@@ -11,11 +12,14 @@ program's open code:
   nodes named by their construct id. KEEP, DROP, RENAME and BY variables are kept in
   the loop's `detail`.
 - PROC SQL is a list of `query` nodes with the SQL text; unresolved macro references
-  become `:name` parameters.
+  become `:name` parameters marked `inline` (text SAS substitutes, not binds).
+- Any other procedure is a unit holding one `call` of the procedure (a `platform`
+  node for procedures no core kind carries).
 - A macro or open code is the list of its macro statements (`%LET` as `assign`,
   `%IF` as `if`, `%DO` as `loop`, `%INCLUDE` as `include`, macro calls as `call`) and
   one node per step: a `platform` node for a DATA step or PROC SQL step (which have
-  units of their own), a `call` of the procedure for the others.
+  units of their own), the `call` of the procedure for the others (the invocation, in
+  order; its own unit repeats it).
 
 The lowering reports what it finds (datasets read and written, formats applied,
 constructs seen) back to the analysis through `self.a`, so a statement is read once.

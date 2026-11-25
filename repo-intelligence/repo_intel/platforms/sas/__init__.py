@@ -34,7 +34,7 @@ class SasSource:
     """`.sas` programs, including `autoexec.sas` and `config.sas` placed under `.rkp/inputs/sas/`."""
 
     id = "sas.source"
-    version = "1.0.0"
+    version = "1.1.0"
 
     def matches(self, path: str) -> bool:
         return path.lower().endswith(".sas")
@@ -220,7 +220,7 @@ PACK = PlatformPack(
     id="sas",
     name="SAS",
     prefix="sas",
-    version="1.0.0",
+    version="1.1.0",
     terms=TERMS,
     constructs=CONSTRUCTS,
     extractors=(SasSource(), SasInputs()),

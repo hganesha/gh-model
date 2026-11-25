@@ -19,7 +19,8 @@ It produces everything `legacy.sas` did, with the same kinds and natural keys
 - DERIVED_FROM between permanent datasets, through WORK datasets of the same file;
 - FILENAME filerefs as ConfigKeys (device only, never the path), and `%SYSGET`
   environment variables as ConfigKeys that `config` inputs declare;
-- one behaviour unit per DATA step, PROC SQL step, macro and open code.
+- one behaviour unit per DATA step, PROC SQL step, other procedure, macro and open
+  code, each with its `kind`.
 
 Paths, connection options and option values are never copied: a library keeps its
 engine, a fileref its device, an ODS document or exported file its base name.
@@ -43,7 +44,7 @@ from repo_intel.platforms.sas.catalog import (
 )
 from repo_intel.platforms.sas.lexer import Stmt, Tok, lex, tokens, unquote
 from repo_intel.platforms.sas.lower import Container, DataStep, Lowerer, skip_parens, split_at, toks_of
-from repo_intel.platforms.sas.macro import SENTINEL, Macros, is_dynamic, placeholders, template, unresolved_names
+from repo_intel.platforms.sas.macro import SENTINEL, Macros, is_dynamic, placeholders, template
 from repo_intel.platforms.sas.parse import Step, parse
 
 K = EntityKind
@@ -73,6 +74,8 @@ UNMAPPED_PROCS = frozenset({"ds2", "fcmp", "http", "iml", "printto", "pwencode",
 _FORMAT = re.compile(r"(\$?)([A-Za-z_][A-Za-z0-9_]*?)(\d*)\.(\d*)$")
 _MACRO_IN_STRING = re.compile(r"%([A-Za-z_]\w*)(?![\w&])")
 _MACRO_REF = re.compile(r"&+([A-Za-z_]\w*)\.?")
+_MACRO_RUN = re.compile(r"(?:&+[A-Za-z_]\w*\.?)+")  # adjacent references SAS resolves together
+_MACRO_REF_NAME = re.compile(r"&+([A-Za-z_]\w*)")
 _SQL_FORMAT = re.compile(r"\b(?:put[nc]?|input[nc]?)\s*\(\s*[^,()]+,\s*(\$?[A-Za-z_]\w*\.\d*)|\b(?:format|informat)\s*=\s*(\$?[A-Za-z_]\w*\.\d*)", re.I)
 _CONNECTION = re.compile(r"\bconnection\s+to\s+(\w+)\s*\(", re.I)
 _EXECUTE_BY = re.compile(r"\)\s*by\s+(\w+)\s*;?\s*$", re.I)
@@ -219,9 +222,10 @@ class Analysis:
     def diagnostic(self, severity: str, message: str) -> None:
         self.diagnostics.append(self.base.diagnostic("sas.source", severity, message))
 
-    def unit(self, a: int, b: int, owner: dict, body: list, params: list | None = None) -> None:
+    def unit(self, a: int, b: int, owner: dict, body: list, kind: str, params: list | None = None) -> None:
+        """One behaviour unit; `kind` (data_step, sql_step, proc_step, macro, open_code) tells apart the units of one owner."""
         try:
-            self.behaviors.append(behavior_observation(self.blob, self.span(a, b), owner, LANGUAGE, body, params))
+            self.behaviors.append(behavior_observation(self.blob, self.span(a, b), owner, LANGUAGE, body, params, kind=kind))
         except ValueError as exc:  # a lowering bug must not lose the rest of the file
             self.diagnostic("error", f"behaviour unit at line {self.line(a)} dropped: {exc}")
 
@@ -669,7 +673,7 @@ class Analysis:
     def data_step(self, index: int, step: Step, owner: dict) -> None:
         lowerer = DataStep(self, step, owner)
         loop = lowerer.lower()
-        self.unit(step.start, step.end, owner, [loop])
+        self.unit(step.start, step.end, owner, [loop], "data_step")
         self.derivations.append((lowerer.outputs, lowerer.inputs))
         if step.scope is None:
             self.file_used = True
@@ -783,6 +787,7 @@ class Analysis:
         if name in UNMAPPED_PROCS:
             node = {"op": "platform", "construct": cid, "at": self.at(step.start, step.end), "detail": {"procedure": name}}
         self.step_nodes[index] = [node]
+        self.unit(step.start, step.end, owner, [node], "proc_step")
 
     def produce(self, owner: dict, report: str, a: int, b: int) -> None:
         key = (self.owner_name(owner), report)
@@ -867,7 +872,7 @@ class Analysis:
             for doc in docs:
                 doc.procs.add("sql")
                 self.produce(owner, doc.name, header.start, header.end)
-        self.unit(step.start, step.end, owner, body)
+        self.unit(step.start, step.end, owner, body, "sql_step")
         self.step_nodes[index] = [{
             "op": "platform", "construct": "sas:proc_sql", "at": self.at(step.start, step.end),
             "detail": {"unit": self.at(step.start, step.end), "writes": sorted(set(all_writes)), "reads": sorted(set(all_reads))},
@@ -881,12 +886,16 @@ class Analysis:
         if c:
             engine = c.group(1).lower()
             close = skip_parens_text(masked, c.end() - 1)
-            # The database-side query is the database's own text: lineage sees a subquery.
+            # The database-side query is the database's own text, in its own dialect, naming
+            # database tables rather than SAS datasets: lineage sees a subquery, and the
+            # tables it names are not linked (no libref says which SAS library they are).
             masked = masked[: c.start()] + "(select 1)".ljust(close - c.start()) + masked[close:]
             self.construct(offset + c.start(), offset + close, "sas:sql_passthrough", False)
+            self.diagnostic("info", f"pass-through query to {engine} at line {self.line(offset + c.start())} runs in the database: the tables it reads are not linked")
         elif raw.lower().startswith("execute") and _EXECUTE_BY.search(raw):
             engine = _EXECUTE_BY.search(raw).group(1).lower()
             self.construct(offset, offset + len(raw), "sas:sql_passthrough", False)
+            self.diagnostic("info", f"EXECUTE BY {engine} at line {self.line(offset)} runs in the database: what it reads and writes is not linked")
             masked = ""
         found = self.sqlmod.lineage(masked) if masked else self.sqlmod.Lineage()
         self.unresolved += found.unresolved
@@ -909,19 +918,31 @@ class Analysis:
             g = 1 if m.group(1) else 2
             self.use_format(fmt, Tok("word", fmt, offset + m.start(g), offset + m.end(g)), owner)
         params: list[dict] = []
-        seen: set[str] = set()
+        seen: dict[str, dict] = {}
 
         def parameter(m: re.Match) -> str:
+            # A run of references (`&&v&i`, `&a.&b`) is expanded as one, as SAS rescans it.
             expanded = self.expand(m.group(), scope, offset + m.start())
             if not is_dynamic(expanded):
                 return expanded
-            for n in unresolved_names(expanded):
-                if n not in seen:
-                    seen.add(n)
-                    params.append({"name": n, "value": {"e": "var", "scope": "macro", "name": n}, "type": "string"})
-            return ":" + "_".join(unresolved_names(expanded))
+            # What stays dynamic is text SAS substitutes before the query runs, not a bind
+            # parameter: the param is `inline`, named after the variables the run references
+            # and valued by what they expand to (one variable, or a template of several).
+            value = template(expanded)
+            parts = value.get("parts", [])
+            if len(parts) == 1 and isinstance(parts[0], dict):
+                value = parts[0]
+            name = "_".join(n.lower() for n in _MACRO_REF_NAME.findall(m.group()))
+            base, n = name, 1
+            while name in seen and seen[name] != value:
+                n += 1
+                name = f"{base}_{n}"
+            if name not in seen:
+                seen[name] = value
+                params.append({"name": name, "value": value, "type": "string", "inline": True})
+            return ":" + name
 
-        sql = re.sub(r"\s+", " ", _MACRO_REF.sub(parameter, raw)).strip()
+        sql = re.sub(r"\s+", " ", _MACRO_RUN.sub(parameter, raw)).strip()
         node: dict[str, Any] = {"op": "query", "at": at, "sql": sql, "params": params}
         if engine:
             node["datasource"] = engine
@@ -964,7 +985,9 @@ class Analysis:
                 defined.append(name)
         if reads or writes:
             self.derivations.append((writes, reads))
-        self.step_nodes[index] = [{"op": "call", "at": self.at(step.start, step.end), "call": {"e": "call", "callee": {"e": "name", "name": "format", "kind": "procedure"}, "args": [{"e": "lit", "value": n, "type": "string"} for n in defined]}}]
+        node = {"op": "call", "at": self.at(step.start, step.end), "call": {"e": "call", "callee": {"e": "name", "name": "format", "kind": "procedure"}, "args": [{"e": "lit", "value": n, "type": "string"} for n in defined]}}
+        self.step_nodes[index] = [node]
+        self.unit(step.start, step.end, owner, [node], "proc_step")
 
     def format_definition(self, toks: list[Tok], st: Stmt, owner: dict, library: str | None) -> str | None:
         kind = toks[0].low
@@ -1058,7 +1081,7 @@ class Analysis:
             self.entity("sas:Macro", ref["natural_key"], m.name, attrs, m.name_tok.start, m.name_tok.end)
             body = Container(self, index, ref, m.items).lower()
             params = [{"name": p.name, "type": "string", "required": not p.keyword, **({"default": self.macro_value(p.default, index, m.start)} if p.default else {})} for p in m.params]
-            self.unit(m.start, m.end, ref, body, params)
+            self.unit(m.start, m.end, ref, body, "macro", params)
 
     def prompts(self) -> list[tuple[str, Tok]]:
         out, seen = [], set()
@@ -1099,7 +1122,7 @@ class Analysis:
             return
         body = Container(self, None, self.file_ref, self.prog.items).lower()
         params = [{"name": n, "type": "string", "required": False} for n, _ in self.prompts()] if self.is_stp else []
-        self.unit(0, len(self.text), self.file_ref, body, params)
+        self.unit(0, len(self.text), self.file_ref, body, "open_code", params)
 
     # ------------------------------------------------------------------ reports and lineage
 
@@ -1175,7 +1198,10 @@ class Analysis:
                 self.construct(0, 0, "sas:autoexec", True)
             items.append(platform_entity(self.blob, self.base.whole_file(self.data), term, self.file_ref["natural_key"], self.file_ref["name"], attrs, E2))
         items += self.entities + self.relations + self.behaviors
-        items += [construct_observation(self.blob, self.span(a, b), cid, modelled) for a, b, cid, modelled in self.constructs]
+        # A program under .rkp/inputs/sas/ (autoexec.sas, config.sas) is configuration the
+        # owner exported: what it holds is declared (E1), not parsed from application code.
+        ev = E1 if self.native else E2
+        items += [construct_observation(self.blob, self.span(a, b), cid, modelled, evidence_class=ev) for a, b, cid, modelled in self.constructs]
         items += self.sqlmod.lineage_summary(self.blob, self.data, self.resolved, self.unresolved)
         return self.base.Extraction(items, self.diagnostics)
 
