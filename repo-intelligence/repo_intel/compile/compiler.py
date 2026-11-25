@@ -117,7 +117,13 @@ def _unit_compile(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, An
     packages: list[tuple[str, str]] = []
     for s in summaries:
         file_ev = next(o["evidence"] for o in s["observations"] if o["kind"] == "file")
-        art = shard.entity(Entity.make(repo, EntityKind.ARTIFACT, {"path": s["path"]}, posixpath.basename(s["path"]), attributes={"language": s["language"], "parsed": s["parsed"]}, evidence_ids=[shard.cite(file_ev)]))
+        # Code traits (retry policies, unbounded fan-out, agent loops) stay on the file that shows them,
+        # each with its evidence, for the antipattern detectors (spec §8.8).
+        traits = [o for o in s["observations"] if o["kind"] == "code_trait"]
+        attributes = {"language": s["language"], "parsed": s["parsed"]}
+        if traits:
+            attributes["code_traits"] = [{**o["payload"], "evidence_id": shard.cite(o["evidence"])} for o in traits]
+        art = shard.entity(Entity.make(repo, EntityKind.ARTIFACT, {"path": s["path"]}, posixpath.basename(s["path"]), attributes=attributes, evidence_ids=[shard.cite(file_ev), *(a["evidence_id"] for a in attributes.get("code_traits", []))]))
         artifact_of[s["path"]] = (art, file_ev["id"])
     standing, redirect = effective_declarations([(s["path"], o) for s in summaries for o in s["observations"] if o["kind"] == "package_declaration" and unit_name(o["payload"]["manifest_dir"]) == unit["name"]])
     package_key = lambda p: {k: p[k] for k in ("ecosystem", "name", "manifest_dir")}
@@ -304,7 +310,7 @@ def decision_status(decision: Mapping[str, Any]) -> str:
     return "inferred"
 
 
-UNIT_COMPILE = Step("unit.compile", "0.8.0", _unit_compile)
+UNIT_COMPILE = Step("unit.compile", "0.9.0", _unit_compile)
 
 
 # --------------------------------------------------------------- repo.compile
@@ -684,7 +690,7 @@ def _architecture(repo: str, repo_id: str, shards: dict[str, dict[str, Any]], g:
     exhibited: set[str] = set()
     for f in detect(graph, catalogue):
         fact_rows = [graph.entities.get(x) or graph.assertion_by_id.get(x) for x in f.facts]
-        cited = cite([e for row in fact_rows if row for e in row["evidence_ids"]])
+        cited = cite(list(f.evidence)) if f.evidence else cite([e for row in fact_rows if row for e in row["evidence_ids"]])
         if not cited:
             continue
         supported = f.evidence_class == "E3"
@@ -726,7 +732,7 @@ def _preference(overrides: Mapping[str, Any], predicate: str, subject: str) -> s
     return next((p["object"] for p in overrides.get("preferences", []) if p["predicate"] == predicate and p["subject"] == subject), None)
 
 
-REPO_COMPILE = Step("repo.compile", "0.7.0", _repo_compile)
+REPO_COMPILE = Step("repo.compile", "0.8.0", _repo_compile)
 
 from repo_intel.compile.link import UNIT_LINK  # noqa: E402
 

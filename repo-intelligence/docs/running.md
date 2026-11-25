@@ -60,6 +60,12 @@ Score every fixture component with a decision model, then see which threshold an
 .venv/bin/python benchmarks/calibrate.py benchmarks/results/component-kind-<model>-<date>.json
 ```
 
+The same for DM11 (deployment granularity), against the label each fixture's golden carries:
+
+```bash
+.venv/bin/python benchmarks/fixture_eval.py --decision deployment-granularity microsoft-decision benchmarks/results/deployment-granularity-<model>-<date>.json
+```
+
 After changing a contract, regenerate the schemas:
 
 ```bash

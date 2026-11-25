@@ -176,6 +176,12 @@ PRISMA_UNSAFE = {"$queryRawUnsafe", "$executeRawUnsafe"}
 _PRISMA_MODULE = re.compile(r"(^|/)(prisma|db)(\.[a-z]+)?$|^@prisma/client$")
 _TEST_FILE = re.compile(r"(\.(test|spec)\.[cm]?[jt]sx?$)|(^|/)__tests__/")
 TEST_FRAMEWORKS = {"vitest": "vitest", "@jest/globals": "jest", "node:test": "node:test", "@playwright/test": "playwright", "mocha": "mocha"}
+# Calls that ask a hosted model for a completion (OpenAI, Anthropic, Azure OpenAI, Gemini, Bedrock).
+MODEL_CALL = re.compile(r"(^|\.)(messages\.create|chat\.completions\.create|completions\.create|responses\.create|generateContent|converse)$")
+# A comparison against one of these names bounds a loop (turns < MAX_TURNS, steps >= limit).
+LOOP_BOUND = re.compile(r"max|limit|turn|step|iter|budget|attempt|count|remaining", re.I)
+_CONCURRENCY_LIMITERS = (b"p-limit", b"p-map", b"p-queue", b"bottleneck", b"async-sema")
+_HTTP_CLIENTS = re.compile(r"^(axios(\.\w+)?|got(\.\w+)?|ky(\.\w+)?|\w+\.(get|post|put|patch|delete|request))$")
 _FUNCTIONS = ("arrow_function", "function_expression", "function", "function_declaration", "generator_function_declaration", "method_definition")
 
 
@@ -185,7 +191,7 @@ def is_test_file(path: str) -> bool:
 
 class TypeScriptSource:
     id = "typescript.source"
-    version = "1.2.0"
+    version = "1.4.0"
 
     def matches(self, path: str) -> bool:
         return path.lower().endswith(EXTENSIONS)
@@ -216,6 +222,7 @@ class TypeScriptSource:
         if route is not None:
             self._next(root, route, blob, at, out)
         self._prisma(nodes, blob, at, out, inline)
+        self._traits(nodes, data, blob, at, out, inline)
         if is_test_file(path):
             self._tests(nodes, blob, at, out)
         return out
@@ -243,6 +250,94 @@ class TypeScriptSource:
                     return _text(holder.child_by_field_name("name")), "function"
             current = current.parent
         return "<module>", "module"
+
+    # -- code traits ----------------------------------------------------------------
+
+    def _traits(self, nodes, data, blob, at, out, inline):
+        """Code traits the antipattern detectors read (spec §8.8): axios-retry policies and
+        whether they back off, `Promise.all` over a mapped collection with no concurrency
+        limiter, and model-calling loops that dispatch tools with no iteration bound."""
+        trait = lambda node, payload: out.observations.append(obs("code_trait", blob, at(node, node), {"function": self._enclosing(node, inline)[0], **payload}, ast_node_kind=node.type))
+        limited = any(lib in data for lib in _CONCURRENCY_LIMITERS)
+        for call in (n for n in nodes if n.type == "call_expression"):
+            callee = _text(call.child_by_field_name("function")) if call.child_by_field_name("function") is not None else ""
+            args = _args(call)
+            if callee in ("axiosRetry", "axiosRetry.default") and b"axios-retry" in data:
+                options = args[1] if len(args) > 1 and args[1].type == "object" else None
+                keys = {_text(c.child_by_field_name("key")) for c in options.named_children if c.type == "pair"} if options is not None else set()
+                trait(call, {"trait": "retry", "library": "axios-retry", "backoff": "retryDelay" in keys, "bounded": True})
+            elif callee in ("Promise.all", "Promise.allSettled") and not limited and args:
+                inner = _unwrap(args[0])
+                fn = inner.child_by_field_name("function") if inner is not None and inner.type == "call_expression" else None
+                if fn is not None and fn.type == "member_expression" and _tail_name(fn) == "map":
+                    trait(call, {"trait": "unbounded_fanout", "construct": callee + " over .map"})
+        for loop in (n for n in nodes if n.type in ("while_statement", "for_statement")):
+            condition = loop.child_by_field_name("condition")
+            inside = list(_walk(loop))
+            if not any(n.type == "call_expression" and n.child_by_field_name("function") is not None and MODEL_CALL.search(_text(n.child_by_field_name("function"))) for n in inside):
+                continue
+            if b"tool" not in data[loop.start_byte:loop.end_byte]:
+                continue
+            cond = _text(_unwrap(condition)) if condition is not None and _unwrap(condition) is not None else ""
+            if loop.type == "for_statement" and cond.strip(" ;") not in ("", "true"):
+                continue  # a counted for loop
+            open_ended = cond.strip(" ;") in ("", "true", "1") or (_unwrap(condition) is not None and _unwrap(condition).type == "identifier") or re.fullmatch(r"!\s*[A-Za-z_$][\w$]*", cond.strip(" ;")) is not None
+            bounded = any(n.type == "binary_expression" and re.search(r"[<>]=?", _text(n.child_by_field_name("operator")) if n.child_by_field_name("operator") is not None else "") and LOOP_BOUND.search(_text(n)) for n in inside)
+            trait(condition or loop, {"trait": "agent_loop", "bounded": not open_ended or bounded})
+        self._resilience(nodes, data, trait)
+
+    @staticmethod
+    def _resilience(nodes, data, trait):
+        """Resilience policies (spec §8.8): circuit breakers (opossum, cockatiel), bulkheads
+        (cockatiel) and concurrency limits (p-limit, p-queue), timeouts (`AbortSignal.timeout`,
+        cockatiel, a `timeout` option on an HTTP client or call) and rate limiters
+        (express-rate-limit, rate-limiter-flexible, @nestjs/throttler inbound; Bottleneck
+        outbound). Each is a library's own construct, never a dependency alone."""
+        has = lambda *libs: any(lib.encode() in data for lib in libs)
+        for node in nodes:
+            if node.type not in ("call_expression", "new_expression"):
+                continue
+            target = node.child_by_field_name("function" if node.type == "call_expression" else "constructor")
+            callee = _text(target) if target is not None else ""
+            last = callee.rsplit(".", 1)[-1]
+            args = _args(node)
+            if node.type == "new_expression" and last == "CircuitBreaker" and has("opossum"):
+                trait(node, {"trait": "circuit_breaker", "library": "opossum"})
+            elif last == "circuitBreaker" and has("cockatiel"):
+                trait(node, {"trait": "circuit_breaker", "library": "cockatiel"})
+            elif last == "bulkhead" and has("cockatiel"):
+                trait(node, {"trait": "bulkhead", "library": "cockatiel"})
+            elif last in ("pLimit", "limit") and has("p-limit") and node.type == "call_expression" and args and args[0].type == "number":
+                trait(node, {"trait": "concurrency_limit", "name": TypeScriptSource._declared(node) or callee, "construct": "p-limit"})
+            elif node.type == "new_expression" and last == "PQueue" and has("p-queue"):
+                trait(node, {"trait": "concurrency_limit", "name": TypeScriptSource._declared(node) or "PQueue", "construct": "p-queue"})
+            elif callee == "AbortSignal.timeout":
+                trait(node, {"trait": "timeout", "construct": callee, "deadline": False})
+            elif last == "timeout" and has("cockatiel") and node.type == "call_expression":
+                trait(node, {"trait": "timeout", "construct": "cockatiel timeout", "deadline": False})
+            elif last in ("rateLimit", "slowDown") and has("express-rate-limit", "express-slow-down"):
+                trait(node, {"trait": "rate_limit", "library": "express-rate-limit", "direction": "inbound"})
+            elif node.type == "new_expression" and last.startswith("RateLimiter") and has("rate-limiter-flexible"):
+                trait(node, {"trait": "rate_limit", "library": "rate-limiter-flexible", "direction": "inbound"})
+            elif last == "forRoot" and callee.startswith("ThrottlerModule") and has("@nestjs/throttler"):
+                trait(node, {"trait": "rate_limit", "library": "@nestjs/throttler", "direction": "inbound"})
+            elif node.type == "new_expression" and last == "Bottleneck" and has("bottleneck"):
+                trait(node, {"trait": "rate_limit", "library": "bottleneck", "direction": "outbound"})
+            elif (_HTTP_CLIENTS.match(callee) or callee in ("axios.create", "got.extend", "ky.create")) and has("axios", "got", "ky", "undici"):
+                for arg in args:
+                    if arg.type == "object" and any(c.type == "pair" and _text(c.child_by_field_name("key")) == "timeout" for c in arg.named_children):
+                        trait(node, {"trait": "timeout", "construct": callee, "deadline": False})
+                        break
+
+    @staticmethod
+    def _declared(node) -> str | None:
+        """The name a value is declared or assigned to (`const limit = pLimit(4)`)."""
+        parent = node.parent
+        if parent is not None and parent.type == "variable_declarator" and parent.child_by_field_name("name") is not None:
+            return _text(parent.child_by_field_name("name"))
+        if parent is not None and parent.type == "assignment_expression" and parent.child_by_field_name("left") is not None:
+            return _text(parent.child_by_field_name("left"))
+        return None
 
     # -- Prisma client ------------------------------------------------------------
 

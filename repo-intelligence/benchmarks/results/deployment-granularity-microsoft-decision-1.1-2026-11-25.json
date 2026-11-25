@@ -1,0 +1,372 @@
+[
+  {
+    "fixture": "F01-python-api",
+    "rules": "monolithic",
+    "expected": "monolithic",
+    "expected_source": "golden granularity",
+    "model": "monolithic",
+    "abstain_reason": null,
+    "top": [
+      [
+        "monolithic",
+        0.992177
+      ],
+      [
+        "none_of_these",
+        0.007327
+      ]
+    ],
+    "answered_by": "microsoft-decision/microsoft-decision-1.1",
+    "features": {
+      "backend_deployables": [
+        "."
+      ],
+      "cross_component_links": 0,
+      "frontend_deployables": [],
+      "libraries": 0,
+      "shared_written_tables": [],
+      "unlinked_functions": []
+    },
+    "agrees": true,
+    "top_pick": "monolithic",
+    "top_pick_agrees": true
+  },
+  {
+    "fixture": "F02-ts-monorepo",
+    "rules": "ambiguous",
+    "expected": "service-based",
+    "expected_source": "golden granularity",
+    "model": null,
+    "abstain_reason": "below_threshold",
+    "top": [
+      [
+        "microservices",
+        0.459551
+      ],
+      [
+        "none_of_these",
+        0.256552
+      ]
+    ],
+    "answered_by": "microsoft-decision/microsoft-decision-1.1",
+    "features": {
+      "backend_deployables": [
+        "apps/api",
+        "apps/worker"
+      ],
+      "cross_component_links": 1,
+      "frontend_deployables": [
+        "apps/web"
+      ],
+      "libraries": 2,
+      "shared_written_tables": [],
+      "unlinked_functions": []
+    },
+    "agrees": false,
+    "top_pick": "microservices",
+    "top_pick_agrees": false
+  },
+  {
+    "fixture": "F03-python-ts-hybrid",
+    "rules": "monolithic",
+    "expected": "monolithic",
+    "expected_source": "golden granularity",
+    "model": null,
+    "abstain_reason": "below_threshold",
+    "top": [
+      [
+        "monolithic",
+        0.455796
+      ],
+      [
+        "none_of_these",
+        0.449644
+      ]
+    ],
+    "answered_by": "microsoft-decision/microsoft-decision-1.1",
+    "features": {
+      "backend_deployables": [
+        "backend"
+      ],
+      "cross_component_links": 1,
+      "frontend_deployables": [
+        "frontend"
+      ],
+      "libraries": 0,
+      "shared_written_tables": [],
+      "unlinked_functions": []
+    },
+    "agrees": false,
+    "top_pick": "monolithic",
+    "top_pick_agrees": true
+  },
+  {
+    "fixture": "F04-java-maven",
+    "rules": "monolithic",
+    "expected": "monolithic",
+    "expected_source": "golden granularity",
+    "model": "monolithic",
+    "abstain_reason": null,
+    "top": [
+      [
+        "monolithic",
+        0.914257
+      ],
+      [
+        "none_of_these",
+        0.081105
+      ]
+    ],
+    "answered_by": "microsoft-decision/microsoft-decision-1.1",
+    "features": {
+      "backend_deployables": [
+        "service"
+      ],
+      "cross_component_links": 0,
+      "frontend_deployables": [],
+      "libraries": 1,
+      "shared_written_tables": [],
+      "unlinked_functions": []
+    },
+    "agrees": true,
+    "top_pick": "monolithic",
+    "top_pick_agrees": true
+  },
+  {
+    "fixture": "F05-go-services",
+    "rules": "monolithic",
+    "expected": "monolithic",
+    "expected_source": "golden granularity",
+    "model": "monolithic",
+    "abstain_reason": null,
+    "top": [
+      [
+        "monolithic",
+        0.992177
+      ],
+      [
+        "none_of_these",
+        0.007327
+      ]
+    ],
+    "answered_by": "microsoft-decision/microsoft-decision-1.1",
+    "features": {
+      "backend_deployables": [
+        "."
+      ],
+      "cross_component_links": 0,
+      "frontend_deployables": [],
+      "libraries": 0,
+      "shared_written_tables": [],
+      "unlinked_functions": []
+    },
+    "agrees": true,
+    "top_pick": "monolithic",
+    "top_pick_agrees": true
+  },
+  {
+    "fixture": "F06-iac-heavy",
+    "rules": "monolithic",
+    "expected": "monolithic",
+    "expected_source": "golden granularity",
+    "model": "monolithic",
+    "abstain_reason": null,
+    "top": [
+      [
+        "monolithic",
+        0.992177
+      ],
+      [
+        "none_of_these",
+        0.007327
+      ]
+    ],
+    "answered_by": "microsoft-decision/microsoft-decision-1.1",
+    "features": {
+      "backend_deployables": [
+        "."
+      ],
+      "cross_component_links": 0,
+      "frontend_deployables": [],
+      "libraries": 0,
+      "shared_written_tables": [],
+      "unlinked_functions": []
+    },
+    "agrees": true,
+    "top_pick": "monolithic",
+    "top_pick_agrees": true
+  },
+  {
+    "fixture": "F07-event-driven",
+    "rules": "microservices",
+    "expected": "microservices",
+    "expected_source": "golden granularity",
+    "model": "microservices",
+    "abstain_reason": null,
+    "top": [
+      [
+        "microservices",
+        0.894231
+      ],
+      [
+        "service-based",
+        0.058516
+      ]
+    ],
+    "answered_by": "microsoft-decision/microsoft-decision-1.1",
+    "features": {
+      "backend_deployables": [
+        "services/audit",
+        "services/notifier",
+        "services/orders"
+      ],
+      "cross_component_links": 1,
+      "frontend_deployables": [],
+      "libraries": 0,
+      "shared_written_tables": [],
+      "unlinked_functions": []
+    },
+    "agrees": true,
+    "top_pick": "microservices",
+    "top_pick_agrees": true
+  },
+  {
+    "fixture": "F16-polyglot-contracts",
+    "rules": "microservices",
+    "expected": "microservices",
+    "expected_source": "golden granularity",
+    "model": "microservices",
+    "abstain_reason": null,
+    "top": [
+      [
+        "microservices",
+        0.858967
+      ],
+      [
+        "none_of_these",
+        0.068244
+      ]
+    ],
+    "answered_by": "microsoft-decision/microsoft-decision-1.1",
+    "features": {
+      "backend_deployables": [
+        "services/billing",
+        "services/catalog",
+        "services/edge",
+        "services/orders",
+        "services/storefront"
+      ],
+      "cross_component_links": 1,
+      "frontend_deployables": [],
+      "libraries": 0,
+      "shared_written_tables": [],
+      "unlinked_functions": []
+    },
+    "agrees": true,
+    "top_pick": "microservices",
+    "top_pick_agrees": true
+  },
+  {
+    "fixture": "F17-cloud-messaging",
+    "rules": "ambiguous",
+    "expected": "microservices",
+    "expected_source": "golden granularity",
+    "model": null,
+    "abstain_reason": "below_threshold",
+    "top": [
+      [
+        "monolithic",
+        0.791005
+      ],
+      [
+        "none_of_these",
+        0.205686
+      ]
+    ],
+    "answered_by": "microsoft-decision/microsoft-decision-1.1",
+    "features": {
+      "backend_deployables": [
+        "worker"
+      ],
+      "cross_component_links": 0,
+      "frontend_deployables": [],
+      "libraries": 1,
+      "shared_written_tables": [],
+      "unlinked_functions": [
+        "ProcessOrders",
+        "send"
+      ]
+    },
+    "agrees": false,
+    "top_pick": "monolithic",
+    "top_pick_agrees": false
+  },
+  {
+    "fixture": "F18-build-monorepo",
+    "rules": "monolithic",
+    "expected": "monolithic",
+    "expected_source": "golden granularity",
+    "model": "monolithic",
+    "abstain_reason": null,
+    "top": [
+      [
+        "monolithic",
+        0.915515
+      ],
+      [
+        "none_of_these",
+        0.077186
+      ]
+    ],
+    "answered_by": "microsoft-decision/microsoft-decision-1.1",
+    "features": {
+      "backend_deployables": [
+        "."
+      ],
+      "cross_component_links": 0,
+      "frontend_deployables": [
+        "web/apps/site"
+      ],
+      "libraries": 1,
+      "shared_written_tables": [],
+      "unlinked_functions": []
+    },
+    "agrees": true,
+    "top_pick": "monolithic",
+    "top_pick_agrees": true
+  },
+  {
+    "fixture": "F19-architecture-styles",
+    "rules": "microservices",
+    "expected": "microservices",
+    "expected_source": "golden granularity",
+    "model": "microservices",
+    "abstain_reason": null,
+    "top": [
+      [
+        "microservices",
+        0.971884
+      ],
+      [
+        "none_of_these",
+        0.014233
+      ]
+    ],
+    "answered_by": "microsoft-decision/microsoft-decision-1.1",
+    "features": {
+      "backend_deployables": [
+        "services/assistant",
+        "services/orders",
+        "services/payments"
+      ],
+      "cross_component_links": 2,
+      "frontend_deployables": [],
+      "libraries": 0,
+      "shared_written_tables": [],
+      "unlinked_functions": []
+    },
+    "agrees": true,
+    "top_pick": "microservices",
+    "top_pick_agrees": true
+  }
+]

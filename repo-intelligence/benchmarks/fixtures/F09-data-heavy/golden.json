@@ -334,5 +334,10 @@
       "human_label": "library",
       "since": "M2"
     }
-  ]
+  ],
+  "granularity": {
+    "label": null,
+    "why": "schemas, migrations and SQL, not a deployed application",
+    "source": "fixture design"
+  }
 }

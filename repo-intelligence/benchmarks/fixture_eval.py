@@ -1,6 +1,11 @@
-"""Ask a real decision model for the component kind of every fixture component.
+"""Ask a real decision model for the component kind of every fixture component, or
+(with --decision deployment-granularity) for each fixture's deployment granularity (DM11).
 
     python benchmarks/fixture_eval.py microsoft-decision [out.json]
+    python benchmarks/fixture_eval.py --decision deployment-granularity microsoft-decision [out.json]
+
+For DM11 the expected label is the golden's `granularity` label; fixtures without one
+(no deployed application) are skipped. Either output feeds `calibrate.py`.
 
 Unlike a compile, this sends EVERY component to the model (not only the ones
 rules leave ambiguous) and offers every label, so the model can be compared
@@ -60,9 +65,63 @@ def expected_kind(golden: dict, root: str) -> tuple[str | None, str]:
     return None, "none"
 
 
+def granularity_features(name: str, root: Path) -> dict | None:
+    """DM11's features for a fixture's base commit, as the compiler builds them."""
+    from repo_intel.compile import pipeline
+    from repo_intel.decisions import architecture as dm_architecture
+
+    seen: dict[str, dict] = {}
+    original = dm_architecture.granularity_rules
+
+    def spy(features):
+        seen["features"] = dict(features)
+        return original(features)
+
+    shas = materialize(name, root / "repo")
+    pipeline.dm_architecture.granularity_rules = spy
+    try:
+        pipeline.compile_commit(ObjectStore(root / "store", "eval"), root / "repo", "github.com/0", shas[0])
+    finally:
+        pipeline.dm_architecture.granularity_rules = original
+    return seen.get("features")
+
+
+def eval_granularity(alias: str, gateway: Gateway, out_path: Path | None) -> int:
+    from repo_intel.decisions import architecture as dm_architecture
+
+    labels = tuple(dm_architecture.LABEL_TO_ENTRY)
+    spec = dm_architecture.GRANULARITY_SPEC
+    spec = spec.model_copy(update={"strategy": [s.model_copy(update={"model_ref": alias}) if s.kind == "decision_model" else s for s in spec.strategy]})
+    rows = []
+    with tempfile.TemporaryDirectory() as tmp:
+        ledger = Ledger(ObjectStore(Path(tmp) / "ledger", "eval"))
+        for name in list_fixtures():
+            want = (load_golden(name).get("granularity") or {}).get("label")
+            if want is None:
+                continue
+            features = granularity_features(name, Path(tmp) / name)
+            by_rules = dm_architecture.granularity_rules(features)
+            r = evaluate(spec, f"{name}:@repo", features, lambda f: RuleResult("ambiguous", candidates=labels), ledger=ledger, gateway=gateway, budget=Budget(max_calls=10), criteria=dm_architecture.GRANULARITY_CRITERIA)
+            scores = sorted((r.option_scores or {}).items(), key=lambda kv: -kv[1])
+            rows.append({"fixture": name, "rules": by_rules.label or by_rules.outcome, "expected": want, "expected_source": "golden granularity",
+                         "model": r.selected_label, "abstain_reason": r.abstain_reason, "top": scores[:2], "answered_by": r.model_ref, "features": features,
+                         "agrees": r.selected_label == want, "top_pick": scores[0][0] if scores else None, "top_pick_agrees": bool(scores) and scores[0][0] == want})
+            top = ", ".join(f"{k}={v:.3f}" for k, v in scores[:2])
+            print(f"{name:26} rules={rows[-1]['rules']:22} expected={want:17} model={r.selected_label or 'ABSTAIN:' + str(r.abstain_reason):28} {top}", flush=True)
+    print(f"\nfixtures: {len(rows)}; model answered: {sum(1 for r in rows if r['model'])}; agrees: {sum(1 for r in rows if r['agrees'])}; answered and wrong: {sum(1 for r in rows if r['model'] and not r['agrees'])}")
+    if out_path:
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(json.dumps(rows, indent=2) + "\n")
+    return 0
+
+
 def main() -> int:
-    alias = sys.argv[1] if len(sys.argv) > 1 else "decision-default"
-    out_path = Path(sys.argv[2]) if len(sys.argv) > 2 else None
+    args = sys.argv[1:]
+    decision = "component-kind"
+    if args[:1] == ["--decision"]:
+        decision, args = args[1], args[2:]
+    alias = args[0] if args else "decision-default"
+    out_path = Path(args[1]) if len(args) > 1 else None
     configured = Gateway.from_env()
     if alias not in configured.aliases:
         print(f"no credentials configured for alias {alias!r}")
@@ -71,6 +130,8 @@ def main() -> int:
     if hasattr(model, "max_wait"):
         model.max_wait = 90.0
     gateway = Gateway(configured.aliases, frozenset({model.provider}))
+    if decision == "deployment-granularity":
+        return eval_granularity(alias, gateway, out_path)
     spec = dm.SPEC.model_copy(update={"strategy": [s.model_copy(update={"model_ref": alias}) if s.kind == "decision_model" else s for s in dm.SPEC.strategy]})
     ask_everything = lambda f: RuleResult("ambiguous", candidates=LABELS)
     rows = []

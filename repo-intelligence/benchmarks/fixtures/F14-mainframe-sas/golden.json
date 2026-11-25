@@ -662,5 +662,10 @@
    ]
   }
  ],
- "decision_cases": []
+ "decision_cases": [],
+ "granularity": {
+  "label": null,
+  "why": "batch programs, not a deployed application",
+  "source": "fixture design"
+ }
 }

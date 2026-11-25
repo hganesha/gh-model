@@ -412,7 +412,7 @@ The data and ML relations:
 
 `READS_FROM` and `WRITES_TO` also take jobs, tasks and notebooks as subjects, and datasets and models as objects. `DEPENDS_ON` also links tasks to their upstream tasks. All of these are declared (E1) or parsed (E2); a read or write whose target is computed at run time is not guessed, but counted against the `data_lineage` coverage domain.
 
-`EXHIBITS` links a repository, component, interface, event topic, table, dataset, job, deployment unit, infrastructure resource or model to an `ArchitecturePattern` or `Antipattern` (§8.8).
+`EXHIBITS` links a repository, component, interface, event topic, table, dataset, job, deployment unit, infrastructure resource or model to an `ArchitecturePattern` or `Antipattern` (§8.8). `DEPENDS_ON` also links a source file to another file of its unit that it imports.
 
 Each relation has a schema: permitted subject and object kinds, direction, cardinality (functional or many), permitted qualifiers and the minimum evidence class. Multiple edges and conflicting assertions between the same pair are allowed.
 
@@ -534,9 +534,18 @@ The pattern catalogue (`compile/architecture_patterns.json`) is generated from `
 | outbox | arch-0110 transactional outbox | a table named as an outbox that application code writes |
 | n-tier | arch-0016 | a frontend consuming endpoints of a service that reads or writes tables |
 | runtime-packaging | arch-0252 service instance per container, arch-0253 serverless execution | deployment units by kind and image (backing-service images do not count), and declared function resources |
-| batch-and-workflows | arch-0125, arch-0193, arch-0337 | jobs with a schedule or trigger, tasks in declared dependency order, and a job whose tasks, or what they run (one `RUNS` hop), produce a model |
+| batch-and-workflows | arch-0125, arch-0193, arch-0337 | jobs with a schedule or trigger, tasks in declared dependency order, and a job whose tasks, or what they run (one `RUNS` hop), produce a model; a file a job runs counts when the evidence of a `PRODUCES` fact lies in that file |
 | model-serving | arch-0333 | a deployment unit or component that `SERVES` a model |
 | analytical-data | arch-0186 ELT, arch-0202 medallion layers, arch-0203 star schema | dbt models; datasets named in bronze, silver and gold layers; fact and dimension table names |
+| layering | arch-0017 layered architecture, arch-0026 service layer | files placed in presentation, service and data-access layers by directory or file-name suffix; imports between them run only downwards. Service layer also needs presentation never to import data access directly |
+| hexagonal | arch-0018 | files under `adapters/` import `ports/` or the core, and nothing under `ports/` or the core imports an adapter |
+| cqrs | arch-0142 | symbols in command modules write tables, symbols in query modules only read; the basis says whether queries read a separate read model |
+| saga | arch-0128 saga, arch-0129 compensating transaction | a component publishes a step, another component consumes it and publishes a failure event (failed, rejected, cancelled, refund, …), and the first component subscribes to that failure event |
+| distributed-monolith | anti-0001 distributed monolith | deployables that call each other synchronously in both directions, or that write the same tables and call each other |
+| sync-chains | anti-0005 chatty synchronous chain | a synchronous call path of three or more hops between components, or one component using four or more operations of another |
+| module-structure | anti-0002 big ball of mud, anti-0003 god module | one import cycle of at least five files across three directories and 40% of a component; a file imported by half of its component (at least six files) that itself imports at least five |
+| code-traits | arch-0210 retry, anti-0007 retry storm, anti-0008 unbounded concurrency, anti-0009 uncontrolled agent loop | code traits the Python and TypeScript extractors read from function bodies: retry policies (tenacity, urllib3 `Retry`, axios-retry) with or without backoff; `asyncio.gather` over a comprehension, `create_task` in a loop, or `Promise.all` over `.map` with no semaphore or limiter; and a `while True` loop (or `for (;;)`) around a model call that drives tools, with no comparison against a turn, step or limit counter |
+| resilience | arch-0213 circuit breaker, arch-0214 bulkhead, arch-0212 timeout and deadline propagation, arch-0239 rate limiting | resilience policies the extractors read as a library's own construct in Python, TypeScript, Java and Kotlin, C# and Go: circuit breakers (pybreaker, aiobreaker, opossum, cockatiel, resilience4j, MicroProfile, Hystrix, Polly, gobreaker, hystrix-go); explicit bulkheads (cockatiel, resilience4j, Polly), or two or more separate bounded pools or semaphores in one component; timeouts on HTTP clients and calls, waits (`asyncio.wait_for`, `AbortSignal.timeout`, `CancelAfter`) and gRPC and Go context deadlines, the basis saying whether a deadline is carried on to downstream calls; rate limiters (slowapi, flask-limiter, express-rate-limit, rate-limiter-flexible, @nestjs/throttler, Bottleneck, aiolimiter, resilience4j, Bucket4j, ASP.NET Core, x/time/rate, tollbooth, httprate) and API gateway usage plans |
 
 **Status follows the evidence class.** A finding that is itself a parsed fact (two components write one table: a shared database) is E3 and `supported` with `exact` resolution. A finding that needs judgement (whether that sharing is *uncontrolled*, whether a REST-like route set is REST) is E4 and `inferred` with `candidate` resolution. Antipatterns are always E4.
 
@@ -544,7 +553,15 @@ The pattern catalogue (`compile/architecture_patterns.json`) is generated from `
 
 **Coverage** domain `architecture_patterns`, scope `@repo`: the numerator is the entries looked for (those with a detector or a decision), the denominator the entries a repository can show. The detail lists the catalogue key, the beyond-repository count, the antipatterns looked for, and what was exhibited.
 
-Phase 1 stops here. Not yet looked for: patterns that need code-level structure (layered and hexagonal boundaries, CQRS, saga), resilience patterns read from library configuration, and the remaining antipatterns (distributed monolith, chatty services and the rest), which need call-graph and deployment facts across components.
+**The module graph.** The linker records each import that resolves to a file of the same unit as `Artifact —DEPENDS_ON→ Artifact` (E2, qualifier `via: import`), for Python and TypeScript. Layering, hexagonal boundaries, import cycles and god modules are read from these edges.
+
+**Code traits.** The runtime antipatterns (retry storm, unbounded concurrency, uncontrolled agent loop) depend on behaviour under load, which no repository shows. What source does show is the condition for each: a retry with no backoff, a fan-out with no limit, an agent loop with no bound. The extractors record these as `code_trait` observations, which the compiler keeps on the file entity (`code_traits`, each with its evidence id). The finding is E4 and cites exactly those spans, and its basis says it is a condition, not an observed failure.
+
+**Resilience policies.** The same `code_trait` observations record resilience policies, read anywhere in a file (a module-level breaker counts as much as one in a function). A dependency alone is never a policy: the file must import the library and use its construct, so a `CircuitBreaker` class from an unknown library is not read, and one bounded pool is a limit, not a bulkhead. Findings are E4: they show the policy is in the code, not that it is tuned or holds under load. Java, Kotlin, C# and Go are read with patterns; a construct the patterns miss is simply not found.
+
+**Thresholds.** The structure thresholds (cycle size and share, hub fan-in and fan-out) and DM11's are placeholders until calibrated on the reviewed corpus (§7.4). Every fixture golden carries the deployment granularity its design implies, and a test checks that DM11's rules never contradict it: a resolved label must match, and an ambiguous outcome must offer the label to the decision model. `benchmarks/fixture_eval.py --decision deployment-granularity <alias>` asks a decision model about each labelled fixture and writes rows that `benchmarks/calibrate.py` turns into a threshold recommendation. A dozen synthetic cases are too few for one, so the thresholds stay as they are. A first live run (`benchmarks/results/deployment-granularity-2026-11-25.md`) led to criteria v2, which explains each feature to the model.
+
+Not yet looked for: the other resilience patterns of families 10.01–10.03 (fallback, idempotent receiver, load shedding and the rest), event sourcing, and onion and clean architecture. Retries, fan-out and agent loops are still read only in Python and TypeScript.
 
 ---
 

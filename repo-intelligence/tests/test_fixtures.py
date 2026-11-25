@@ -39,13 +39,14 @@ def compiled(tmp_path_factory):
                 "entities": {e["id"]: e for s in shards.values() for e in s["entities"]},
                 "assertions": [a for s in shards.values() for a in s["assertions"]],
                 "coverage": warm_store.get_json(warm.manifest.coverage_ref),
+                "ledger": [warm_store.get_json(e["digest"]) for e in warm_store.get_json(warm.manifest.ledger_entries_ref)],
             })
         return out
     return run
 
 
-def test_there_are_eighteen_fixtures():
-    assert len(FIXTURES) == 18 and [f[:3] for f in FIXTURES] == [f"F{i:02d}" for i in range(1, 19)]
+def test_there_are_nineteen_fixtures():
+    assert len(FIXTURES) == 19 and [f[:3] for f in FIXTURES] == [f"F{i:02d}" for i in range(1, 20)]
 
 
 @pytest.mark.parametrize("name", FIXTURES)
@@ -159,7 +160,7 @@ def test_dependency_capability_coverage_on_fixture_bases(compiled):
         assert (coverage["numerator"], coverage["denominator"]) == (len(classified), len(declared))
         all_declared.update(declared.values())
         all_classified.update(declared[subject] for subject in classified)
-    assert (len(all_classified), len(all_declared)) == (41, 51)
+    assert (len(all_classified), len(all_declared)) == (42, 57)
 
 
 def test_configuration_values_never_enter_the_graph(compiled):
@@ -168,3 +169,20 @@ def test_configuration_values_never_enter_the_graph(compiled):
         blob = canonical([commit["entities"], commit["assertions"]])
         assert b"postgresql://db/status" not in blob and b"status-db" not in blob.replace(b'"name":"status"', b"")
         assert b"DATABASE_URL" in blob  # the key name is kept, the value is not
+
+
+@pytest.mark.parametrize("name", FIXTURES)
+def test_deployment_granularity_rules_never_contradict_the_label(name, compiled):
+    """DM11's rules on each fixture against the label its design implies (golden `granularity`).
+    A resolved rule must give the label; an ambiguous one must offer it to the decision model;
+    a fixture with no deployed application must be left undecided."""
+    want = load_golden(name)["granularity"]["label"]
+    rows = [e for e in compiled(name)[0]["ledger"] if e["spec"].split("@")[0] == "dm.deployment-granularity"]
+    assert len(rows) == 1
+    d = rows[0]
+    if want is None:
+        assert d["abstained"] and d["abstain_reason"] == "no_backend_deployable", d
+    elif d["rule_outcome"] == "resolved":
+        assert d["selected_label"] == want
+    else:
+        assert d["rule_outcome"] == "ambiguous" and want in d["alternatives"], d

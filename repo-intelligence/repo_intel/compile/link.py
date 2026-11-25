@@ -116,6 +116,7 @@ class _Linker:
         self.imports = {"internal": 0, "workspace": 0, "external": 0, "stdlib": 0, "unresolved": 0}
         self.unresolved_imports: list[str] = []
         self.inline_linked: set[tuple[str, str]] = set()
+        self.file_imports: dict[tuple[str, str], dict[str, Any]] = {}  # (importer, imported file) -> first import's evidence
 
     # -- helpers
 
@@ -178,9 +179,15 @@ class _Linker:
             hits = {n: self._py_target(path, n, level) for n in names}
             if names and all(hits.values()):
                 self.imports["internal"] += 1
+                for file in hits.values():
+                    self._file_import(path, file, o)
                 return
         if target is not None:
             self.imports["internal"] += 1
+            subs = [self._py_target(path, f"{module}.{n}" if module else n, level) for n in names if n != "*"]
+            for file in [target, *(s for s in subs if s)]:
+                if not file.endswith("__init__.py") or file == target and not any(subs):
+                    self._file_import(path, file, o)
             for name in names:
                 self.bindings[path][aliases.get(name, name)] = (target, name)
             return
@@ -271,6 +278,7 @@ class _Linker:
             alias = self._ts_alias(path, spec)
         if alias is not None and alias[0] == "internal":
             self.imports["internal"] += 1
+            self._file_import(path, alias[1], o)
             for name in names:
                 self.bindings[path][name] = (alias[1], name)
             return
@@ -301,6 +309,16 @@ class _Linker:
             self.imports["external"] += 1
         else:
             self._unresolved(path, spec)
+
+    def _file_import(self, path: str, file: str, o: dict[str, Any]) -> None:
+        if file != path:
+            self.file_imports.setdefault((path, file), o["evidence"])
+
+    def link_file_imports(self) -> None:
+        """Artifact DEPENDS_ON Artifact for each import that resolves to a file of this unit:
+        the module graph that layering and coupling are read from."""
+        for (path, file), evidence in sorted(self.file_imports.items()):
+            self.relate(path, "@file", Predicate.DEPENDS_ON, ref(EntityKind.ARTIFACT, {"path": file}, posixpath.basename(file), declare=False), [evidence], {"via": "import"}, evidence_class=EvidenceClass.E2)
 
     def _unresolved(self, path: str, what: str) -> None:
         self.imports["unresolved"] += 1
@@ -684,6 +702,7 @@ def _unit_link(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, Any]:
     linker = _Linker(unit, inputs["summaries"], inputs["workspace_packages"])
     linker.declare_symbols()
     linker.resolve_imports()
+    linker.link_file_imports()
     routes = linker.link_routes(linker.link_routers())
     calls = linker.link_calls()
     data = linker.link_data_access()
@@ -714,7 +733,7 @@ def _unit_link(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, Any]:
     return {"unit": unit["name"], "observations": linker.out, "unknowns": linker.unknowns, "coverage": coverage, "exports": linker.exports()}
 
 
-UNIT_LINK = Step("unit.link", "0.11.0", _unit_link)
+UNIT_LINK = Step("unit.link", "0.12.0", _unit_link)
 
 
 # ---------------------------------------------------------------- repo-level

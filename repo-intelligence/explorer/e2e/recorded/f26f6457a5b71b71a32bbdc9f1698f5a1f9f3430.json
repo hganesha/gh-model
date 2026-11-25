@@ -1,0 +1,6 @@
+{
+ "method": "GET",
+ "path": "/v1/snapshots/sha256:91978e6f299ed2d2b754ce276b232189fc57a34b8c94770d5e1da3f0c3bcbe3f/entities?plane=architecture&kind=Package&limit=60",
+ "status": 200,
+ "body": "{\"entities\":[{\"id\":\"ent_3x6i56wmbfeyhbbooljee3zcia\",\"kind\":\"Package\",\"name\":\"orders-api\",\"attributes\":{\"publishable\":true,\"has_cli_entry\":false,\"primary_language\":\"python\",\"primary_language_status\":\"supported\",\"primary_language_decision_ref\":\"dec_vg376sh3cy6tmhrmcj6ebdkig6\"},\"natural_key\":{\"name\":\"orders-api\",\"ecosystem\":\"pypi\",\"manifest_dir\":\"\"},\"evidence_ids\":[\"ev_gpbiaapobuqagtpeqbqqspg2fi\"]}],\"truncated\":false}"
+}

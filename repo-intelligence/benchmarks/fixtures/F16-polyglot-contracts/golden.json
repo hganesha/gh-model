@@ -693,5 +693,10 @@
    "removed_entities": []
   }
  ],
- "decision_cases": []
+ "decision_cases": [],
+ "granularity": {
+  "label": "microservices",
+  "why": "five services, each in its own language and package, exposing their own contracts and sharing no tables",
+  "source": "fixture design"
+ }
 }

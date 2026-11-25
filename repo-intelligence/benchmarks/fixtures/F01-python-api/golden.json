@@ -443,5 +443,10 @@
       "must_never_appear": "AKIAIOSFODNN7EXAMPLE",
       "since": "M1"
     }
-  ]
+  ],
+  "granularity": {
+    "label": "monolithic",
+    "why": "one FastAPI application",
+    "source": "fixture design"
+  }
 }

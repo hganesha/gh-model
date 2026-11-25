@@ -186,5 +186,10 @@
    "added_entities": [],
    "removed_entities": []
   }
- ]
+ ],
+ "granularity": {
+  "label": "monolithic",
+  "why": "one Spring Boot service; the other module is a library it uses",
+  "source": "fixture design"
+ }
 }

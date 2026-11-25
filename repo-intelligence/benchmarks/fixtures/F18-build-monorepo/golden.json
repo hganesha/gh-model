@@ -343,5 +343,10 @@
    "removed_entities": []
   }
  ],
- "decision_cases": []
+ "decision_cases": [],
+ "granularity": {
+  "label": "monolithic",
+  "why": "one Go API with a separate web front end",
+  "source": "fixture design"
+ }
 }
