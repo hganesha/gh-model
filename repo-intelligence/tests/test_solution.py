@@ -275,29 +275,81 @@ def test_a_dotted_dataset_name_is_split_only_when_both_sides_are_sas():
     assert r.canonical(_id(sas, "Dataset", {"name": "mart.sales"})) == _id(sas, "Dataset", {"name": "mart.sales"}), "a candidate is never merged"
 
 
+_LOCAL_KEYS = (
+    ("ConfigKey", {"name": "LOG_LEVEL"}, {}),
+    ("ConfigKey", {"name": "API_URL"}, {"source": "env"}),
+    ("ConfigKey", {"name": "date"}, {"source": "databricks_widget"}),
+    ("ConfigKey", {"name": "libname:mart"}, {"source": "sas_libname"}),
+    ("ConfigKey", {"name": "datasource:shopdsn"}, {"source": "cfml_datasource"}),
+    ("ConfigKey", {"name": "sales/jdbc-password"}, {"source": "databricks_secret"}),
+)
+
+
+def _declared_in(member_id, key, path, evidence_class="E1", rows=()):
+    """A member whose ConfigKey `key` an artifact at `path` declares at `evidence_class`."""
+    repository = f"local/{member_id}"
+    artifact = {"path": path}
+    defined = {"id": "as_defined", "subject": entity_id(repository, "ConfigKey", key), "predicate": "DEFINED_IN", "object": entity_id(repository, "Artifact", artifact), "evidence_class": evidence_class, "evidence_ids": ["ev"]}
+    return _member(member_id, [*rows, ("ConfigKey", key, {"administered": True}), ("Artifact", artifact, {"name": path.rsplit("/", 1)[-1]})], assertions=[defined])
+
+
 def test_config_keys_are_one_only_where_a_side_is_authoritative():
-    """`LOG_LEVEL` read by two services may be two settings; the solution's inputs, a
-    `config` or `database` member, or a shared non-default source settles it."""
-    web = _member("web", [("ConfigKey", {"name": "LOG_LEVEL"}, {}), ("ConfigKey", {"name": "shopdsn"}, {"source": "cfml_datasource"}), ("ConfigKey", {"name": "API_URL"}, {"source": "env"})], role="web")
-    service = _member("orders", [("ConfigKey", {"name": "LOG_LEVEL"}, {}), ("ConfigKey", {"name": "shopdsn"}, {"source": "cfml_datasource"}), ("ConfigKey", {"name": "API_URL"}, {"source": "env"})])
+    """`LOG_LEVEL` read by two services may be two settings, and so may two notebooks' widget
+    `date`, two programs' libref `mart` or two servers' datasource `shopdsn`: the same kind of
+    source is not proof. The solution's inputs, a `config` or `database` member, an E1
+    declaration from an export under `.rkp/inputs/`, or a source naming a namespace every
+    member shares (a Databricks secret `scope/key`) settles it."""
+    web = _member("web", list(_LOCAL_KEYS), role="web")
+    service = _member("orders", list(_LOCAL_KEYS))
     r = resolve(SolutionView([web, service]))
-    assert _rules(r, "same_config_key") == [(_id(service, "ConfigKey", {"name": "shopdsn"}), _id(web, "ConfigKey", {"name": "shopdsn"}))], "the same non-default source"
-    leads = {(c["from_name"], c["from_member"], c["to_member"]): c for c in r.candidates}
-    assert set(leads) == {("LOG_LEVEL", "orders", "web"), ("API_URL", "orders", "web")}
-    lead = leads[("LOG_LEVEL", "orders", "web")]
-    assert (lead["rule"], lead["evidence_class"], lead["resolution"], lead["qualifiers"]) == ("config_key_name_only", "E4", "candidate", {"name": "LOG_LEVEL"})
-    assert r.canonical(lead["from"]) == lead["from"]
+    secret = {"name": "sales/jdbc-password"}
+    assert _rules(r, "same_config_key") == [(_id(service, "ConfigKey", secret), _id(web, "ConfigKey", secret))], "only the shared secret namespace"
+    assert all(x["evidence_class"] == "E3" for x in r.links)
+    leads = {c["from_name"]: c for c in r.candidates}
+    assert set(leads) == {"LOG_LEVEL", "API_URL", "date", "libname:mart", "datasource:shopdsn"}
+    for lead in leads.values():
+        assert (lead["rule"], lead["evidence_class"], lead["resolution"], lead["from_member"], lead["to_member"]) == ("config_key_name_only", "E4", "candidate", "orders", "web")
+        assert r.canonical(lead["from"]) == lead["from"]
+    assert leads["LOG_LEVEL"]["qualifiers"] == {"name": "LOG_LEVEL"}
+    assert leads["API_URL"]["qualifiers"] == {"name": "API_URL"}, "an environment variable is the default source"
+    assert leads["date"]["qualifiers"] == {"name": "date", "source": "databricks_widget"}
+    assert leads["libname:mart"]["qualifiers"] == {"name": "libname:mart", "source": "sas_libname"}
+    assert leads["datasource:shopdsn"]["qualifiers"] == {"name": "datasource:shopdsn", "source": "cfml_datasource"}
+    # Different sources are kept apart in the qualifiers.
+    mixed = resolve(SolutionView([_member("web", [("ConfigKey", {"name": "date"}, {"source": "databricks_widget"})]), _member("orders", [("ConfigKey", {"name": "date"}, {"source": "sas_config"})])]))
+    assert [c["qualifiers"] for c in mixed.candidates] == [{"name": "date", "sources": ["databricks_widget", "sas_config"]}]
     # A member that declares configuration for the solution makes every reader one key with it.
-    for authority in (_member("settings", [("ConfigKey", {"name": "LOG_LEVEL"}, {})], role="config"), _member("inputs", [("ConfigKey", {"name": "LOG_LEVEL"}, {})], role="inputs", catalog=True)):
+    log_level = {"name": "LOG_LEVEL"}
+    for authority in (_member("settings", [("ConfigKey", log_level, {})], role="config"), _member("inputs", [("ConfigKey", log_level, {})], role="inputs", catalog=True)):
         r = resolve(SolutionView([web, service, authority]))
-        target = _id(authority, "ConfigKey", {"name": "LOG_LEVEL"})
+        target = _id(authority, "ConfigKey", log_level)
         assert sorted(_rules(r, "same_config_key")) == sorted([
-            (_id(service, "ConfigKey", {"name": "shopdsn"}), _id(web, "ConfigKey", {"name": "shopdsn"})),
-            *([(_id(web, "ConfigKey", {"name": "LOG_LEVEL"}), target), (_id(service, "ConfigKey", {"name": "LOG_LEVEL"}), target)] if authority.is_catalog else
-              [(_id(service, "ConfigKey", {"name": "LOG_LEVEL"}), _id(web, "ConfigKey", {"name": "LOG_LEVEL"})), (target, _id(web, "ConfigKey", {"name": "LOG_LEVEL"}))]),
+            (_id(service, "ConfigKey", secret), _id(web, "ConfigKey", secret)),
+            *([(_id(web, "ConfigKey", log_level), target), (_id(service, "ConfigKey", log_level), target)] if authority.is_catalog else
+              [(_id(service, "ConfigKey", log_level), _id(web, "ConfigKey", log_level)), (target, _id(web, "ConfigKey", log_level))]),
         ])
         assert not [c for c in r.candidates if c["from_name"] == "LOG_LEVEL"], "joined through the authority, so no lead between the readers"
         assert all(x["evidence_class"] == "E3" for x in r.links)
+
+
+def test_a_config_key_declared_by_an_export_under_rkp_inputs_is_authoritative():
+    """A ColdFusion server's `neo-datasource.xml`, committed under `.rkp/inputs/cfml/`,
+    declares its datasources at E1: code naming the same datasource is one key with it."""
+    shopdsn = {"name": "datasource:shopdsn"}
+    code = ("ConfigKey", shopdsn, {"source": "cfml_datasource"})
+    web, service = _member("web", [code], role="web"), _member("orders", [code])
+    admin = _declared_in("admin", shopdsn, ".rkp/inputs/cfml/neo-datasource.xml")
+    r = resolve(SolutionView([web, service, admin]))
+    target = _id(admin, "ConfigKey", shopdsn)
+    assert sorted(_rules(r, "same_config_key")) == sorted([(_id(service, "ConfigKey", shopdsn), _id(web, "ConfigKey", shopdsn)), (target, _id(web, "ConfigKey", shopdsn))])
+    assert all(x["evidence_class"] == "E3" and x["resolution"] == "exact" for x in r.links)
+    assert r.candidates == []
+    assert r.canonical(target) == r.canonical(_id(service, "ConfigKey", shopdsn))
+    # A declaration outside `.rkp/inputs/`, or one under it at less than E1, is not an authority.
+    for other in (_declared_in("admin", shopdsn, "deploy/neo-datasource.xml"), _declared_in("admin", shopdsn, ".rkp/inputs/cfml/neo-datasource.xml", evidence_class="E2")):
+        r = resolve(SolutionView([web, service, other]))
+        assert r.links == []
+        assert {(c["rule"], c["evidence_class"]) for c in r.candidates} == {("config_key_name_only", "E4")} and len(r.candidates) == 3
 
 
 def test_name_only_matches_across_kinds_of_store_are_candidates():

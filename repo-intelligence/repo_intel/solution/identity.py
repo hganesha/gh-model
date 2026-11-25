@@ -17,9 +17,11 @@ IDs, and the view stays as each member compiled it.
                         `library.member`. WORK and one-level names are a program's own
                         scratch data and are never matched.
     same_config_key     ConfigKey, by name, when one side is authoritative for it (the
-                        solution's inputs, or a member whose role is `database` or
-                        `config`), or both keys carry the same non-default `source` (two
-                        `cfml_datasource` keys name one administrator datasource).
+                        solution's inputs, a member whose role is `database` or `config`,
+                        or a declaration at E1 read from an export under `.rkp/inputs/`,
+                        such as a ColdFusion `neo-datasource.xml`), or both keys carry the
+                        same source and that source names a namespace every member
+                        shares (a `databricks_secret` `scope/key`).
     endpoint_method_path  an HTTP call one member makes, to the endpoint another serves at
                         the same method and normalised path (`/a/{id}`, `/a/:id` and
                         `/a/[id]` are one path).
@@ -50,7 +52,9 @@ Matches that need judgement are candidates at E4 and are never merged:
                               platforms name data by different rules
     config_key_name_only      the same configuration key name in two members, neither
                               authoritative for it: `LOG_LEVEL` in two services may be two
-                              settings
+                              settings, and so may two notebooks' widget `date`, two
+                              programs' libref `mart` or two servers' datasource `shopdsn`
+                              (the source is kept as a qualifier)
     name_only_cross_store     the same name on different kinds of store (a table and a
                               dataset, a topic and a queue): a lead, not proof
     endpoint_method_unstated  the call's method is not stated and several endpoints serve the path
@@ -81,6 +85,13 @@ CONFIG_AUTHORITY_ROLES = frozenset({"database", "config"})
 # A ConfigKey's `source` when it is an ordinary environment variable or setting name (most
 # extractors state none): two such keys sharing a name is not proof they are one setting.
 DEFAULT_CONFIG_SOURCES = frozenset({"env", "environment", "environment_variable"})
+# Sources whose key names a namespace every member shares, so the name alone says which
+# setting it is: a Databricks secret is `scope/key` in the workspace's one secret store.
+# Other sources are local to their member (a notebook's widget, a program's LIBNAME
+# libref, a server's datasource name): two members using one name may mean two things.
+SHARED_CONFIG_NAMESPACES = frozenset({"databricks_secret"})
+# Where a repository commits exports from outside it (administrator and metadata exports).
+INPUTS_PREFIX = ".rkp/inputs/"
 _QUERY_METHOD = re.compile(r"[?&]method=([^&#]*)", re.IGNORECASE)
 _LITERAL_METHOD = re.compile(r"[A-Za-z_]\w*")
 _URL_ORIGIN = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*://[^/]*")
@@ -373,8 +384,20 @@ class _Resolver:
     # -- configuration
 
     def _config_authority(self, namespaced: str) -> bool:
+        """Whether this side declares the key for the solution: it is the solution's inputs, a
+        member whose role is `config` or `database`, or an export the member committed under
+        `.rkp/inputs/` declares it (a DEFINED_IN at E1 to an artifact there)."""
         m = self.member_of(namespaced)
-        return m.is_catalog or m.role in CONFIG_AUTHORITY_ROLES
+        if m.is_catalog or m.role in CONFIG_AUTHORITY_ROLES:
+            return True
+        for a in self.view.assertions(namespaced, ("DEFINED_IN",)):
+            if a.get("evidence_class") != "E1":
+                continue
+            artifact = self.view.entity(a["object"]) or {}
+            path = str((artifact.get("natural_key") or {}).get("path", ""))
+            if artifact.get("kind") == "Artifact" and path.startswith(INPUTS_PREFIX):
+                return True
+        return False
 
     def _config_source(self, namespaced: str) -> str | None:
         source = ((self.view.entity(namespaced) or {}).get("attributes") or {}).get("source")
@@ -386,6 +409,7 @@ class _Resolver:
             name = row["natural_key"].get("name")
             if name:
                 index[name].append(row["id"])
+        authority = {n: self._config_authority(n) for items in index.values() if len(items) > 1 for n in items}
         groups = _Groups()
         leads: list[tuple[str, str, str]] = []
         for name, items in sorted(index.items()):
@@ -394,7 +418,8 @@ class _Resolver:
                     if split(a)[0] == split(b)[0]:
                         continue
                     source = self._config_source(a)
-                    if self._config_authority(a) or self._config_authority(b) or (source is not None and source == self._config_source(b)):
+                    shared = source in SHARED_CONFIG_NAMESPACES and source == self._config_source(b)
+                    if authority[a] or authority[b] or shared:
                         groups.union(a, b)
                     else:
                         leads.append((name, b, a))
@@ -402,7 +427,13 @@ class _Resolver:
         for name, b, a in leads:
             if a in groups.parent and b in groups.parent and groups.find(a) == groups.find(b):
                 continue  # already one key through a member authoritative for it
-            self.record("config_key_name_only", "ALIAS_OF", b, a, {"name": name}, self.evidence(b, a), candidate=True)
+            sources = sorted({s for s in (self._config_source(a), self._config_source(b)) if s})
+            qualifiers: dict[str, Any] = {"name": name}
+            if len(sources) == 1:
+                qualifiers["source"] = sources[0]
+            elif sources:
+                qualifiers["sources"] = sources
+            self.record("config_key_name_only", "ALIAS_OF", b, a, qualifiers, self.evidence(b, a), candidate=True)
 
     def cross_store(self) -> None:
         index: dict[str, list[tuple[str, str]]] = defaultdict(list)
