@@ -62,6 +62,23 @@ export interface Unknown {
   coverage_ref: string;
 }
 
+/**
+ * One unit of behaviour (repo_intel.compile.behavior) for the entity `owner`: a function,
+ * page, DATA step or macro as statements. Function-level detail, so only a full bundle has
+ * these rows; `body` and `params` follow the behavioural IR and are left untyped here.
+ */
+export interface Behavior {
+  id: string;
+  owner: string;
+  artifact: string;
+  schema: string;
+  language: string;
+  params: Record<string, unknown>[];
+  body: Record<string, unknown>[];
+  evidence_ids: string[];
+  evidence_class: EvidenceClass;
+}
+
 export interface Conflict {
   id: string;
   conflict_type: string;
@@ -96,6 +113,8 @@ export interface UnitRef {
   assertions: number;
   evidence: number;
   unknowns: number;
+  /** Behaviour rows in the unit file; absent in bundles written before the table existed. */
+  behaviors?: number;
 }
 
 export interface BundleManifest {
@@ -116,8 +135,10 @@ export interface BundleManifest {
   tier?: "architecture" | "full";
   /** Architecture tier: the entity kinds left out, with the rows that touch them. */
   detail_kinds?: string[];
+  /** Architecture tier: the tables left out whole (behaviour). */
+  detail_tables?: string[];
   /** Architecture tier: how many rows of each table were left out. */
-  detail_omitted?: Record<"entities" | "assertions" | "evidence" | "unknowns", number>;
+  detail_omitted?: Record<"entities" | "assertions" | "evidence" | "unknowns", number> & { behaviors?: number };
 }
 
 /** One row of a unit file: a contract row tagged with its table. */
@@ -125,4 +146,5 @@ export type UnitRow =
   | ({ table: "entity" } & Entity)
   | ({ table: "assertion" } & Assertion)
   | ({ table: "evidence" } & Evidence)
-  | ({ table: "unknown" } & Unknown);
+  | ({ table: "unknown" } & Unknown)
+  | ({ table: "behavior" } & Behavior);

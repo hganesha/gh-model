@@ -2,6 +2,7 @@ import { promises as fs } from "node:fs";
 import * as path from "node:path";
 import {
   Assertion,
+  Behavior,
   READABLE_FORMATS,
   BundleManifest,
   Conflict,
@@ -36,6 +37,8 @@ export class Bundle {
   readonly unknowns: Unknown[] = [];
   readonly outgoing = new Map<string, Assertion[]>();
   readonly incoming = new Map<string, Assertion[]>();
+  /** Behaviour units by owner entity id; empty for an architecture-tier bundle, which leaves them out. */
+  readonly behaviors = new Map<string, Behavior[]>();
   private readonly byKind = new Map<string, Entity[]>();
   private readonly pathsByBlob = new Map<string, string[]>();
 
@@ -66,12 +69,22 @@ export class Bundle {
         case "unknown":
           this.unknowns.push(value as Unknown);
           break;
+        case "behavior":
+          push(this.behaviors, (value as Behavior).owner, value as Behavior);
+          break;
+        // Rows of tables this reader does not know are skipped, so a newer engine's bundle still loads.
       }
     }
     for (const file of files) {
       if (file.blob_sha256) push(this.pathsByBlob, file.blob_sha256, file.path);
     }
     for (const list of this.byKind.values()) list.sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
+    for (const list of this.behaviors.values()) list.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  }
+
+  /** The behaviour units an entity owns, in id order; empty when the bundle holds none for it. */
+  behaviorOf(entityId: string): Behavior[] {
+    return this.behaviors.get(entityId) ?? [];
   }
 
   kinds(): string[] {

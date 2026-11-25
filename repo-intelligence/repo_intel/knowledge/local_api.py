@@ -14,6 +14,11 @@ higher digest wins, as `ORDER BY shard_digest DESC` does).
 What a single bundle cannot answer says so with 404 or 501 and a message: history
 across commits (lineage), the cross-repository business map, and compiling. Owner
 overrides are read from and written to `.rkp/overrides.json`.
+
+`snapshots/<hash>/behavior/<entity id>` returns the behaviour units an entity owns, with
+the facts `repo_intel.knowledge.behavior_store` derives from them. Behaviour is detail: on
+a clone that has only the architecture tier it answers 404 `detail_not_committed`, never
+an empty list.
 """
 
 from __future__ import annotations
@@ -32,7 +37,7 @@ from repo_intel.compile.contracts import Manifest
 from repo_intel.compile.pipeline import render_evidence
 from repo_intel.decisions.overrides import OverrideDocument, Overrides, SaveOverrides
 from repo_intel.ingest import secrets
-from repo_intel.knowledge import bundle
+from repo_intel.knowledge import behavior_store, bundle
 from repo_intel.storage.store import ObjectStore
 from repo_intel.workspace import business_graph
 
@@ -74,8 +79,10 @@ class Snapshot:
         self.assertions: dict[str, dict[str, Any]] = {}
         self.touching: dict[str, set[str]] = defaultdict(set)
         self.evidence: dict[str, dict[str, Any]] = {}
+        shards = []
         for ref in manifest.shards:
             shard = store.get_json(ref.digest)
+            shards.append(shard)
             key = (rank or {}).get(ref.unit, ref.digest)
             for row in shard["entities"]:
                 self.entity_rows[row["id"]].append((key, row))
@@ -87,6 +94,8 @@ class Snapshot:
                 self.evidence.setdefault(row["id"], row)
         for rows in self.entity_rows.values():
             rows.sort(key=lambda pair: pair[0], reverse=True)
+        # owner entity id -> behaviour units; empty when the snapshot holds no detail
+        self.behaviors = behavior_store.index(shards)
 
     def first(self, entity_id: str) -> dict[str, Any] | None:
         rows = self.entity_rows.get(entity_id)
@@ -226,6 +235,8 @@ class LocalApi:
                 return self.entities(self._at(h), query)
             case "GET", ["snapshots", h, "entities", entity_id]:
                 return self.entity(self._at(h), entity_id)
+            case "GET", ["snapshots", h, "behavior", entity_id]:
+                return self.behavior(self._at(h), entity_id)
             case "GET", ["snapshots", h, "dependencies"]:
                 snap = self._at(h)
                 return business_graph.dependency_groups(snap.store, snap.manifest)
@@ -300,6 +311,21 @@ class LocalApi:
         detail["unknowns"] = [u for u in snap.store.get_json(snap.manifest.unknowns_ref) if u["subject"] == entity_id]
         detail["conflicts"] = [c for c in snap.store.get_json(snap.manifest.conflicts_ref) if entity_id in c["subject_ids"]]
         return detail
+
+    def behavior(self, snap: Snapshot, entity_id: str) -> dict[str, Any]:
+        """The behaviour units an entity owns and what they state (repo_intel.knowledge.behavior_store)."""
+        if snap.detail == "architecture":
+            raise HttpError(404, "Behaviour is function-level detail, and this bundle commits only the architecture tier. Run Analyze Repository to compile it on this machine.", "detail_not_committed")
+        units = snap.behaviors.get(entity_id)
+        entity = snap.first(entity_id)
+        if entity is None:
+            raise _not_found()
+        if not units:
+            raise HttpError(404, f"No behaviour was recorded for {entity['kind']} {entity['name']}.", "no_behavior")
+        return {
+            "entity": {"id": entity_id, "kind": entity["kind"], "name": entity["name"]},
+            "units": units, "summary": behavior_store.summarize(units),
+        }
 
     def exclusions(self, snap: Snapshot, limit: int) -> dict[str, Any]:
         d = snap.store.index_get("path_manifests", snap.manifest.source_tree_hash)
