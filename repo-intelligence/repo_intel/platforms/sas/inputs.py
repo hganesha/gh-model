@@ -81,7 +81,7 @@ def _repo_path(value: str | None) -> str | None:
 
 class SasInputs:
     id = "sas.inputs"
-    version = "1.0.0"
+    version = "1.1.0"
 
     def matches(self, path: str) -> bool:
         p = path.lower()
@@ -105,7 +105,7 @@ class SasInputs:
         seen = set()
         for m in _OPTION.finditer(text):
             at = base.span(data, len(text[: m.start(1)].encode()), len(text[: m.end(1)].encode()))
-            items.append(construct_observation(blob, at, "sas:config_option", m.group(1).lower() == "set"))
+            items.append(construct_observation(blob, at, "sas:config_option", m.group(1).lower() == "set", evidence_class=E1))
         for m in _SET.finditer(text):
             name = m.group(1).upper()
             if name in seen:
@@ -162,7 +162,7 @@ class _Out:
         return self.base.whole_file(self.data)
 
     def construct(self, at, cid: str, modelled: bool = True) -> None:
-        self.items.append(construct_observation(self.blob, at, cid, modelled))
+        self.items.append(construct_observation(self.blob, at, cid, modelled, evidence_class=E1))
 
     def relation(self, at, subject: dict, predicate, obj: dict) -> None:
         self.items.append(self.base.relation(self.blob, at, subject, predicate, obj, {}, E1))
