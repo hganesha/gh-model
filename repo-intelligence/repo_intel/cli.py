@@ -53,6 +53,41 @@ def _print_status(status: dict[str, Any]) -> None:
         print("  uncommitted changes are not analysed; use --working-tree to include them")
 
 
+def _solution_parser(commands: Any) -> None:
+    solution = commands.add_parser("solution", help="check a solution's members and link entities across them")
+    actions = solution.add_subparsers(dest="action", required=True)
+    for name, text in (("check", "validate .rkp/solution.json and open every member's bundle"), ("links", "print identity links, candidates and unmatched references")):
+        action = actions.add_parser(name, help=text)
+        action.add_argument("path", nargs="?", default=".", help="the directory holding .rkp/solution.json (default: .)")
+        action.add_argument("--json", action="store_true", help="one JSON object on stdout")
+
+
+def _solution(args: Any) -> int:
+    """`rkp solution check|links [PATH] [--json]` (repo_intel.solution).
+
+    Reads `.rkp/solution.json` under PATH and the members' bundles; compiles nothing.
+    Exit status 0 when every member and input was read, 1 otherwise or on an invalid
+    manifest. With --json, one `{"event": "result", ...}` or `{"event": "error", ...}` line.
+    """
+    from repo_intel.solution import commands as solution_commands
+
+    try:
+        report = solution_commands.check(args.path) if args.action == "check" else solution_commands.links(args.path)
+    except Exception as error:  # reported, never a traceback on an editor's stdout
+        message = str(error) or type(error).__name__
+        if args.json:
+            _emit("error", message=message, kind=type(error).__name__)
+        else:
+            print(f"rkp: {message}", file=sys.stderr)
+        return 1
+    if args.json:
+        _emit("result", **report)
+    else:
+        lines = solution_commands.format_check(report) if args.action == "check" else solution_commands.format_links(report)
+        print("\n".join(lines))
+    return 1 if report["problems"] else 0
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     if argv[:1] == ["__step_worker__"]:
@@ -71,7 +106,10 @@ def main(argv: list[str] | None = None) -> int:
     serve = commands.add_parser("serve", help="answer the Explorer's API from .rkp/knowledge/ over stdin and stdout")
     serve.add_argument("path", nargs="?", default=".", help="a directory inside the repository (default: .)")
     serve.add_argument("--stdio", action="store_true", required=True, help="JSON lines on stdin and stdout (the only transport)")
+    _solution_parser(commands)
     args = parser.parse_args(argv)
+    if args.command == "solution":
+        return _solution(args)
     if args.command == "serve":
         from repo_intel.knowledge import local_api
         try:
