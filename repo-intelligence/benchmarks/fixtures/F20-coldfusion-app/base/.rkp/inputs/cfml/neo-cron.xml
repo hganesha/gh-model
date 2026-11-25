@@ -1,0 +1,11 @@
+<wddxPacket version='1.0'><header/><data><array length='1'><struct type='coldfusion.server.ConfigMap'>
+<var name='WEEKLY-SALES'><struct type='coldfusion.server.ConfigMap'>
+  <var name='task'><string>weekly-sales</string></var>
+  <var name='group'><string>reports</string></var>
+  <var name='url'><string>https://fixture-intranet-host:8443/reports/weekly.cfm?key=FIXTURE-NOT-A-SECRET-3</string></var>
+  <var name='username'><string>fixture_scheduler</string></var>
+  <var name='password'><string>FIXTURE-NOT-A-SECRET-4</string></var>
+  <var name='interval'><string>weekly</string></var>
+  <var name='start_time'><string>6:00:00 AM</string></var>
+</struct></var>
+</struct></array></data></wddxPacket>
