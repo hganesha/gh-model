@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>About the shop</title>
+  <link rel="stylesheet" href="../src/styles/tokens.css">
+  <style>
+    .hero { background: var(--color-primary); padding: var(--space-4); }
+  </style>
+</head>
+<body>
+  <header class="hero" role="banner">
+    <h1>About us</h1>
+    <a href="contact.html">Contact</a>
+    <a href="/orders">Your orders</a>
+    <a href="https://status.example.com/?ref=about">Service status</a>
+  </header>
+  <form action="/search" method="get" role="search">
+    <label for="q">Search products</label>
+    <input id="q" name="q" type="search" required>
+    <button type="submit">Search</button>
+  </form>
+  <iframe src="https://maps.example.com/embed" title="Our shop on a map"></iframe>
+  <script>
+    document.querySelector('#q').focus();
+  </script>
+</body>
+</html>

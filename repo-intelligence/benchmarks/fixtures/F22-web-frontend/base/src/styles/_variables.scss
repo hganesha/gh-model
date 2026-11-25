@@ -1,0 +1,10 @@
+// Layout and brand variables for SCSS modules.
+$brand: #1f6feb;
+$gutter: 16px;
+$breakpoint-md: 768px;
+$radius-card: 6px !default;
+
+@mixin card {
+  border-radius: $radius-card;
+  padding: $gutter;
+}
