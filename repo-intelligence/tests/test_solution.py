@@ -5,7 +5,6 @@ The end-to-end tests use the F23 fixture under tests/fixtures/solution/: two rep
 (a web front end and the orders service it calls) and the orders database's catalogue.
 """
 
-import copy
 import hashlib
 import json
 import os

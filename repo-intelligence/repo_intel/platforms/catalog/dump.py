@@ -23,6 +23,10 @@ The database name comes from the row (`table_catalog` and its kin), else the JSO
 The extractor sees one file. A CSV file of columns does not know whether its table is a
 table or a view, so it refers to the container without declaring it: the relation is
 kept only when another file in the same unit declares the table or view.
+
+Helpers from `repo_intel.extractors` are imported inside functions, because a pack
+module is imported while that package is still loading (docs/solution-ir-contract.md,
+section 2, rule 1).
 """
 
 from __future__ import annotations
@@ -469,6 +473,8 @@ class _Emitter:
                 self._construct(row, "db:view_dependency", False)
 
     def _columns(self) -> None:
+        from repo_intel.extractors.base import ref
+
         for row in self._rows("columns"):
             table, column = row.get("table_name"), row.get("column_name")
             if not table or not column:
@@ -481,8 +487,6 @@ class _Emitter:
             attributes = {"type": row.get("data_type", "udt_name", "column_type"), "nullable": _truthy(row.values.get("is_nullable")), "position": _integer(row.values.get("ordinal_position"))}
             key = {"table": name, "name": column}
             self._entity(row, "db:Column", key, column, attributes)
-            from repo_intel.extractors.base import ref
-
             field_ref = ref(K.FIELD, key, column)
             if known:
                 self._relation(row, known["ref"], Predicate.CONTAINS, field_ref)

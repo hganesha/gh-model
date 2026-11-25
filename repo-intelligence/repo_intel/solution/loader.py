@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from repo_intel.compile.contracts import Assertion, Entity, Evidence, Manifest
-from repo_intel.compile.ontology import AssertionKind, EntityKind, EpistemicStatus, EvidenceClass, Predicate, check_relation
+from repo_intel.compile.ontology import AssertionKind, EntityKind, EpistemicStatus, Predicate, check_relation
 from repo_intel.solution.manifest import INPUTS_DIR, INPUTS_MEMBER, MANIFEST, Member, SolutionError, SolutionManifest, load_manifest
 from repo_intel.solution.view import MemberData, SolutionView
 
