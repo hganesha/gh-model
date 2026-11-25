@@ -1,7 +1,8 @@
 "use client";
 
 import { ArrowUpRight, FileText, Grid3x3, Minus, Plus } from "lucide-react";
-import { domainLabel, kindsForPlane, PLANES, unknownDomain, type PlaneMeta } from "@/lib/planes";
+import { domainLabel, kindsForPlane, PLANES, QUALITY_EYEBROW, unknownDomain, type PlaneMeta } from "@/lib/planes";
+import { platformCoverage, type PlatformCoverage } from "@/lib/platforms";
 import { kindLabel, measured, percent, plural } from "@/lib/format";
 import type { Summary } from "@/lib/types";
 import { Coverage, PlaneIcon } from "./ui";
@@ -130,7 +131,7 @@ function QualityCard({ summary, index, onOpen }: { summary: Summary; index: numb
         <span className="plane-icon">
           <PlaneIcon plane="quality" />
         </span>
-        <span className="eyebrow">07 · QUALITY</span>
+        <span className="eyebrow">{QUALITY_EYEBROW}</span>
         <ArrowUpRight className="plane-open" size={15} aria-hidden="true" />
       </div>
       <div className="plane-title">
@@ -161,6 +162,61 @@ function QualityCard({ summary, index, onOpen }: { summary: Summary; index: numb
   );
 }
 
+const CONSTRUCTS_SHOWN = 3;
+const NOT_SEEN_SHOWN = 6;
+
+function PlatformCard({ platform, onOpen }: { platform: PlatformCoverage; onOpen: () => void }) {
+  const gaps = platform.constructs.filter((c) => c.modelled < c.seen).slice(0, CONSTRUCTS_SHOWN);
+  const notSeen = platform.notSeen.slice(0, NOT_SEEN_SHOWN);
+  return (
+    <button type="button" className="platform-card" onClick={onOpen} aria-label={`Open Quality: ${platform.platform} constructs, ${platform.modelled} of ${platform.seen} occurrences modelled`}>
+      <div className="platform-card-head">
+        <code>{platform.platform}</code>
+        <span>{plural(platform.constructs.length, "construct")} seen</span>
+      </div>
+      <Coverage compact label="Occurrences modelled" ratio={{ numerator: platform.modelled, denominator: platform.seen }} />
+      {gaps.length > 0 ? (
+        <ul className="platform-gaps" aria-label="Constructs seen but not fully modelled">
+          {gaps.map((c) => (
+            <li key={c.id}>
+              <code>{c.id}</code>
+              <span>
+                {c.modelled.toLocaleString("en-US")} of {c.seen.toLocaleString("en-US")}
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="platform-note">Every construct seen was modelled.</p>
+      )}
+      {notSeen.length > 0 && (
+        <p className="platform-note">
+          Looked for, not seen: {notSeen.join(", ")}
+          {platform.notSeen.length > notSeen.length ? ` and ${platform.notSeen.length - notSeen.length} more` : ""}
+        </p>
+      )}
+    </button>
+  );
+}
+
+/** Construct coverage per platform; shown only when the snapshot met a platform pack's constructs. */
+function PlatformStrip({ platforms, onOpen }: { platforms: PlatformCoverage[]; onOpen: () => void }) {
+  if (platforms.length === 0) return null;
+  return (
+    <section className="platform-strip" aria-label="Platform constructs">
+      <header>
+        <h3>Platform constructs</h3>
+        <p>How much of each platform&apos;s own vocabulary the compiler modelled. A construct seen but not modelled is still counted, so a gap here is known rather than hidden.</p>
+      </header>
+      <div className="platform-cards">
+        {platforms.map((p) => (
+          <PlatformCard key={p.platform} platform={p} onOpen={onOpen} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
 export function MapView({
   summary,
   prefs,
@@ -184,7 +240,7 @@ export function MapView({
       <div className="canvas-toolbar">
         <div>
           <h2>Repository map</h2>
-          <p>Six planes compiled from one commit, plus what the compiler could not resolve.</p>
+          <p>{PLANES.length} planes compiled from one commit, plus what the compiler could not resolve.</p>
         </div>
         <div className="canvas-tools">
           <button type="button" className={`icon-btn ${prefs.grid ? "is-on" : ""}`} aria-pressed={prefs.grid} aria-label="Toggle grid" onClick={() => onPrefs({ ...prefs, grid: !prefs.grid })}>
@@ -210,6 +266,8 @@ export function MapView({
         ))}
         <QualityCard summary={summary} index={PLANES.length} onOpen={onOpenQuality} />
       </div>
+
+      <PlatformStrip platforms={platformCoverage(summary)} onOpen={onOpenQuality} />
 
       <button type="button" className="files-strip" onClick={() => onOpenPlane("files")}>
         <FileText size={15} aria-hidden="true" />

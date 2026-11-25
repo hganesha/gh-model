@@ -6,6 +6,7 @@ import { api, ApiError, snapshotPath, useApi } from "@/lib/api";
 import { placementLabel, type SnapshotPlacements } from "@/lib/workspace";
 import { displayValue, kindLabel, plural, shortId, shortSha } from "@/lib/format";
 import { planeOfKind } from "@/lib/planes";
+import { FIDELITY_TEXT, PLATFORM_ATTRIBUTES, platformTerm } from "@/lib/platforms";
 import { CONFLICT_TYPES, type Assertion, type EntityDetail, type EntityRef, type EvidenceExcerpt, type LineageResponse, type Unknown } from "@/lib/types";
 import { AssertionBadges, Badge, ErrorNote, isTentative, Loading } from "./ui";
 import { useOverrides } from "@/lib/overrides";
@@ -325,6 +326,9 @@ function DrawerBody({ hash, id, repositoryId, onNavigate, onViewInGraph, onPlace
   const evidence = evidenceIndex(data);
   const plane = planeOfKind(entity.kind);
   const provided = data.assertions.filter((row) => row.predicate === "PROVIDES" && row.subject === id);
+  const term = platformTerm(entity);
+  // Platform attributes get their own section; the rest are listed as they come.
+  const attributes = term ? Object.fromEntries(Object.entries(entity.attributes ?? {}).filter(([key]) => !PLATFORM_ATTRIBUTES.includes(key))) : entity.attributes;
 
   return (
     <>
@@ -339,6 +343,33 @@ function DrawerBody({ hash, id, repositoryId, onNavigate, onViewInGraph, onPlace
         </button>
       </div>
 
+      {term && (
+        <section className={`platform-section plane-${plane}`} aria-label="Platform">
+          <h3>Platform</h3>
+          <dl className="defs">
+            <div>
+              <dt>platform</dt>
+              <dd>{term.platform}</dd>
+            </div>
+            <div>
+              <dt>platform term</dt>
+              <dd>{term.kind}</dd>
+            </div>
+            <div>
+              <dt>core kind</dt>
+              <dd>{entity.kind}</dd>
+            </div>
+            <div>
+              <dt>fidelity</dt>
+              <dd>
+                <Badge tone={term.fidelity === "exact" ? "verified" : term.fidelity === "lossy" ? "class" : "candidate"}>{term.fidelity}</Badge>
+              </dd>
+            </div>
+          </dl>
+          <p className="fidelity-note">{FIDELITY_TEXT[term.fidelity]}</p>
+        </section>
+      )}
+
       {entity.kind === "Component" && <BusinessPlacement hash={hash} id={id} onChanged={onPlacementChanged} />}
       {provided.length > 0 && <ProvidedCapabilities hash={hash} id={id} provided={provided} neighbours={data.neighbours} onNavigate={onNavigate} />}
       <section>
@@ -348,7 +379,7 @@ function DrawerBody({ hash, id, repositoryId, onNavigate, onViewInGraph, onPlace
 
       <section>
         <h3>Attributes</h3>
-        <Definitions data={entity.attributes} empty="No attributes recorded." />
+        <Definitions data={attributes} empty={term ? "No other attributes recorded." : "No attributes recorded."} />
       </section>
 
       <section>

@@ -67,7 +67,34 @@ export const PLANES: PlaneMeta[] = [
     kinds: ["BuildTarget", "Pipeline", "DeploymentUnit", "Environment", "InfrastructureResource", "ConfigKey"],
     coverage: ["deployment_refs"],
   },
+  {
+    id: "experience",
+    eyebrow: "08 · EXPERIENCE",
+    title: "Experience",
+    blurb: "What a person sees: screens, the forms and controls on them, the reports they read, and the style tokens that dress them.",
+    kinds: ["Screen", "Form", "UIControl", "StyleToken", "Report"],
+    coverage: [],
+  },
+  {
+    id: "business",
+    eyebrow: "09 · BUSINESS",
+    title: "Business",
+    blurb: "Business rules, workflows and reference code lists, and the requirements and features they serve.",
+    kinds: ["BusinessRule", "Workflow", "CodeList", "Requirement", "Feature"],
+    coverage: [],
+  },
+  {
+    id: "security",
+    eyebrow: "10 · SECURITY",
+    title: "Security",
+    blurb: "Roles and permissions, and which screens, endpoints, reports and data require them.",
+    kinds: ["Role", "Permission"],
+    coverage: [],
+  },
 ];
+
+/** Eyebrow number for the Quality card and view, which follow the last plane. */
+export const QUALITY_EYEBROW = `${String(PLANES.length + 1).padStart(2, "0")} · QUALITY`;
 
 export const PLANE_BY_ID: Record<string, PlaneMeta> = Object.fromEntries(PLANES.map((p) => [p.id, p]));
 
@@ -90,6 +117,7 @@ export const DOMAIN_LABEL: Record<string, string> = {
   contract_match: "Contracts matched",
   deployment_refs: "Deployment references resolved",
   architecture_patterns: "Catalogue patterns looked for",
+  platform_constructs: "Platform constructs modelled",
 };
 
 export function domainLabel(domain: string): string {
@@ -119,6 +147,15 @@ export const PREDICATES = [
   "PRODUCES",
   "SERVES",
   "ALIAS_OF",
+  "RENDERS",
+  "SUBMITS_TO",
+  "NAVIGATES_TO",
+  "BINDS_TO",
+  "STYLED_BY",
+  "ENFORCES",
+  "APPLIES_TO",
+  "REQUIRES_ROLE",
+  "GRANTS",
 ] as const;
 
 /** Structural predicates that swamp a neighbourhood graph; hidden by default. */
