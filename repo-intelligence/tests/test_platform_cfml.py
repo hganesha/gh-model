@@ -187,7 +187,7 @@ def test_screen_forms_controls_and_navigation():
     assert controls["qty"]["natural_key"] == {"container": "orders/edit.cfm#orderForm", "name": "qty"}
     assert controls["qty"]["attributes"]["validate"] == "integer" and controls["qty"]["attributes"]["required"] is True
     assert controls["status"]["attributes"]["control"] == "select" and controls["notes"]["attributes"]["control"] == "textarea"
-    assert controls["link1"]["natural_key"]["container"] == "orders/edit.cfm"  # outside the form
+    assert controls["link:list.cfm"]["natural_key"]["container"] == "orders/edit.cfm"  # outside the form
     (submit,) = relations(out, "SUBMITS_TO")
     assert submit["object"]["natural_key"] == {"platform": "cfml", "name": "orders/save.cfm"} and submit["object"]["declare"] is False
     (nav,) = relations(out, "NAVIGATES_TO")
@@ -296,6 +296,94 @@ def test_dynamic_targets_stay_dynamic():
     redirect = next(st for st in ops(body) if st["op"] == "redirect")
     assert redirect["target"] == {"e": "var", "name": "next", "scope": "session", "at": redirect["target"]["at"]}
     assert constructs(out)["cf:evaluate"] == [False]
+
+
+@pytest.mark.parametrize("sql, kept", [
+    ("SELECT * FROM #tbl# WHERE id = 1", set()),
+    ("SELECT o.id FROM orders_#url.region# o JOIN #tbl# t ON t.id = o.id JOIN customers c ON c.id = o.cid", {"customers"}),
+    ("INSERT INTO audit_#y# (a) VALUES (1)", set()),
+    ("SELECT id FROM #schema#.orders", set()),
+])
+def test_a_table_named_at_run_time_stays_dynamic(sql, kept):
+    """`#expr#` in a table name is masked for parsing; the masked text is never declared as a table."""
+    out = run("dyn.cfm", f'<cfquery name="q" datasource="db">{sql}</cfquery>')
+    tables = {e["natural_key"]["name"] for e in entities(out, "Table")}
+    assert tables == kept, tables
+    assert not [t for t in tables if "x_" in t]
+    assert any("table computed at run time" in m for m in messages(out))
+    (query,) = [st for st in ops(behaviours(out)["dyn.cfm"]["body"]) if st["op"] == "query"]
+    assert query["params"] and all(p["inline"] is True for p in query["params"])
+    assert ":" in query["sql"]
+    script = run("Dyn.cfc", f'component {{ function f() {{ return queryExecute("{sql}"); }} }}')
+    assert {e["natural_key"]["name"] for e in entities(script, "Table")} == kept
+    assert any("table computed at run time" in m for m in messages(script))
+
+
+def test_inline_values_outside_table_names_keep_the_tables():
+    out = run("q.cfm", '<cfquery name="q" datasource="db">SELECT id FROM orders WHERE region = \'#url.region#\' AND id > #minId#</cfquery>')
+    assert {e["natural_key"]["name"] for e in entities(out, "Table")} == {"orders"}
+    assert not any("computed at run time" in m for m in messages(out))
+
+
+def test_control_names_follow_the_contract_order():
+    """name, id, link:<target>, submit or button:<text>, else <type><n> among the controls that fall back."""
+    text = """<cfoutput>
+<a href="a.cfm">A</a>
+<a href="b.cfm?id=#id#">B</a>
+<a id="home" href="index.cfm">Home</a>
+<form name="f">
+  <input type="text" id="who">
+  <input type="text">
+  <input type="checkbox">
+  <input type="text">
+  <input type="submit" value="Go">
+  <input type="button" value="Reset all">
+  <button type="button"><b>Preview</b> page</button>
+  <button>Label #x#</button>
+  <cfinput type="submit" name="save" value="Save">
+</form>
+</cfoutput>"""
+    out = run("app/p.cfm", text)
+    names = {(e["natural_key"]["container"], e["natural_key"]["name"]) for e in entities(out, "UIControl")}
+    assert names == {
+        ("app/p.cfm", "link:a.cfm"), ("app/p.cfm", "link:b.cfm"), ("app/p.cfm", "home"),
+        ("app/p.cfm#f", "who"), ("app/p.cfm#f", "text1"), ("app/p.cfm#f", "checkbox1"), ("app/p.cfm#f", "text2"),
+        ("app/p.cfm#f", "submit"), ("app/p.cfm#f", "button:Reset all"), ("app/p.cfm#f", "button:Preview page"),
+        ("app/p.cfm#f", "button1"), ("app/p.cfm#f", "save"),
+    }
+    # A link added before the others renames nothing.
+    more = run("app/p.cfm", text.replace("<cfoutput>", '<cfoutput><a href="z.cfm">Z</a>', 1))
+    before = {n for _, n in names}
+    after = {e["natural_key"]["name"] for e in entities(more, "UIControl")}
+    assert after == before | {"link:z.cfm"}
+
+
+def test_functions_belong_to_their_program_and_units_say_their_kind():
+    out = run("services/OrderService.cfc", (F20 / "base/services/OrderService.cfc").read_text())
+    contains = {(r["subject"]["kind"], r["subject"]["natural_key"]["name"], r["object"]["natural_key"]["name"]) for r in relations(out, "CONTAINS")}
+    assert contains == {("Program", "services.orderservice", n) for n in ("getorder", "saveorder", "notify")}
+    assert {u["kind"] for u in behaviours(out).values()} == {"function"}
+    page = run("orders/list.cfm", (F20 / "base/orders/list.cfm").read_text())
+    assert behaviours(page)["list.cfm"]["kind"] == "page"
+    pseudo = run("x/C.cfc", 'component { variables.ready = true; function go() { return 1; } }')
+    units = behaviours(pseudo)
+    assert units["go"]["kind"] == "function" and units["x.c"]["kind"] == "open_code"
+    assert all(validate_unit(u) == [] for u in units.values())
+
+
+def test_server_side_redirects_navigate_from_the_code_that_runs_them():
+    save = run("orders/save.cfm", (F20 / "base/orders/save.cfm").read_text())
+    assert not entities(save, "Screen")
+    navs = {(r["subject"]["kind"], r["subject"]["natural_key"]["name"], r["object"]["natural_key"]["name"]) for r in relations(save, "NAVIGATES_TO")}
+    assert navs == {("Program", "orders/save.cfm", "orders/edit.cfm"), ("Program", "orders/save.cfm", "orders/list.cfm")}  # session.returnTo is not guessed
+    cfc = run("svc/Auth.cfc", 'component { function bounce() { location(url="../login.cfm", addtoken=false); } function away() { location(url=target); } }')
+    (nav,) = relations(cfc, "NAVIGATES_TO")
+    assert nav["subject"]["kind"] == "Symbol" and nav["subject"]["natural_key"]["name"] == "bounce"
+    assert nav["object"]["natural_key"] == {"platform": "cfml", "name": "login.cfm"}
+    tag = run("p.cfm", '<cffunction name="out"><cflocation url="bye.cfm"></cffunction><p>hello</p>')
+    subjects = {(r["subject"]["kind"], r["object"]["natural_key"]["name"]) for r in relations(tag, "NAVIGATES_TO")}
+    assert subjects == {("Symbol", "bye.cfm")}
+    assert entities(tag, "Screen")  # the page renders, but the redirect runs only when the function is called
 
 
 def test_unreadable_script_is_kept_as_a_platform_node():

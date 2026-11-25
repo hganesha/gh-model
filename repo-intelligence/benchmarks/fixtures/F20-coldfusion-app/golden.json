@@ -435,11 +435,44 @@
    "kind": "UIControl",
    "natural_key": {
     "container": "index.cfm",
-    "name": "link1"
+    "name": "link:orders/list.cfm"
    },
    "since": "M2",
    "attributes": {
     "control": "link"
+   }
+  },
+  {
+   "kind": "UIControl",
+   "natural_key": {
+    "container": "index.cfm",
+    "name": "link:reports/sales.cfm"
+   },
+   "since": "M2",
+   "attributes": {
+    "control": "link"
+   }
+  },
+  {
+   "kind": "UIControl",
+   "natural_key": {
+    "container": "orders/list.cfm#filter",
+    "name": "submit"
+   },
+   "since": "M2",
+   "attributes": {
+    "control": "submit"
+   }
+  },
+  {
+   "kind": "UIControl",
+   "natural_key": {
+    "container": "login.cfm#signin",
+    "name": "go"
+   },
+   "since": "M2",
+   "attributes": {
+    "control": "button"
    }
   },
   {
@@ -1201,7 +1234,7 @@
     "kind": "UIControl",
     "natural_key": {
      "container": "index.cfm",
-     "name": "link1"
+     "name": "link:orders/list.cfm"
     }
    },
    "predicate": "NAVIGATES_TO",
@@ -1343,6 +1376,79 @@
     }
    },
    "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "cfml",
+     "name": "orders/save.cfm"
+    }
+   },
+   "predicate": "NAVIGATES_TO",
+   "object": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "cfml",
+     "name": "orders/list.cfm"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "cfml",
+     "name": "orders/save.cfm"
+    }
+   },
+   "predicate": "NAVIGATES_TO",
+   "object": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "cfml",
+     "name": "orders/edit.cfm"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "cfml",
+     "name": "logout.cfm"
+    }
+   },
+   "predicate": "NAVIGATES_TO",
+   "object": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "cfml",
+     "name": "login.cfm"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "cfml",
+     "name": "services.orderservice"
+    }
+   },
+   "predicate": "CONTAINS",
+   "object": {
+    "kind": "Symbol",
+    "natural_key": {
+     "platform": "cfml",
+     "program": "services.orderservice",
+     "name": "saveorder"
+    }
+   },
+   "since": "M2"
   }
  ],
  "absent_entities": [
@@ -1384,7 +1490,7 @@
    "kind": "UIControl",
    "natural_key": {
     "container": "index.cfm",
-    "name": "link4"
+    "name": "link:https://help.example.com/orderdesk"
    },
    "why": "a link to another site is not navigation inside the application"
   },
@@ -1412,10 +1518,6 @@
   {
    "since": "M2",
    "detail": "orders/save.cfm redirects to session.returnTo: the target is not resolved and a diagnostic says so"
-  },
-  {
-   "since": "M2",
-   "detail": "redirects from pages that render nothing (save.cfm, logout.cfm) and from functions have no NAVIGATES_TO: the relation only allows UI subjects"
   }
  ],
  "expected_conflicts": [],
