@@ -1,7 +1,7 @@
 // Shapes returned by the RKP API. Every string in here is untrusted repository
 // data and must only ever be rendered as plain text.
 
-export type PlaneId = "architecture" | "contracts" | "data" | "jobs" | "ai" | "tests" | "deployment";
+export type PlaneId = "architecture" | "contracts" | "data" | "jobs" | "ai" | "tests" | "deployment" | "experience" | "business" | "security";
 
 export interface SnapshotRef {
   rkp_hash: string;

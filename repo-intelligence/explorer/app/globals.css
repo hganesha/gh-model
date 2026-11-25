@@ -38,6 +38,9 @@
   --c-ai: #b6628a;
   --c-tests: #2f8c82;
   --c-deployment: #bd7f33;
+  --c-experience: #bf6a4c;
+  --c-business: #8d6c45;
+  --c-security: #5b60a2;
   --c-files: #8b9384;
   --c-quality: #34553c;
 
@@ -86,6 +89,9 @@
     --c-ai: #d68bb0;
     --c-tests: #5fbab0;
     --c-deployment: #dba55c;
+    --c-experience: #e39b80;
+    --c-business: #c9a67b;
+    --c-security: #a0a5e0;
     --c-files: #8f9a89;
     --c-quality: #a5c79f;
   }
@@ -98,6 +104,9 @@
 .plane-ai { --p: var(--c-ai); }
 .plane-tests { --p: var(--c-tests); }
 .plane-deployment { --p: var(--c-deployment); }
+.plane-experience { --p: var(--c-experience); }
+.plane-business { --p: var(--c-business); }
+.plane-security { --p: var(--c-security); }
 .plane-files { --p: var(--c-files); }
 .plane-quality { --p: var(--c-quality); }
 .plane-purpose { --p: var(--c-quality); }
@@ -299,6 +308,25 @@ main { padding: 24px 28px 72px; max-width: 1360px; }
 .files-strip { display: flex; align-items: center; gap: 10px; width: calc(100% - 40px); margin: 0 20px 20px; padding: 11px 14px; border: 1px solid var(--line); border-radius: 9px; background: var(--paper); color: var(--ink-2); font-size: 13px; }
 .files-strip:hover { border-color: var(--line-strong); }
 .files-strip-go { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; color: var(--green); font-weight: 550; white-space: nowrap; }
+
+/* Platform construct coverage on the map: one card per platform pack the snapshot met. */
+.platform-strip { margin: 0 20px 16px; }
+.platform-strip > header { display: grid; gap: 2px; margin-bottom: 10px; }
+.platform-strip h3 { font-size: 13px; font-weight: 650; }
+.platform-strip header p { font-size: 12.5px; color: var(--muted); max-width: 72ch; }
+.platform-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr)); gap: 12px; }
+.platform-card { display: grid; gap: 10px; align-content: start; min-width: 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: 9px; background: var(--paper); color: var(--ink-2); font-size: 12.5px; }
+.platform-card:hover { border-color: var(--line-strong); }
+.platform-card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.platform-card-head code { font-size: 13px; font-weight: 600; color: var(--ink); }
+.platform-card-head span { color: var(--muted); white-space: nowrap; }
+.platform-gaps { display: grid; gap: 4px; }
+.platform-gaps li { display: flex; justify-content: space-between; gap: 10px; }
+.platform-gaps code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.platform-gaps span { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.platform-note { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.platform-section { margin-top: 14px; padding: 10px 12px; border-left: 3px solid var(--p, var(--line-strong)); border-radius: 0 8px 8px 0; background: color-mix(in srgb, var(--p, var(--faint)) 7%, transparent); }
+.platform-section .fidelity-note { margin-top: 6px; font-size: 12px; color: var(--muted); }
 
 /* ---------- plane view ---------- */
 
@@ -538,6 +566,7 @@ button.neighbour:hover { background: var(--green-soft); }
   main { padding: 16px 12px 56px; }
   .plane-grid { padding: 12px; gap: 12px; }
   .files-strip { width: calc(100% - 24px); margin: 0 12px 12px; }
+  .platform-strip { margin: 0 12px 12px; }
   .canvas-toolbar p { display: none; }
   .modal-layer { padding-top: 6vh; }
   .welcome { padding: 24px; margin-top: 4vh; }
