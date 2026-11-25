@@ -3,6 +3,7 @@ tier, answered by the local API and summarised (repo_intel.knowledge.behavior_st
 
 import io
 import json
+import re
 import shutil
 
 import pytest
@@ -38,7 +39,7 @@ class DemoSource:
         at = whole_file(data)
         program = ref(K.PROGRAM, {"platform": "demo", "name": doc["program"]}, doc["program"])
         out = [platforms.platform_entity(blob, at, "demo:Template", program["natural_key"], program["name"])]
-        out.append(behavior.behavior_observation(blob, find_span(data, '"page"'), program, "demo", doc["page"]))
+        out.append(behavior.behavior_observation(blob, find_span(data, '"page"'), program, "demo", doc["page"], kind="page"))
         for f in doc["functions"]:
             owner = ref(K.SYMBOL, {"platform": "demo", "program": doc["program"], "name": f["name"]}, f["name"])
             where = find_span(data, f'"{f["name"]}"')
@@ -47,7 +48,7 @@ class DemoSource:
                 continue
             if f.get("declare", True):
                 out.append(entity(blob, where, K.SYMBOL, owner["natural_key"], owner["name"]))
-            out.append(behavior.behavior_observation(blob, where, owner, "demo", f["body"], f.get("params")))
+            out.append(behavior.behavior_observation(blob, where, owner, "demo", f["body"], f.get("params"), kind=f.get("kind")))
         for construct_id, modelled in doc.get("constructs", []):
             out.append(platforms.construct(blob, at, construct_id, modelled))
         return Extraction(observations=out, parsed=True)
@@ -96,7 +97,7 @@ SOURCE = {
     "program": "orders",
     "page": PAGE,
     "functions": [
-        {"name": "save", "params": [{"name": "id", "type": "integer", "required": True}], "body": SAVE},
+        {"name": "save", "kind": "function", "params": [{"name": "id", "type": "integer", "required": True}], "body": SAVE},
         {"name": "lookup", "body": [{"op": "return", "at": [1, 2], "value": LIT("x")}]},
         {"name": "ghost", "declare": False, "body": [{"op": "exit", "at": [1, 2]}]},
         {"name": "broken", "raw": True, "body": "not a list"},
@@ -177,6 +178,8 @@ def test_behaviour_is_compiled_into_shards_by_owner(full_repo):
     assert save["body"] == SAVE and save["language"] == "demo" and save["schema"] == behavior.SCHEMA
     assert save["params"] == [{"name": "id", "type": "integer", "required": True}]
     assert save["evidence_class"] == "E2" and save["id"].startswith("bhv_")
+    assert save["kind"] == "function" and by_owner[program][0]["kind"] == "page"
+    assert "kind" not in by_owner[symbol("lookup")][0], "a unit without a kind has none in its row"
 
     [shard] = [s for s in shards.values() if s.get("behaviors")]
     assert [b["id"] for b in shard["behaviors"]] == sorted(b["id"] for b in shard["behaviors"])
@@ -305,10 +308,14 @@ def test_the_local_api_answers_behaviour_with_its_summary(full_repo):
     assert status == 200
     assert body["entity"] == {"id": program, "kind": "Program", "name": "orders"}
     assert [u["body"] for u in body["units"]] == [PAGE]
+    assert [u["kind"] for u in body["units"]] == ["page"], "the unit's kind is returned with it"
+    assert body["summary"]["unit_kinds"] == {"page": 1}
+    assert {q["unit_kind"] for q in body["summary"]["queries"]} == {"page"}
     assert body["summary"]["tables"] == {"reads": ["customers", "orders"], "writes": [], "dynamic": []}
 
     status, body = api.handle("GET", f"snapshots/{h}/behavior/{symbol('save')}")
     assert status == 200 and body["summary"]["tables"]["writes"] == ["audit_log", "orders"]
+    assert body["units"][0]["kind"] == "function" and body["summary"]["unit_kinds"] == {"function": 1}
 
     status, body = api.handle("GET", f"snapshots/{h}/behavior/{entity_id(REPO_ID, K.ARTIFACT, {'path': 'app/orders.demo'})}")
     assert status == 404 and body["code"] == "no_behavior"
@@ -323,6 +330,7 @@ def test_the_local_api_answers_behaviour_with_its_summary(full_repo):
     local_api.serve_stdio(full_repo, stdin=stdin, stdout=stdout)
     reply = json.loads(stdout.getvalue())
     assert reply["id"] == 7 and reply["status"] == 200 and reply["body"]["summary"]["statements"] == 1
+    assert "kind" not in reply["body"]["units"][0] and reply["body"]["summary"]["unit_kinds"] == {}
 
 
 def test_an_architecture_clone_says_the_detail_is_not_committed(arch_repo):
@@ -410,3 +418,113 @@ def test_summary_of_calls_queries_includes_redirects_and_outputs():
 def test_sql_table_scanner(sql, expected):
     found = behavior_store.sql_tables(sql)
     assert (found["statement"], found["reads"], found["writes"], found["dynamic"]) == expected
+
+
+# ------------------------------------------------------------------ substitutions in SQL
+
+INLINE = lambda name, scope="url": {"name": name, "value": VAR(name, scope), "type": "any", "inline": True}  # noqa: E731
+BIND = lambda name, scope="url": {"name": name, "value": VAR(name, scope), "type": "integer"}  # noqa: E731
+MACRO = lambda name: {"name": name, "value": VAR(name, "macro"), "type": "string"}  # noqa: E731
+
+
+@pytest.mark.parametrize("sql, params, expected", [
+    # CFML: FROM orders_#url.region# o JOIN #tbl# t ... WHERE o.id = <cfqueryparam ...>
+    ("SELECT o.id FROM orders_:region o JOIN :tbl t ON t.id = o.id WHERE o.id = :id", [INLINE("region"), INLINE("tbl", "variables"), BIND("id")],
+     ("select", [], [], ["#tbl#", "orders_#region#"])),
+    # CFML queryExecute("... FROM archive_#form.year#_orders ...", {x: 1}): the placeholder runs into the word.
+    ("SELECT * FROM archive_:year_orders WHERE x = :x", [INLINE("year", "form"), BIND("x")], ("select", [], [], ["archive_#year#_orders"])),
+    ("UPDATE :tbl SET a = :a", [INLINE("tbl", "variables"), BIND("a")], ("update", [], [], ["#tbl#"])),
+    ("INSERT INTO log_:suffix (a) SELECT a FROM src", [INLINE("suffix")], ("insert", ["src"], [], ["log_#suffix#"])),
+    # SAS (F14): create table ... from stage.customers_&month, with or without the inline flag.
+    ("create table rpt.customer_summary as select region from stage.customers_:month group by region", [MACRO("month")],
+     ("create", [], ["rpt.customer_summary"], ["stage.customers_#month#"])),
+    ("create table rpt.customer_summary as select region from stage.customers_:month group by region", [{**MACRO("month"), "inline": True}],
+     ("create", [], ["rpt.customer_summary"], ["stage.customers_#month#"])),
+    # SAS: &lib..&tbl lowers to :lib.:tbl; a whole table name from a macro variable.
+    ("select * from stage.a x join :lib.:tbl b on x.id = b.id", [MACRO("lib"), MACRO("tbl")], ("select", ["stage.a"], [], ["#lib#.#tbl#"])),
+    ("select * from :dsn", [MACRO("dsn")], ("select", [], [], ["#dsn#"])),
+    # No flag and no macro scope: a word with a :name in it is still dynamic, never `orders_`.
+    ("SELECT * FROM orders_:region o JOIN :schema.items i ON 1 = 1", [], ("select", [], [], [":schema.items", "orders_:region"])),
+    ("SELECT * FROM stage.customers_:month", None, ("select", [], [], ["stage.customers_:month"])),
+    # Bind parameters, host variables and casts are not substitutions.
+    ("SELECT a::int FROM t WHERE id = :id", [BIND("id")], ("select", ["t"], [], [])),
+    ("select count(*) into :n trimmed from mart.region_summary", [], ("select", ["mart.region_summary"], [], [])),
+    ("CREATE OR REPLACE TEMP VIEW recent (id) AS SELECT id FROM orders", [], ("create", ["orders"], ["recent"], [])),
+    ("CREATE TABLE IF NOT EXISTS t2 (a int, b int)", [], ("create", [], ["t2"], [])),
+    ("CREATE TABLE t3 AS (SELECT * FROM t4)", [], ("create", ["t4"], ["t3"], [])),
+])
+def test_sql_tables_with_inline_parameters(sql, params, expected):
+    found = behavior_store.sql_tables(sql, params) if params is not None else behavior_store.sql_tables(sql)
+    assert (found["statement"], found["reads"], found["writes"], found["dynamic"]) == expected
+
+
+def test_mark_inline_rewrites_only_substitutions():
+    sql = "SELECT * FROM t_:region_2024 JOIN :tbl USING (id) WHERE a = :a AND b = :region2 AND c::text = ':tbl'"
+    params = [INLINE("region"), INLINE("tbl"), BIND("a"), BIND("region2")]
+    assert behavior_store.mark_inline(sql, params) == "SELECT * FROM t_#region#_2024 JOIN #tbl# USING (id) WHERE a = :a AND b = :region2 AND c::text = '#tbl#'"
+    assert behavior_store.mark_inline(sql, [BIND("a")]) == sql
+
+
+def test_summary_lists_inline_parameters_and_dynamic_tables():
+    query = {"op": "query", "at": [1, 2], "sql": "SELECT o.id FROM orders_:region o JOIN :tbl t ON t.id = o.id WHERE o.id = :id",
+             "params": [INLINE("region"), INLINE("tbl", "variables"), BIND("id")], "datasource": "dsn"}
+    s = behavior_store.summarize([{"id": "bhv_q", "language": "cfml", "kind": "page", "body": [query]}])
+    [q] = s["queries"]
+    assert q["params"] == ["region", "tbl", "id"] and q["inline_params"] == ["region", "tbl"]
+    assert q["reads"] == [] and q["dynamic"] == ["#tbl#", "orders_#region#"] and q["unit_kind"] == "page"
+    assert q["sql"] == query["sql"], "the SQL is reported as the pack wrote it"
+    assert s["tables"] == {"reads": [], "writes": [], "dynamic": ["#tbl#", "orders_#region#"]}
+    assert s["unit_kinds"] == {"page": 1}
+
+
+# ------------------------------------------------------------------ the real packs
+
+
+def _units(out):
+    return [{**o.payload, "id": f"bhv_{i}"} for i, o in enumerate(out.observations) if o.kind == "behavior"]
+
+
+def _from_substitution(table: str, sql: str) -> bool:
+    """Whether `table` runs straight into a substitution in `sql`, so a scanner cut it short."""
+    return re.search(rf"(?<![\w.]){re.escape(table)}[:#&]", sql, re.I) is not None
+
+
+def test_the_real_packs_lower_substitutions_the_store_keeps_dynamic():
+    from repo_intel.platforms.cfml.source import CfmlSource
+    from repo_intel.platforms.sas import SasSource
+
+    cfm = (b'<cfquery name="q" datasource="dsn">\nSELECT o.id FROM orders_#url.region# o JOIN #tbl# t ON t.id = o.id\n'
+           b' WHERE o.id = <cfqueryparam value="#url.id#" cfsqltype="cf_sql_integer">\n</cfquery>\n'
+           b'<cfscript>\nq2 = queryExecute("SELECT * FROM archive_#form.year#_orders WHERE x = :x", {x: 1});\n</cfscript>\n')
+    sas = (b"proc sql;\n  create table work.out as select * from stage.customers_&month a join &lib..&tbl b on a.id = b.id;\n"
+           b"  select * from &dsn;\nquit;\n")
+    cf = behavior_store.summarize(_units(CfmlSource().extract("app/report.cfm", cfm, "0" * 64)))
+    assert cf["tables"] == {"reads": [], "writes": [], "dynamic": ["#tbl#", "archive_#year#_orders", "orders_#region#"]}
+    sa = behavior_store.summarize(_units(SasSource().extract("sas/load.sas", sas, "1" * 64)))
+    assert sa["tables"] == {"reads": [], "writes": ["work.out"], "dynamic": ["#dsn#", "#lib#.#tbl#", "stage.customers_#month#"]}
+
+
+@pytest.mark.parametrize("fixture", ["F14-mainframe-sas", "F15-legacy-web-warehouse", "F20-coldfusion-app", "F21-sas-analytics"])
+def test_every_unit_of_a_real_fixture_summarises_without_substituted_names(fixture, tmp_path):
+    """Compile the fixture with the real packs and summarise every owner's behaviour."""
+    from repo_intel.compile.fixtures import materialize
+    from repo_intel.compile.pipeline import compile_commit
+    from repo_intel.storage.store import ObjectStore
+
+    shas = materialize(fixture, tmp_path / "repo")
+    store = ObjectStore(tmp_path / "store", "t")
+    manifest = compile_commit(store, tmp_path / "repo", REPO_ID, shas[0]).manifest
+    index = behavior_store.index(load_shards(store, manifest).values())
+    assert index, f"{fixture} has behaviour"
+    queries = []
+    for units in index.values():
+        summary = behavior_store.summarize(units)
+        assert summary["units"] == len(units)
+        queries += summary["queries"]
+    for q in queries:
+        for table in q["reads"] + q["writes"]:
+            assert not _from_substitution(table, q["sql"]), f"{table!r} is cut from a substitution in {q['sql']!r}"
+            assert not set(table) & set(":#&"), table
+    if fixture == "F14-mainframe-sas":  # from stage.customers_&month
+        [q] = [q for q in queries if "customers_" in q["sql"]]
+        assert q["dynamic"] == ["stage.customers_#month#"] and q["writes"] == ["rpt.customer_summary"] and q["reads"] == []

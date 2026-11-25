@@ -15,8 +15,9 @@ What a single bundle cannot answer says so with 404 or 501 and a message: histor
 across commits (lineage), the cross-repository business map, and compiling. Owner
 overrides are read from and written to `.rkp/overrides.json`.
 
-`snapshots/<hash>/behavior/<entity id>` returns the behaviour units an entity owns, with
-the facts `repo_intel.knowledge.behavior_store` derives from them. Behaviour is detail: on
+`snapshots/<hash>/behavior/<entity id>` returns the behaviour units an entity owns, as
+stored (each with its `kind` when the pack gave one), with the facts
+`repo_intel.knowledge.behavior_store` derives from them. Behaviour is detail: on
 a clone that has only the architecture tier it answers 404 `detail_not_committed`, never
 an empty list.
 """
