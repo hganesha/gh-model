@@ -34,7 +34,7 @@ PACK = PlatformPack(
     id="catalog",
     name="Database catalogue dumps",
     prefix="db",
-    version="1.0.0",
+    version="1.1.0",  # 1.1.0: construct occurrences are E1, as the rest of a dump's output
     terms=(
         Term("db:Table", K.TABLE, "lossy", "a base or foreign table; database, schema and table type are attributes"),
         Term("db:View", K.DATA_SCHEMA, "lossy", "a view or materialised view; the tables it reads are an attribute"),

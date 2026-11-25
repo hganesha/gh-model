@@ -12,14 +12,28 @@ IDs, and the view stays as each member compiled it.
     same_column         Field, by its table's identity and the column name.
     same_topic          EventTopic, by name (brokers compare topic names exactly).
     same_dataset        Dataset, by {library, name}, without regard to case (SAS compares
-                        them so). WORK and one-level names are a program's own scratch
-                        data and are never matched.
-    same_config_key     ConfigKey, by name.
+                        them so), when both sides are SAS datasets (`platform` is `sas`, or
+                        `platforms` lists it). Only then is a dotted name read as
+                        `library.member`. WORK and one-level names are a program's own
+                        scratch data and are never matched.
+    same_config_key     ConfigKey, by name, when one side is authoritative for it (the
+                        solution's inputs, or a member whose role is `database` or
+                        `config`), or both keys carry the same non-default `source` (two
+                        `cfml_datasource` keys name one administrator datasource).
     endpoint_method_path  an HTTP call one member makes, to the endpoint another serves at
                         the same method and normalised path (`/a/{id}`, `/a/:id` and
                         `/a/[id]` are one path).
     endpoint_path_unique  the same, when the call's method is not stated and exactly one
                         endpoint in the solution serves the path.
+
+An endpoint is keyed by its normalised path and, when its route carries one, the value of
+its `method` query parameter: a ColdFusion component serves each remote method at
+`/<path>.cfc?method=<name>`, so `?method=getOrder` and `?method=saveOrder` are two
+endpoints. A call reaches such an endpoint only with the same `method` value (compared
+without regard to case, as ColdFusion resolves function names so). A call to such a path
+whose `method` value is not a literal is dynamic. A call that carries `method=` to a path
+no endpoint is addressed at by `method=` matches on the path alone: there the query
+string is the endpoint's input, not part of its address.
 
 Identity links (ALIAS_OF) point from each entity of a matched group to one canonical
 entity, so ALIAS_OF stays single-valued: the catalogue's (the solution's inputs or a
@@ -31,6 +45,12 @@ Matches that need judgement are candidates at E4 and are never merged:
 
     table_database_unstated   same schema and name, but a side does not say which database
     dataset_library_unstated  same one-level dataset name outside SAS
+    dataset_name_only         the same dotted dataset name where a side is not a SAS
+                              dataset (a JCL DSN `MART.SALES` and SAS `mart.sales`):
+                              platforms name data by different rules
+    config_key_name_only      the same configuration key name in two members, neither
+                              authoritative for it: `LOG_LEVEL` in two services may be two
+                              settings
     name_only_cross_store     the same name on different kinds of store (a table and a
                               dataset, a topic and a queue): a lead, not proof
     endpoint_method_unstated  the call's method is not stated and several endpoints serve the path
@@ -56,6 +76,13 @@ from repo_intel.storage.hashing import make_id
 
 DEFAULT_SCHEMAS = frozenset({"public", "dbo"})
 SCRATCH_LIBRARIES = frozenset({"work"})
+# Member roles that declare configuration for the whole solution, as its inputs do.
+CONFIG_AUTHORITY_ROLES = frozenset({"database", "config"})
+# A ConfigKey's `source` when it is an ordinary environment variable or setting name (most
+# extractors state none): two such keys sharing a name is not proof they are one setting.
+DEFAULT_CONFIG_SOURCES = frozenset({"env", "environment", "environment_variable"})
+_QUERY_METHOD = re.compile(r"[?&]method=([^&#]*)", re.IGNORECASE)
+_LITERAL_METHOD = re.compile(r"[A-Za-z_]\w*")
 _URL_ORIGIN = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*://[^/]*")
 _STORE_CLASS = {"Table": "relational", "DataSchema": "relational", "Dataset": "dataset", "EventTopic": "topic", "StorageResource": "storage"}
 _EVIDENCE_PER_SIDE = 3
@@ -135,15 +162,36 @@ def relational_key(member: MemberData, row: dict[str, Any]) -> tuple[str | None,
     return (database.lower() if isinstance(database, str) else None, schema, parts[-1].lower())
 
 
+def is_sas(row: dict[str, Any]) -> bool:
+    """Whether SAS declared a Dataset row (alone, or as one of the platforms that declare it)."""
+    attributes = row.get("attributes") or {}
+    listed = attributes.get("platforms")
+    return attributes.get("platform") == "sas" or (isinstance(listed, (list, tuple)) and "sas" in listed)
+
+
 def dataset_key(row: dict[str, Any]) -> tuple[str | None, str] | None:
+    """(library, name) of a dataset, lower case. A dotted name is read as `library.member`
+    only for a SAS dataset: elsewhere (a JCL DSN, a Spark table) the dots are the name's own."""
     key, attributes = row["natural_key"], row.get("attributes") or {}
     name = str(key.get("name", ""))
     if not name or "{" in name or "&" in name:
         return None  # a macro variable or template: resolved only at run time
     library = key.get("library") or attributes.get("library")
-    if library is None and "." in name and "/" not in name and ":" not in name:
+    if library is None and is_sas(row) and "." in name and "/" not in name and ":" not in name:
         library, name = name.split(".", 1)
     return ((library.lower() if isinstance(library, str) else None), name.lower())
+
+
+def query_method(route: str) -> tuple[str | None, bool]:
+    """(the `method` query value in lower case, whether that value is dynamic). A ColdFusion
+    remote method is addressed as `/<path>.cfc?method=<name>`; a value that is not a literal
+    name (`?method={}`) is known only at run time."""
+    m = _QUERY_METHOD.search(route)
+    if m is None:
+        return None, False
+    if not _LITERAL_METHOD.fullmatch(m.group(1)):
+        return None, True
+    return m.group(1).lower(), False
 
 
 def short_name(row: dict[str, Any]) -> str | None:
@@ -287,19 +335,18 @@ class _Resolver:
 
     def datasets(self) -> None:
         exact: dict[tuple[str, str], list[str]] = defaultdict(list)
-        loose: dict[str, list[str]] = defaultdict(list)
+        loose: dict[str, list[tuple[str, bool]]] = defaultdict(list)  # whole name -> [(namespaced, is SAS)]
         for row in self.view.entities("Dataset"):
             key = dataset_key(row)
             if key is None:
                 continue
             library, name = key
-            if library in SCRATCH_LIBRARIES:
-                continue
-            if library is None:
-                if (row.get("attributes") or {}).get("platform") != "sas":  # a one-level SAS name is WORK
-                    loose[name].append(row["id"])
-                continue
-            exact[(library, name)].append(row["id"])
+            sas = is_sas(row)
+            if sas:
+                if library is None or library in SCRATCH_LIBRARIES:
+                    continue  # WORK, or a one-level SAS name (which is WORK): a program's scratch data
+                exact[(library, name)].append(row["id"])
+            loose[f"{library}.{name}" if library else name].append((row["id"], sas))
         groups = _Groups()
         for (library, name), items in exact.items():
             if len({split(i)[0] for i in items}) < 2:
@@ -307,11 +354,55 @@ class _Resolver:
             for other in items[1:]:
                 groups.union(items[0], other)
         self.emit_groups(groups, "same_dataset", lambda n: dict(zip(("library", "name"), dataset_key(self.view.entity(n)) or (None, None))))
+        # The same name where a side is not SAS: other platforms name data by their own rules.
         for name, items in sorted(loose.items()):
+            for i, (a, sas_a) in enumerate(items):
+                for b, sas_b in items[i + 1:]:
+                    if split(a)[0] == split(b)[0] or (sas_a and sas_b):
+                        continue
+                    if "." in name:
+                        qualifiers = {"name": name, "platforms": sorted({self._platform(a), self._platform(b)})}
+                        self.record("dataset_name_only", "ALIAS_OF", b, a, qualifiers, self.evidence(b, a), candidate=True)
+                    else:
+                        self.record("dataset_library_unstated", "ALIAS_OF", b, a, {"name": name}, self.evidence(b, a), candidate=True)
+
+    def _platform(self, namespaced: str) -> str:
+        attributes = (self.view.entity(namespaced) or {}).get("attributes") or {}
+        return str(attributes.get("platform") or "unstated")
+
+    # -- configuration
+
+    def _config_authority(self, namespaced: str) -> bool:
+        m = self.member_of(namespaced)
+        return m.is_catalog or m.role in CONFIG_AUTHORITY_ROLES
+
+    def _config_source(self, namespaced: str) -> str | None:
+        source = ((self.view.entity(namespaced) or {}).get("attributes") or {}).get("source")
+        return source if isinstance(source, str) and source and source not in DEFAULT_CONFIG_SOURCES else None
+
+    def config_keys(self) -> None:
+        index: dict[str, list[str]] = defaultdict(list)
+        for row in self.view.entities("ConfigKey"):
+            name = row["natural_key"].get("name")
+            if name:
+                index[name].append(row["id"])
+        groups = _Groups()
+        leads: list[tuple[str, str, str]] = []
+        for name, items in sorted(index.items()):
             for i, a in enumerate(items):
                 for b in items[i + 1:]:
-                    if split(a)[0] != split(b)[0]:
-                        self.record("dataset_library_unstated", "ALIAS_OF", b, a, {"name": name}, self.evidence(b, a), candidate=True)
+                    if split(a)[0] == split(b)[0]:
+                        continue
+                    source = self._config_source(a)
+                    if self._config_authority(a) or self._config_authority(b) or (source is not None and source == self._config_source(b)):
+                        groups.union(a, b)
+                    else:
+                        leads.append((name, b, a))
+        self.emit_groups(groups, "same_config_key", lambda n: {"name": self.view.entity(n)["natural_key"].get("name")})
+        for name, b, a in leads:
+            if a in groups.parent and b in groups.parent and groups.find(a) == groups.find(b):
+                continue  # already one key through a member authoritative for it
+            self.record("config_key_name_only", "ALIAS_OF", b, a, {"name": name}, self.evidence(b, a), candidate=True)
 
     def cross_store(self) -> None:
         index: dict[str, list[tuple[str, str]]] = defaultdict(list)
@@ -331,12 +422,15 @@ class _Resolver:
     # -- HTTP
 
     def http(self) -> None:
-        endpoints: dict[str, list[tuple[str, str]]] = defaultdict(list)  # normalised route -> [(namespaced endpoint, method)]
+        # (normalised path, `method` query value or None) -> [(namespaced endpoint, HTTP method)]
+        endpoints: dict[tuple[str, str | None], list[tuple[str, str]]] = defaultdict(list)
         for row in self.view.entities("Endpoint"):
             key = row["natural_key"]
             if key.get("protocol", "http") != "http" or not key.get("route"):
                 continue
-            endpoints[normalize_route(str(key["route"]))].append((row["id"], str(key.get("method", "ANY")).upper()))
+            route = str(key["route"])
+            endpoints[(normalize_route(route), query_method(route)[0])].append((row["id"], str(key.get("method", "ANY")).upper()))
+        dispatched = {path for path, operation in endpoints if operation is not None}  # paths addressed by `method=`
         for member in self.view.members.values():
             calls = (member.exports or {}).get("unresolved_calls", [])
             counts = {"calls": 0, "linked": 0, "candidates": 0, "unmatched": 0, "dynamic": 0}
@@ -345,14 +439,17 @@ class _Resolver:
                 caller = nsid(member.id, call["caller"])
                 evidence = [{"member": member.id, "evidence_ids": sorted(call.get("evidence_ids", []))[:_EVIDENCE_PER_SIDE]}]
                 method = str(call["method"]).upper() if call.get("method") else None
-                path = call_path(str(call.get("path", "")))
-                if path is None:
+                raw = str(call.get("path", ""))
+                path = call_path(raw)
+                operation, dynamic = query_method(raw)
+                if path is None or (dynamic and path in dispatched):
                     counts["dynamic"] += 1
-                    self.unmatched(member.id, "http_call", str(call.get("path", "")), caller, "dynamic_url", evidence)
+                    self.unmatched(member.id, "http_call", raw, caller, "dynamic_url", evidence)
                     continue
-                others = [(e, m) for e, m in endpoints.get(path, []) if split(e)[0] != member.id]
+                # Where no endpoint is addressed by `method=`, the query is the endpoint's input.
+                others = [(e, m) for e, m in endpoints.get((path, operation if path in dispatched else None), []) if split(e)[0] != member.id]
                 hits = [(e, m) for e, m in others if method is None or m in (method, "ANY")]
-                qualifiers = {"path": path, "method": method or "unstated"}
+                qualifiers = {"path": path, "method": method or "unstated", **({"query_method": operation} if operation else {})}
                 if len(hits) == 1:
                     counts["linked"] += 1
                     self.record("endpoint_method_path" if method else "endpoint_path_unique", "CONSUMES", caller, hits[0][0], qualifiers, evidence + self.evidence(hits[0][0]))
@@ -363,14 +460,18 @@ class _Resolver:
                     for e, _ in hits:
                         self.record(rule, "CONSUMES", caller, e, qualifiers, evidence + self.evidence(e), candidate=True)
                     continue
-                suffix = [(e, m) for route, items in endpoints.items() if route != "/" and path.endswith(route) and path != route for e, m in items if split(e)[0] != member.id and (method is None or m in (method, "ANY"))]
+                suffix = [
+                    (e, m) for (route, op), items in endpoints.items()
+                    if op == (operation if route in dispatched else None) and route != "/" and path.endswith(route) and path != route
+                    for e, m in items if split(e)[0] != member.id and (method is None or m in (method, "ANY"))
+                ]
                 if suffix:
                     counts["candidates"] += 1
                     for e, _ in suffix:
                         self.record("endpoint_path_suffix", "CONSUMES", caller, e, qualifiers, evidence + self.evidence(e), candidate=True)
                     continue
                 counts["unmatched"] += 1
-                self.unmatched(member.id, "http_call", path, caller, "no_endpoint", evidence, method)
+                self.unmatched(member.id, "http_call", path + (f"?method={operation}" if operation else ""), caller, "no_endpoint", evidence, method)
             if member.exports is None or calls:
                 self.out.coverage.append({
                     "domain": "solution_http_calls", "scope": member.id, "numerator": counts["linked"], "denominator": counts["calls"],
@@ -412,7 +513,7 @@ class _Resolver:
         self.columns(tables)
         self.by_name("EventTopic", "same_topic", lambda row: row["natural_key"].get("name") or None)
         self.datasets()
-        self.by_name("ConfigKey", "same_config_key", lambda row: row["natural_key"].get("name") or None)
+        self.config_keys()
         self.cross_store()
         self.http()
         self.data_refs(tables)
@@ -430,4 +531,4 @@ def resolve(view: SolutionView) -> Resolution:
     return _Resolver(view).run()
 
 
-__all__ = ["DEFAULT_SCHEMAS", "Resolution", "call_path", "dataset_key", "relational_key", "resolve", "short_name"]
+__all__ = ["DEFAULT_SCHEMAS", "Resolution", "call_path", "dataset_key", "is_sas", "query_method", "relational_key", "resolve", "short_name"]
