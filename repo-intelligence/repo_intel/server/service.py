@@ -45,7 +45,7 @@ from repo_intel.compile.pipeline import PublishGateError, load_manifest, load_sh
 from repo_intel.storage.store import ObjectStore
 
 PLANES = {
-    "architecture": ["Repository", "Package", "Component", "Symbol", "ExternalDependency"],
+    "architecture": ["Repository", "Package", "Component", "Symbol", "ExternalDependency", "ArchitecturePattern", "Antipattern"],
     "contracts": ["Interface", "Endpoint", "EventTopic"],
     "data": ["DataSchema", "Table", "Dataset", "Field", "Migration", "StorageResource"],
     "jobs": ["Job", "Task", "Notebook", "Program"],

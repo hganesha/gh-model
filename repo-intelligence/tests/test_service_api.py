@@ -81,7 +81,7 @@ def test_connect_compile_and_read_a_repository(client, f01):
     assert c.get("/v1/snapshots/sha256:" + "0" * 64 + "/exclusions", headers=AUTH).status_code == 404
 
     decisions = c.get(f"/v1/snapshots/{h}/decisions", headers=AUTH).json()["decisions"]
-    assert {d["spec"].split("@")[0] for d in decisions} == {"dm.component-kind", "dm.primary-stack", "dm.repository-topology", "dm.dependency-capability"}
+    assert {d["spec"].split("@")[0] for d in decisions} == {"dm.component-kind", "dm.primary-stack", "dm.repository-topology", "dm.dependency-capability", "dm.deployment-granularity"}
     deps = c.get(f"/v1/snapshots/{h}/entities", headers=AUTH, params={"kind": "ExternalDependency"}).json()["entities"]
     fastapi = next(e for e in deps if e["name"] == "fastapi")
     dependency = c.get(f"/v1/snapshots/{h}/entities/{fastapi['id']}", headers=AUTH).json()

@@ -57,7 +57,8 @@
         "RUNS",
         "DERIVED_FROM",
         "PRODUCES",
-        "SERVES"
+        "SERVES",
+        "EXHIBITS"
       ],
       "title": "Predicate",
       "type": "string"

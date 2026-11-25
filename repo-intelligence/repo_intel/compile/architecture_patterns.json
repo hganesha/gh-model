@@ -1,0 +1,4364 @@
+{
+ "key": "arch-taxonomy-v1",
+ "version": "1.0.0",
+ "source": "docs/architecture-pattern-taxonomy.md (Software Architecture Pattern Taxonomy v1, 2026-11-24); antipattern ids assigned here",
+ "concerns": [
+  {
+   "id": "01",
+   "name": "System composition and topology",
+   "decision": "How is the overall system divided, connected, and executed?"
+  },
+  {
+   "id": "02",
+   "name": "Application organization and domain boundaries",
+   "decision": "How are code, business meaning, and dependencies organized inside applications?"
+  },
+  {
+   "id": "03",
+   "name": "Presentation and client architecture",
+   "decision": "How are user interaction, rendering, and client state structured?"
+  },
+  {
+   "id": "04",
+   "name": "APIs and service interaction",
+   "decision": "How do clients and services invoke, discover, and compose capabilities?"
+  },
+  {
+   "id": "05",
+   "name": "Messaging and event integration",
+   "decision": "How do systems exchange, route, transform, and reliably process messages?"
+  },
+  {
+   "id": "06",
+   "name": "Workflow, decisions, and business coordination",
+   "decision": "How is multi-step work planned, persisted, completed, and compensated?"
+  },
+  {
+   "id": "07",
+   "name": "Persistence and data ownership",
+   "decision": "Who owns durable data, and how is application state stored and exposed?"
+  },
+  {
+   "id": "08",
+   "name": "Distributed state and consistency",
+   "decision": "How do distributed nodes agree, partition data, order changes, and converge?"
+  },
+  {
+   "id": "09",
+   "name": "Data processing and analytical architecture",
+   "decision": "How is data acquired, transformed, modeled, and served for analysis?"
+  },
+  {
+   "id": "10",
+   "name": "Reliability, availability, and recovery",
+   "decision": "How does the system contain failure and restore useful service?"
+  },
+  {
+   "id": "11",
+   "name": "Performance, scale, and resource management",
+   "decision": "How does the system meet throughput and latency goals within resource limits?"
+  },
+  {
+   "id": "12",
+   "name": "Deployment, runtime, and platform architecture",
+   "decision": "Where do components run and how are runtime concerns composed?"
+  },
+  {
+   "id": "13",
+   "name": "Multitenancy and isolation",
+   "decision": "How are shared platforms partitioned across tenants and failure boundaries?"
+  },
+  {
+   "id": "14",
+   "name": "Security, identity, and trust boundaries",
+   "decision": "How is authority established, checked, delegated, and constrained?"
+  },
+  {
+   "id": "15",
+   "name": "Operations, observability, and control",
+   "decision": "How is the system configured, monitored, governed, and kept near desired state?"
+  },
+  {
+   "id": "16",
+   "name": "Evolution, compatibility, and modernization",
+   "decision": "How does an existing system change safely over time?"
+  },
+  {
+   "id": "17",
+   "name": "AI, ML, and agent systems",
+   "decision": "How are learned components, retrieved knowledge, and autonomous actions composed?"
+  },
+  {
+   "id": "18",
+   "name": "Concurrency, specialized compute, and cyber-physical systems",
+   "decision": "How are execution, timing, language processing, and physical interaction organized?"
+  }
+ ],
+ "families": [
+  {
+   "id": "01.01",
+   "name": "Deployment granularity",
+   "summary": "Select the size and independence of deployable application units.",
+   "observability": "repository"
+  },
+  {
+   "id": "01.02",
+   "name": "Landscape composition",
+   "summary": "Organize autonomous capabilities across a wider application landscape.",
+   "observability": "beyond_repository",
+   "observability_reason": "Landscape composition spans systems and ownership beyond one repository."
+  },
+  {
+   "id": "01.03",
+   "name": "Interaction topology",
+   "summary": "Select the structural relationships between participants.",
+   "observability": "repository"
+  },
+  {
+   "id": "01.04",
+   "name": "Execution organization",
+   "summary": "Select the dominant way work and state move through the system.",
+   "observability": "repository"
+  },
+  {
+   "id": "01.05",
+   "name": "Physical tiers",
+   "summary": "Separate responsibilities across network or process boundaries.",
+   "observability": "repository"
+  },
+  {
+   "id": "02.01",
+   "name": "Dependency structure",
+   "summary": "Control dependency direction and the separation of responsibilities.",
+   "observability": "repository"
+  },
+  {
+   "id": "02.02",
+   "name": "Business-logic organization",
+   "summary": "Select where business rules and application coordination live.",
+   "observability": "repository"
+  },
+  {
+   "id": "02.03",
+   "name": "Strategic domain boundaries",
+   "summary": "Make model ownership and relationships between domains explicit.",
+   "observability": "beyond_repository",
+   "observability_reason": "Relationships between bounded contexts are organisational agreements; a directory or package does not prove one."
+  },
+  {
+   "id": "02.04",
+   "name": "Tactical domain modeling",
+   "summary": "Define implementation-level units that protect business invariants.",
+   "observability": "repository"
+  },
+  {
+   "id": "02.05",
+   "name": "Extensibility",
+   "summary": "Allow capabilities to vary without rebuilding the application core.",
+   "observability": "repository"
+  },
+  {
+   "id": "03.01",
+   "name": "Presentation separation",
+   "summary": "Separate state, interaction logic, and display responsibilities.",
+   "observability": "repository"
+  },
+  {
+   "id": "03.02",
+   "name": "Rendering and delivery",
+   "summary": "Choose where presentation is produced and how it becomes interactive.",
+   "observability": "repository"
+  },
+  {
+   "id": "03.03",
+   "name": "Interface composition",
+   "summary": "Assemble independently owned or server-configured user experiences.",
+   "observability": "repository"
+  },
+  {
+   "id": "03.04",
+   "name": "Client state and connectivity",
+   "summary": "Control presentation changes and behavior during interrupted connectivity.",
+   "observability": "repository"
+  },
+  {
+   "id": "03.05",
+   "name": "Session placement",
+   "summary": "Choose where conversational application state is retained.",
+   "observability": "repository"
+  },
+  {
+   "id": "04.01",
+   "name": "Interface semantics",
+   "summary": "Choose the primary interaction model exposed by a service.",
+   "observability": "repository"
+  },
+  {
+   "id": "04.02",
+   "name": "Service boundary mediation",
+   "summary": "Shape, protect, and compose calls at an application boundary.",
+   "observability": "repository"
+  },
+  {
+   "id": "04.03",
+   "name": "Asynchronous conversations",
+   "summary": "Accept work now and communicate completion separately.",
+   "observability": "repository"
+  },
+  {
+   "id": "04.04",
+   "name": "Query composition",
+   "summary": "Create a unified query experience across independently owned capabilities.",
+   "observability": "repository"
+  },
+  {
+   "id": "04.05",
+   "name": "Service discovery",
+   "summary": "Resolve logical service identities into reachable instances.",
+   "observability": "repository"
+  },
+  {
+   "id": "05.01",
+   "name": "Channels and distribution",
+   "summary": "Select the distribution and retention behavior of a messaging channel.",
+   "observability": "repository"
+  },
+  {
+   "id": "05.02",
+   "name": "Message intent",
+   "summary": "Make the meaning of an exchanged message explicit.",
+   "observability": "repository"
+  },
+  {
+   "id": "05.03",
+   "name": "Routing and composition",
+   "summary": "Control where messages go and how multiple messages are combined.",
+   "observability": "repository"
+  },
+  {
+   "id": "05.04",
+   "name": "Transformation and payload",
+   "summary": "Adapt data representations while keeping endpoints independently evolvable.",
+   "observability": "repository"
+  },
+  {
+   "id": "05.05",
+   "name": "Delivery and processing safety",
+   "summary": "Handle duplicates, publication failures, and unprocessable messages.",
+   "observability": "repository"
+  },
+  {
+   "id": "05.06",
+   "name": "Correlation and ordering",
+   "summary": "Preserve related work and make conversations identifiable.",
+   "observability": "repository"
+  },
+  {
+   "id": "06.01",
+   "name": "Coordination authority",
+   "summary": "Choose where responsibility for progress and routing resides.",
+   "observability": "repository"
+  },
+  {
+   "id": "06.02",
+   "name": "Execution state",
+   "summary": "Represent and recover multi-step work explicitly.",
+   "observability": "repository"
+  },
+  {
+   "id": "06.03",
+   "name": "Cross-boundary transactions",
+   "summary": "Coordinate changes that exceed a single local transaction boundary.",
+   "observability": "repository"
+  },
+  {
+   "id": "06.04",
+   "name": "Human participation",
+   "summary": "Make human decisions and exceptions explicit parts of execution.",
+   "observability": "repository"
+  },
+  {
+   "id": "06.05",
+   "name": "Decision execution",
+   "summary": "Separate decision definitions from general process plumbing.",
+   "observability": "repository"
+  },
+  {
+   "id": "07.01",
+   "name": "Ownership boundaries",
+   "summary": "Choose the relationship between service boundaries and persistence boundaries.",
+   "observability": "repository"
+  },
+  {
+   "id": "07.02",
+   "name": "Read and write separation",
+   "summary": "Separate authoritative updates from optimized consumption.",
+   "observability": "repository"
+  },
+  {
+   "id": "07.03",
+   "name": "History and reconstruction",
+   "summary": "Choose how historical facts relate to current application state.",
+   "observability": "repository"
+  },
+  {
+   "id": "07.04",
+   "name": "Persistence mediation",
+   "summary": "Control the boundary between domain code and storage representations.",
+   "observability": "repository"
+  },
+  {
+   "id": "07.05",
+   "name": "Concurrent updates",
+   "summary": "Detect or prevent conflicts between overlapping changes.",
+   "observability": "repository"
+  },
+  {
+   "id": "08.01",
+   "name": "Replication organization",
+   "summary": "Select which replicas may accept or coordinate updates.",
+   "observability": "beyond_repository",
+   "observability_reason": "Replication roles are runtime configuration of data stores, usually outside application repositories."
+  },
+  {
+   "id": "08.02",
+   "name": "Agreement and authority",
+   "summary": "Prevent conflicting decisions about shared distributed resources.",
+   "observability": "beyond_repository",
+   "observability_reason": "Agreement and leadership are runtime properties of a distributed system under failure."
+  },
+  {
+   "id": "08.03",
+   "name": "Partitioning and placement",
+   "summary": "Distribute state across nodes and make ownership resolvable.",
+   "observability": "beyond_repository",
+   "observability_reason": "Data placement across nodes is runtime and operational configuration."
+  },
+  {
+   "id": "08.04",
+   "name": "Ordering and version tracking",
+   "summary": "Represent causal or temporal relationships between distributed changes.",
+   "observability": "repository"
+  },
+  {
+   "id": "08.05",
+   "name": "Replica convergence",
+   "summary": "Repair divergence and merge changes under explicit rules.",
+   "observability": "repository"
+  },
+  {
+   "id": "08.06",
+   "name": "Durable distributed logs",
+   "summary": "Persist changes and control how replicated history is retained.",
+   "observability": "repository"
+  },
+  {
+   "id": "09.01",
+   "name": "Data ingestion",
+   "summary": "Move operational and external data into processing systems.",
+   "observability": "repository"
+  },
+  {
+   "id": "09.02",
+   "name": "Analytical storage families",
+   "summary": "Select the broad structure of an analytical data platform.",
+   "observability": "repository"
+  },
+  {
+   "id": "09.03",
+   "name": "Processing topology",
+   "summary": "Choose how batch and continuous data processing are organized.",
+   "observability": "repository"
+  },
+  {
+   "id": "09.04",
+   "name": "Data organization and access",
+   "summary": "Control responsibility, logical integration, and shared analytical access.",
+   "observability": "repository"
+  },
+  {
+   "id": "09.05",
+   "name": "Analytical modeling",
+   "summary": "Define reusable structures for analytical facts, dimensions, and historical integration.",
+   "observability": "repository"
+  },
+  {
+   "id": "09.06",
+   "name": "Event analytics",
+   "summary": "Derive results using event relationships, time, and completeness rules.",
+   "observability": "repository"
+  },
+  {
+   "id": "10.01",
+   "name": "Dependency failure handling",
+   "summary": "Bound how callers react to delayed or failed dependencies.",
+   "observability": "repository"
+  },
+  {
+   "id": "10.02",
+   "name": "Failure containment",
+   "summary": "Prevent one failure from exhausting unrelated parts of the system.",
+   "observability": "repository"
+  },
+  {
+   "id": "10.03",
+   "name": "Degraded service",
+   "summary": "Continue useful behavior when complete service is unavailable.",
+   "observability": "repository"
+  },
+  {
+   "id": "10.04",
+   "name": "Availability topology",
+   "summary": "Choose how redundant serving capacity is used.",
+   "observability": "beyond_repository",
+   "observability_reason": "Standby and active sites are operational topology, not repository content."
+  },
+  {
+   "id": "10.05",
+   "name": "Recovery state",
+   "summary": "Restore computation and data to an acceptable state after failure.",
+   "observability": "repository"
+  },
+  {
+   "id": "11.01",
+   "name": "Cache interaction",
+   "summary": "Choose how the cache and authoritative store interact.",
+   "observability": "repository"
+  },
+  {
+   "id": "11.02",
+   "name": "Scale and workload distribution",
+   "summary": "Spread requests and work across independently usable capacity.",
+   "observability": "repository"
+  },
+  {
+   "id": "11.03",
+   "name": "Demand and admission control",
+   "summary": "Keep demand within downstream or local processing capacity.",
+   "observability": "repository"
+  },
+  {
+   "id": "11.04",
+   "name": "Work and resource efficiency",
+   "summary": "Reduce repeated overhead and expensive contention.",
+   "observability": "repository"
+  },
+  {
+   "id": "11.05",
+   "name": "Content placement",
+   "summary": "Deliver cacheable content close to its consumers.",
+   "observability": "repository"
+  },
+  {
+   "id": "12.01",
+   "name": "Runtime packaging",
+   "summary": "Select the relationship between service instances and runtime hosts.",
+   "observability": "repository"
+  },
+  {
+   "id": "12.02",
+   "name": "Runtime helpers",
+   "summary": "Attach supporting responsibilities without embedding them in the main application.",
+   "observability": "repository"
+  },
+  {
+   "id": "12.03",
+   "name": "Service networking",
+   "summary": "Standardize connectivity and cross-service network behavior.",
+   "observability": "repository"
+  },
+  {
+   "id": "12.04",
+   "name": "Placement and connectivity",
+   "summary": "Divide deployment responsibilities across infrastructure boundaries.",
+   "observability": "beyond_repository",
+   "observability_reason": "Placement across on-premises, cloud and edge is an operational decision."
+  },
+  {
+   "id": "12.05",
+   "name": "Release topology",
+   "summary": "Control how a new implementation begins receiving production work.",
+   "observability": "repository"
+  },
+  {
+   "id": "13.01",
+   "name": "Tenant resource models",
+   "summary": "Select the extent to which tenant resources are dedicated or shared.",
+   "observability": "beyond_repository",
+   "observability_reason": "Dedicated or shared tenant resources are decided in operations and contracts."
+  },
+  {
+   "id": "13.02",
+   "name": "Tenant data placement",
+   "summary": "Choose how multiple tenants share storage structures.",
+   "observability": "repository"
+  },
+  {
+   "id": "13.03",
+   "name": "Deployment and failure partitions",
+   "summary": "Bound the number of tenants affected by a capacity or service failure.",
+   "observability": "beyond_repository",
+   "observability_reason": "Stamps, cells and shuffle sharding are fleet-level deployment decisions."
+  },
+  {
+   "id": "13.04",
+   "name": "Tenant-aware execution",
+   "summary": "Keep tenancy context explicit throughout requests and resource use.",
+   "observability": "repository"
+  },
+  {
+   "id": "14.01",
+   "name": "Identity mediation",
+   "summary": "Separate identity establishment from individual application implementations.",
+   "observability": "repository"
+  },
+  {
+   "id": "14.02",
+   "name": "Authorization structure",
+   "summary": "Choose where access policy is defined and enforced.",
+   "observability": "repository"
+  },
+  {
+   "id": "14.03",
+   "name": "Delegation",
+   "summary": "Pass constrained authority across system boundaries.",
+   "observability": "repository"
+  },
+  {
+   "id": "14.04",
+   "name": "Containment and trust zones",
+   "summary": "Reduce exposure and limit what a compromised component can reach.",
+   "observability": "repository"
+  },
+  {
+   "id": "14.05",
+   "name": "Data and secret protection",
+   "summary": "Reduce exposure of sensitive values and long-lived authority.",
+   "observability": "repository"
+  },
+  {
+   "id": "14.06",
+   "name": "Trust posture",
+   "summary": "Frame the assumptions under which security patterns are composed.",
+   "observability": "beyond_repository",
+   "observability_reason": "Trust posture is a composition of controls across a whole estate."
+  },
+  {
+   "id": "15.01",
+   "name": "Operational planes",
+   "summary": "Separate management responsibilities from the workload being managed.",
+   "observability": "repository"
+  },
+  {
+   "id": "15.02",
+   "name": "Desired-state management",
+   "summary": "Automate reconciliation of observed infrastructure and intended configuration.",
+   "observability": "repository"
+  },
+  {
+   "id": "15.03",
+   "name": "Telemetry collection",
+   "summary": "Collect and connect observations across component boundaries.",
+   "observability": "repository"
+  },
+  {
+   "id": "15.04",
+   "name": "Operational and business evidence",
+   "summary": "Retain attributable records that support investigation and reconstruction.",
+   "observability": "repository"
+  },
+  {
+   "id": "15.05",
+   "name": "Health and automatic control",
+   "summary": "Observe service condition and adjust execution using feedback.",
+   "observability": "repository"
+  },
+  {
+   "id": "16.01",
+   "name": "Incremental replacement",
+   "summary": "Replace functionality without requiring one simultaneous system cutover.",
+   "observability": "beyond_repository",
+   "observability_reason": "Incremental replacement is a process over time; one snapshot cannot show it."
+  },
+  {
+   "id": "16.02",
+   "name": "Service extraction",
+   "summary": "Find practical boundaries for decomposing an application.",
+   "observability": "beyond_repository",
+   "observability_reason": "Decomposition strategy is a design process, not a structure in the code."
+  },
+  {
+   "id": "16.03",
+   "name": "Contract evolution",
+   "summary": "Preserve interoperability while producers and consumers change.",
+   "observability": "repository"
+  },
+  {
+   "id": "16.04",
+   "name": "Behavioral equivalence and migration confidence",
+   "summary": "Compare implementations and preserve observable behavior during change.",
+   "observability": "repository"
+  },
+  {
+   "id": "17.01",
+   "name": "Prediction serving",
+   "summary": "Place model inference and feature computation in application flows.",
+   "observability": "repository"
+  },
+  {
+   "id": "17.02",
+   "name": "Model lifecycle topology",
+   "summary": "Connect model production, validation, promotion, and feedback.",
+   "observability": "repository"
+  },
+  {
+   "id": "17.03",
+   "name": "Knowledge-grounded generation",
+   "summary": "Provide relevant external knowledge to model-based generation.",
+   "observability": "repository"
+  },
+  {
+   "id": "17.04",
+   "name": "LLM workflow composition",
+   "summary": "Compose model calls with explicit task structures.",
+   "observability": "repository"
+  },
+  {
+   "id": "17.05",
+   "name": "Agent coordination",
+   "summary": "Control how tool-using agents delegate, hand off, and share responsibility.",
+   "observability": "repository"
+  },
+  {
+   "id": "17.06",
+   "name": "Control and validation boundaries",
+   "summary": "Constrain probabilistic components before their results affect authoritative state.",
+   "observability": "repository"
+  },
+  {
+   "id": "18.01",
+   "name": "Concurrent execution",
+   "summary": "Control how concurrent work is accepted, scheduled, and dispatched.",
+   "observability": "repository"
+  },
+  {
+   "id": "18.02",
+   "name": "Parallel computation",
+   "summary": "Divide computational work across processors or machines.",
+   "observability": "repository"
+  },
+  {
+   "id": "18.03",
+   "name": "Real-time execution",
+   "summary": "Organize work around explicit timing and scheduling constraints.",
+   "observability": "repository"
+  },
+  {
+   "id": "18.04",
+   "name": "Physical-system control",
+   "summary": "Connect sensing, decision-making, and actuation.",
+   "observability": "repository"
+  },
+  {
+   "id": "18.05",
+   "name": "Language and execution runtimes",
+   "summary": "Structure interpretation, compilation, and executable representations.",
+   "observability": "repository"
+  },
+  {
+   "id": "18.06",
+   "name": "Edge and device integration",
+   "summary": "Handle intermittent connectivity and local device aggregation.",
+   "observability": "repository"
+  }
+ ],
+ "entries": [
+  {
+   "id": "arch-0001",
+   "kind": "style",
+   "evolving": false,
+   "name": "Monolithic architecture",
+   "intent": "Package the application as one primary deployable unit; internal structure may vary.",
+   "family": "01.01",
+   "observability": "repository",
+   "decided_by": "dm.deployment-granularity"
+  },
+  {
+   "id": "arch-0002",
+   "kind": "style",
+   "evolving": false,
+   "name": "Modular monolith",
+   "intent": "Deploy one application while enforcing explicit internal module boundaries.",
+   "family": "01.01",
+   "observability": "repository",
+   "decided_by": "dm.deployment-granularity"
+  },
+  {
+   "id": "arch-0003",
+   "kind": "style",
+   "evolving": false,
+   "name": "Service-based architecture",
+   "intent": "Divide the system into a small set of relatively coarse independently deployed services.",
+   "family": "01.01",
+   "observability": "repository",
+   "decided_by": "dm.deployment-granularity"
+  },
+  {
+   "id": "arch-0004",
+   "kind": "style",
+   "evolving": false,
+   "name": "Microservices architecture",
+   "intent": "Organize independently deployable services around cohesive capabilities with explicit contracts.",
+   "family": "01.01",
+   "observability": "repository",
+   "decided_by": "dm.deployment-granularity"
+  },
+  {
+   "id": "arch-0005",
+   "kind": "style",
+   "evolving": false,
+   "name": "Service-oriented architecture",
+   "intent": "Expose reusable business capabilities through explicit service contracts across an enterprise.",
+   "family": "01.02",
+   "observability": "beyond_repository"
+  },
+  {
+   "id": "arch-0006",
+   "kind": "style",
+   "evolving": false,
+   "name": "Self-contained systems",
+   "intent": "Partition a landscape into autonomous applications that own their UI, logic, and data.",
+   "family": "01.02",
+   "observability": "beyond_repository"
+  },
+  {
+   "id": "arch-0007",
+   "kind": "style",
+   "evolving": false,
+   "name": "Client-server",
+   "intent": "Assign request initiation and service provision to distinct participant roles.",
+   "family": "01.03",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0008",
+   "kind": "style",
+   "evolving": false,
+   "name": "Peer-to-peer",
+   "intent": "Allow peers to provide and consume capabilities without a permanent central service role.",
+   "family": "01.03",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0009",
+   "kind": "style",
+   "evolving": false,
+   "name": "Broker architecture",
+   "intent": "Use an intermediary to locate, route to, or mediate between distributed participants.",
+   "family": "01.03",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0010",
+   "kind": "style",
+   "evolving": false,
+   "name": "Shared-repository architecture",
+   "intent": "Coordinate components through a common store of shared information.",
+   "family": "01.03",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0011",
+   "kind": "style",
+   "evolving": false,
+   "name": "Blackboard architecture",
+   "intent": "Let specialized knowledge sources incrementally contribute to a shared problem-solving state.",
+   "family": "01.03",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0012",
+   "kind": "style",
+   "evolving": false,
+   "name": "Pipes and filters",
+   "intent": "Compose independently implemented transformations through explicit input and output channels.",
+   "family": "01.04",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0013",
+   "kind": "style",
+   "evolving": false,
+   "name": "Dataflow architecture",
+   "intent": "Represent computation as a graph whose operations run as their inputs become available.",
+   "family": "01.04",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0014",
+   "kind": "style",
+   "evolving": false,
+   "name": "Event-driven architecture",
+   "intent": "Make occurrence notifications a primary way components initiate and coordinate behavior.",
+   "family": "01.04",
+   "observability": "repository",
+   "detectors": [
+    "event-driven"
+   ]
+  },
+  {
+   "id": "arch-0015",
+   "kind": "style",
+   "evolving": false,
+   "name": "Space-based architecture",
+   "intent": "Distribute processing and state across an in-memory space to reduce centralized database bottlenecks.",
+   "family": "01.04",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0016",
+   "kind": "style",
+   "evolving": false,
+   "name": "N-tier architecture",
+   "intent": "Distribute application responsibilities across physical tiers; common variants are two-tier and three-tier.",
+   "family": "01.05",
+   "observability": "repository",
+   "detectors": [
+    "n-tier"
+   ]
+  },
+  {
+   "id": "arch-0017",
+   "kind": "style",
+   "evolving": false,
+   "name": "Layered architecture",
+   "intent": "Organize code into responsibility layers with defined dependency rules.",
+   "family": "02.01",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0018",
+   "kind": "style",
+   "evolving": false,
+   "name": "Hexagonal architecture",
+   "intent": "Isolate application behavior behind ports implemented by external adapters.",
+   "family": "02.01",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0019",
+   "kind": "style",
+   "evolving": false,
+   "name": "Onion architecture",
+   "intent": "Arrange dependencies inward toward the domain model through concentric responsibility boundaries.",
+   "family": "02.01",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0020",
+   "kind": "style",
+   "evolving": false,
+   "name": "Clean architecture",
+   "intent": "Keep business policy independent of interface, delivery, and infrastructure mechanisms.",
+   "family": "02.01",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0021",
+   "kind": "style",
+   "evolving": false,
+   "name": "Vertical-slice architecture",
+   "intent": "Organize implementation around end-to-end use cases instead of horizontal technical layers.",
+   "family": "02.01",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0022",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Functional core, imperative shell",
+   "intent": "Concentrate deterministic decisions in pure functions and isolate side effects at the boundary.",
+   "family": "02.01",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0023",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Transaction Script",
+   "intent": "Implement each business operation primarily as a procedure.",
+   "family": "02.02",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0024",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Domain Model",
+   "intent": "Represent business concepts through collaborating objects that contain state and behavior.",
+   "family": "02.02",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0025",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Table Module",
+   "intent": "Organize business logic around a table or record-set abstraction.",
+   "family": "02.02",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0026",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Service Layer",
+   "intent": "Provide a stable application-operation boundary that coordinates business actions.",
+   "family": "02.02",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0027",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Bounded Context",
+   "intent": "Define the boundary within which a particular domain model and vocabulary apply.",
+   "family": "02.03",
+   "observability": "beyond_repository"
+  },
+  {
+   "id": "arch-0028",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Context Map",
+   "intent": "Document the relationships and translation responsibilities between bounded contexts.",
+   "family": "02.03",
+   "observability": "beyond_repository"
+  },
+  {
+   "id": "arch-0029",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Shared Kernel",
+   "intent": "Share a deliberately small model subset under joint coordination between contexts.",
+   "family": "02.03",
+   "observability": "beyond_repository"
+  },
+  {
+   "id": "arch-0030",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Customer-Supplier",
+   "intent": "Coordinate upstream and downstream model evolution through an explicit dependency relationship.",
+   "family": "02.03",
+   "observability": "beyond_repository"
+  },
+  {
+   "id": "arch-0031",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Conformist",
+   "intent": "Have a downstream context adopt an upstream model when independent negotiation is impractical.",
+   "family": "02.03",
+   "observability": "beyond_repository"
+  },
+  {
+   "id": "arch-0032",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Anti-Corruption Layer",
+   "intent": "Translate external concepts at a boundary to protect the local domain model.",
+   "family": "02.03",
+   "observability": "beyond_repository"
+  },
+  {
+   "id": "arch-0033",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Open Host Service",
+   "intent": "Expose a stable integration service that multiple downstream contexts can use.",
+   "family": "02.03",
+   "observability": "beyond_repository"
+  },
+  {
+   "id": "arch-0034",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Published Language",
+   "intent": "Define an explicit shared exchange language for integration between contexts.",
+   "family": "02.03",
+   "observability": "beyond_repository"
+  },
+  {
+   "id": "arch-0035",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Partnership",
+   "intent": "Have dependent contexts coordinate plans and changes through a shared commitment to integration.",
+   "family": "02.03",
+   "observability": "beyond_repository"
+  },
+  {
+   "id": "arch-0036",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Separate Ways",
+   "intent": "Avoid integration between contexts when the benefits do not justify the coupling and coordination costs.",
+   "family": "02.03",
+   "observability": "beyond_repository"
+  },
+  {
+   "id": "arch-0037",
+   "kind": "design_pattern",
+   "evolving": false,
+   "name": "Aggregate",
+   "intent": "Group related domain objects behind a root that controls consistency and allowed changes.",
+   "family": "02.04",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0038",
+   "kind": "design_pattern",
+   "evolving": false,
+   "name": "Entity",
+   "intent": "Represent a domain concept with identity that persists across changes to its attributes.",
+   "family": "02.04",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0039",
+   "kind": "design_pattern",
+   "evolving": false,
+   "name": "Value Object",
+   "intent": "Represent a concept by its immutable descriptive value rather than independent identity.",
+   "family": "02.04",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0040",
+   "kind": "design_pattern",
+   "evolving": false,
+   "name": "Domain Service",
+   "intent": "Place business behavior that spans concepts in an explicit domain operation.",
+   "family": "02.04",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0041",
+   "kind": "design_pattern",
+   "evolving": false,
+   "name": "Specification",
+   "intent": "Encapsulate a composable business criterion for matching or validation.",
+   "family": "02.04",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0042",
+   "kind": "design_pattern",
+   "evolving": false,
+   "name": "Domain Event",
+   "intent": "Represent a meaningful business occurrence within a domain model.",
+   "family": "02.04",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0043",
+   "kind": "style",
+   "evolving": false,
+   "name": "Microkernel architecture",
+   "intent": "Keep a minimal core and provide optional behavior through extension modules.",
+   "family": "02.05",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0044",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Plugin architecture",
+   "intent": "Load optional implementations through explicit extension contracts.",
+   "family": "02.05",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0045",
+   "kind": "design_pattern",
+   "evolving": false,
+   "name": "Component Configurator",
+   "intent": "Configure or replace service components through a managed runtime configuration boundary.",
+   "family": "02.05",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0046",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Interceptor",
+   "intent": "Attach cross-cutting behavior at explicitly defined interception points in a framework or invocation flow.",
+   "family": "02.05",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0047",
+   "kind": "design_pattern",
+   "evolving": false,
+   "name": "Extension Interface",
+   "intent": "Offer separately discoverable component interfaces so capability growth does not bloat one central interface.",
+   "family": "02.05",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0048",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Model-View-Controller",
+   "intent": "Assign model, presentation, and input coordination to distinct roles.",
+   "family": "03.01",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0049",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Model-View-Presenter",
+   "intent": "Use a presenter to mediate between an interface abstraction and application state.",
+   "family": "03.01",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0050",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Model-View-ViewModel",
+   "intent": "Expose presentation state and commands through a view model consumed by the view.",
+   "family": "03.01",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0051",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Model-View-Intent",
+   "intent": "Express user intents as inputs to predictable presentation-state transitions.",
+   "family": "03.01",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0052",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Presentation-Abstraction-Control",
+   "intent": "Organize interactive systems into cooperating presentation, abstraction, and control agents.",
+   "family": "03.01",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0053",
+   "kind": "technique",
+   "evolving": false,
+   "name": "Server-side rendering",
+   "intent": "Produce the initial document or interface markup on the server.",
+   "family": "03.02",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0054",
+   "kind": "technique",
+   "evolving": false,
+   "name": "Client-side rendering",
+   "intent": "Produce most interface markup and interaction state in the client.",
+   "family": "03.02",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0055",
+   "kind": "technique",
+   "evolving": false,
+   "name": "Static generation",
+   "intent": "Precompute deliverable pages or views before the user request.",
+   "family": "03.02",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0056",
+   "kind": "technique",
+   "evolving": false,
+   "name": "Hydration",
+   "intent": "Attach client interaction behavior to markup already produced elsewhere.",
+   "family": "03.02",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0057",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Islands architecture",
+   "intent": "Limit client interactivity to selected independently activated page regions.",
+   "family": "03.02",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0058",
+   "kind": "style",
+   "evolving": false,
+   "name": "Micro-frontends",
+   "intent": "Compose an interface from independently owned frontend capabilities.",
+   "family": "03.03",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0059",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Application Shell",
+   "intent": "Provide persistent navigation and layout around independently loaded application content.",
+   "family": "03.03",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0060",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Server-driven UI",
+   "intent": "Let a server supply constrained interface descriptions interpreted by a client renderer.",
+   "family": "03.03",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0061",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Unidirectional data flow",
+   "intent": "Move user actions through a one-way state-update and rendering cycle.",
+   "family": "03.04",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0062",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Offline-first",
+   "intent": "Design essential user operations to continue without a live server connection.",
+   "family": "03.04",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0063",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Local-first",
+   "intent": "Treat a local replica as a primary interaction surface and synchronize shared changes afterward.",
+   "family": "03.04",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0064",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Client Session State",
+   "intent": "Store session information at the client subject to integrity and privacy controls.",
+   "family": "03.05",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0065",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Server Session State",
+   "intent": "Retain session information in a server-side session facility.",
+   "family": "03.05",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0066",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Database Session State",
+   "intent": "Persist session information in a database shared by serving instances.",
+   "family": "03.05",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0067",
+   "kind": "style",
+   "evolving": false,
+   "name": "Representational State Transfer",
+   "intent": "Use resource representations and a uniform interface under REST constraints.",
+   "family": "04.01",
+   "observability": "repository",
+   "detectors": [
+    "interface-semantics"
+   ]
+  },
+  {
+   "id": "arch-0068",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Remote Procedure Invocation",
+   "intent": "Expose remote operations through explicit invocation and return-value contracts.",
+   "family": "04.01",
+   "observability": "repository",
+   "detectors": [
+    "interface-semantics"
+   ]
+  },
+  {
+   "id": "arch-0069",
+   "kind": "technique",
+   "evolving": false,
+   "name": "Schema-based query API",
+   "intent": "Let clients request shaped data through a typed query schema, as in GraphQL.",
+   "family": "04.01",
+   "observability": "repository",
+   "detectors": [
+    "interface-semantics"
+   ]
+  },
+  {
+   "id": "arch-0070",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "API Gateway",
+   "intent": "Provide a managed entry point that routes requests to backend capabilities.",
+   "family": "04.02",
+   "observability": "repository",
+   "detectors": [
+    "api-gateway"
+   ]
+  },
+  {
+   "id": "arch-0071",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Backends for Frontends",
+   "intent": "Provide backend interfaces tailored to the needs of particular client experiences.",
+   "family": "04.02",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0072",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Remote Facade",
+   "intent": "Expose coarse-grained remote operations over finer-grained internal functionality.",
+   "family": "04.02",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0073",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Gateway Routing",
+   "intent": "Use one boundary endpoint to select the destination service.",
+   "family": "04.02",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0074",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Gateway Aggregation",
+   "intent": "Combine several backend responses into one client response at the boundary.",
+   "family": "04.02",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0075",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Gateway Offloading",
+   "intent": "Move common boundary work into a shared gateway component.",
+   "family": "04.02",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0076",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Asynchronous Request-Reply",
+   "intent": "Return an acknowledgement and a handle for checking or receiving a later result.",
+   "family": "04.03",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0077",
+   "kind": "technique",
+   "evolving": false,
+   "name": "Completion polling",
+   "intent": "Have the caller periodically query the state of previously accepted work.",
+   "family": "04.03",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0078",
+   "kind": "technique",
+   "evolving": false,
+   "name": "Callback notification",
+   "intent": "Notify an agreed endpoint when asynchronous work reaches a relevant state.",
+   "family": "04.03",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0079",
+   "kind": "technique",
+   "evolving": false,
+   "name": "Webhook subscription",
+   "intent": "Deliver occurrence notifications to registered remote endpoints.",
+   "family": "04.03",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0080",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "API Composition",
+   "intent": "Fetch and join data from the services that own it.",
+   "family": "04.04",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0081",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Federated query API",
+   "intent": "Compose independently owned query schemas behind a coordinated query boundary.",
+   "family": "04.04",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0082",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Client-side Discovery",
+   "intent": "Have the calling client locate and select a service instance.",
+   "family": "04.05",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0083",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Server-side Discovery",
+   "intent": "Have an intermediary resolve and route requests to service instances.",
+   "family": "04.05",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0084",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Service Registry",
+   "intent": "Maintain available service-instance locations and associated metadata.",
+   "family": "04.05",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0085",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Point-to-Point Channel",
+   "intent": "Deliver each queued message to one eligible consumer for processing.",
+   "family": "05.01",
+   "observability": "repository",
+   "detectors": [
+    "channel-semantics"
+   ]
+  },
+  {
+   "id": "arch-0086",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Publish-Subscribe",
+   "intent": "Distribute a published occurrence to multiple interested subscribers.",
+   "family": "05.01",
+   "observability": "repository",
+   "detectors": [
+    "channel-semantics"
+   ]
+  },
+  {
+   "id": "arch-0087",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Message Bus",
+   "intent": "Provide a shared communication backbone with agreed messaging contracts.",
+   "family": "05.01",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0088",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Replayable Event Log",
+   "intent": "Retain ordered event records so consumers can independently track and replay progress.",
+   "family": "05.01",
+   "observability": "repository",
+   "detectors": [
+    "channel-semantics"
+   ]
+  },
+  {
+   "id": "arch-0089",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Messaging Bridge",
+   "intent": "Connect messaging systems with different transports or administrative boundaries.",
+   "family": "05.01",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0090",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Command Message",
+   "intent": "Ask a recipient to carry out an operation.",
+   "family": "05.02",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0091",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Document Message",
+   "intent": "Transfer a meaningful data document between participants.",
+   "family": "05.02",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0092",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Event Message",
+   "intent": "Announce an occurrence without directly prescribing each recipient's response.",
+   "family": "05.02",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0093",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Content-Based Router",
+   "intent": "Select destinations by inspecting message content.",
+   "family": "05.03",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0094",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Dynamic Router",
+   "intent": "Determine routing rules or destinations from runtime information.",
+   "family": "05.03",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0095",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Recipient List",
+   "intent": "Send a message to an explicitly selected set of recipients.",
+   "family": "05.03",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0096",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Message Filter",
+   "intent": "Discard messages that do not meet a consumer's criteria.",
+   "family": "05.03",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0097",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Splitter",
+   "intent": "Break one composite message into independently processable messages.",
+   "family": "05.03",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0098",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Aggregator",
+   "intent": "Combine related messages into a result using explicit completion rules.",
+   "family": "05.03",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0099",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Scatter-Gather",
+   "intent": "Send work to multiple recipients and collect the resulting responses.",
+   "family": "05.03",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0100",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Resequencer",
+   "intent": "Buffer and reorder related messages into the required processing order.",
+   "family": "05.03",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0101",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Routing Slip",
+   "intent": "Carry the planned sequence of processing destinations with the message.",
+   "family": "05.03",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0102",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Message Translator",
+   "intent": "Convert a message from one representation into another.",
+   "family": "05.04",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0103",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Canonical Data Model",
+   "intent": "Translate integrations through an agreed exchange model to reduce pairwise mappings.",
+   "family": "05.04",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0104",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Envelope Wrapper",
+   "intent": "Wrap an application payload with transport or processing metadata.",
+   "family": "05.04",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0105",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Content Enricher",
+   "intent": "Add information obtained from another source to a message.",
+   "family": "05.04",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0106",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Content Filter",
+   "intent": "Remove unneeded or restricted content from a message.",
+   "family": "05.04",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0107",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Claim Check",
+   "intent": "Send a reference to an externally stored large payload through the messaging channel.",
+   "family": "05.04",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0108",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Normalizer",
+   "intent": "Convert several incoming message forms into one processing representation.",
+   "family": "05.04",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0109",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Idempotent Consumer",
+   "intent": "Ensure repeated delivery does not repeat the intended business effect.",
+   "family": "05.05",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0110",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Transactional Outbox",
+   "intent": "Commit business changes and pending publication records in the same local transaction.",
+   "family": "05.05",
+   "observability": "repository",
+   "detectors": [
+    "outbox"
+   ]
+  },
+  {
+   "id": "arch-0111",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Transactional Inbox",
+   "intent": "Record message receipt and local business changes atomically to suppress duplicate effects.",
+   "family": "05.05",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0112",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Dead Letter Channel",
+   "intent": "Divert messages that cannot be delivered or processed for separate investigation.",
+   "family": "05.05",
+   "observability": "repository",
+   "detectors": [
+    "dead-letter"
+   ]
+  },
+  {
+   "id": "arch-0113",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Retry Channel",
+   "intent": "Route retryable failures through a controlled delayed reprocessing path.",
+   "family": "05.05",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0114",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Competing Consumers",
+   "intent": "Run multiple workers against a queue to share processing work.",
+   "family": "05.05",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0115",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Durable Subscription",
+   "intent": "Retain subscriber progress or pending delivery across subscriber disconnections.",
+   "family": "05.05",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0116",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Correlation Identifier",
+   "intent": "Carry an identifier that connects responses, events, or steps to the same conversation.",
+   "family": "05.06",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0117",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Message Sequence",
+   "intent": "Represent an ordered multi-message logical payload with sequence metadata.",
+   "family": "05.06",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0118",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Sequential Convoy",
+   "intent": "Process each related message group in order while other groups proceed independently.",
+   "family": "05.06",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0119",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Orchestration",
+   "intent": "Use an explicit coordinator to direct participating activities.",
+   "family": "06.01",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0120",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Choreography",
+   "intent": "Let participants react to events and coordinate without one central process controller.",
+   "family": "06.01",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0121",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Process Manager",
+   "intent": "Track a conversation's state and determine which message or action comes next.",
+   "family": "06.01",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0122",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Scheduler-Agent-Supervisor",
+   "intent": "Separate scheduling, execution, and progress monitoring for distributed actions.",
+   "family": "06.01",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0123",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Durable Workflow",
+   "intent": "Persist workflow progress so execution can survive worker or process failures.",
+   "family": "06.02",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0124",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "State Machine",
+   "intent": "Express permitted execution states and transitions explicitly.",
+   "family": "06.02",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0125",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Task Dependency Graph",
+   "intent": "Execute activities according to their prerequisite relationships.",
+   "family": "06.02",
+   "observability": "repository",
+   "detectors": [
+    "batch-and-workflows"
+   ]
+  },
+  {
+   "id": "arch-0126",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Fan-out/Fan-in",
+   "intent": "Launch independent activities and join them according to an explicit completion rule.",
+   "family": "06.02",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0127",
+   "kind": "technique",
+   "evolving": false,
+   "name": "Checkpoint and replay",
+   "intent": "Recover execution using persisted progress and replay under explicit determinism or reconciliation constraints.",
+   "family": "06.02",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0128",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Saga",
+   "intent": "Coordinate a sequence of local transactions with recovery or compensating actions on failure.",
+   "family": "06.03",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0129",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Compensating Transaction",
+   "intent": "Apply business actions that counteract prior completed work where feasible.",
+   "family": "06.03",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0130",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Try-Confirm-Cancel",
+   "intent": "Reserve resources provisionally, then confirm or cancel the reservations.",
+   "family": "06.03",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0131",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Two-Phase Commit",
+   "intent": "Coordinate prepare and commit decisions across participating transactional resources.",
+   "family": "06.03",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0132",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Human Task",
+   "intent": "Represent assigned human work as a tracked step with inputs and completion criteria.",
+   "family": "06.04",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0133",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Approval Gate",
+   "intent": "Pause a process until an authorized person supplies the required decision.",
+   "family": "06.04",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0134",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Escalation and Timeout",
+   "intent": "Route overdue or unresolved work according to explicit time and ownership rules.",
+   "family": "06.04",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0135",
+   "kind": "reference_architecture",
+   "evolving": false,
+   "name": "Adaptive Case Management",
+   "intent": "Organize less predictable work around a case, its evidence, goals, and allowed actions.",
+   "family": "06.04",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0136",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Rules Engine",
+   "intent": "Evaluate externalized business rules through a controlled execution component.",
+   "family": "06.05",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0137",
+   "kind": "technique",
+   "evolving": false,
+   "name": "Decision Table",
+   "intent": "Represent decisions as explicit conditions, matching rules, and resulting outputs.",
+   "family": "06.05",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0138",
+   "kind": "technique",
+   "evolving": false,
+   "name": "Policy as Code",
+   "intent": "Represent policy in machine-evaluable artifacts with versioned execution semantics.",
+   "family": "06.05",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0139",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Shared Database",
+   "intent": "Allow multiple application components or services to use a shared schema or database.",
+   "family": "07.01",
+   "observability": "repository",
+   "detectors": [
+    "data-ownership"
+   ]
+  },
+  {
+   "id": "arch-0140",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Database per Service",
+   "intent": "Give each service exclusive authority over its persistent data interface.",
+   "family": "07.01",
+   "observability": "repository",
+   "detectors": [
+    "data-ownership"
+   ]
+  },
+  {
+   "id": "arch-0141",
+   "kind": "technique",
+   "evolving": false,
+   "name": "Polyglot Persistence",
+   "intent": "Use different persistence models for distinct access patterns and ownership needs.",
+   "family": "07.01",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0142",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "CQRS",
+   "intent": "Give state-changing commands and state-reading queries distinct models or interfaces.",
+   "family": "07.02",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0143",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Materialized View",
+   "intent": "Maintain a derived representation optimized for a particular query workload.",
+   "family": "07.02",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0144",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Command-side Replica",
+   "intent": "Maintain a local copy of externally owned facts needed to make command decisions.",
+   "family": "07.02",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0145",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Event-Carried State Transfer",
+   "intent": "Publish sufficient state in events for consumers to maintain useful local replicas.",
+   "family": "07.02",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0146",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Event Sourcing",
+   "intent": "Use a persisted sequence of domain events as the authoritative history from which state is derived.",
+   "family": "07.03",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0147",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Snapshot",
+   "intent": "Persist a derived state checkpoint to reduce reconstruction work.",
+   "family": "07.03",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0148",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Temporal Data Model",
+   "intent": "Represent business-valid time or record-history time explicitly in the data model.",
+   "family": "07.03",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0149",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Audit Trail",
+   "intent": "Retain a separate history of relevant changes and actions for inspection.",
+   "family": "07.03",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0150",
+   "kind": "design_pattern",
+   "evolving": false,
+   "name": "Repository",
+   "intent": "Expose domain-oriented collection operations while hiding persistence details.",
+   "family": "07.04",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0151",
+   "kind": "design_pattern",
+   "evolving": false,
+   "name": "Data Mapper",
+   "intent": "Translate between domain objects and storage records without embedding persistence in those objects.",
+   "family": "07.04",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0152",
+   "kind": "design_pattern",
+   "evolving": false,
+   "name": "Active Record",
+   "intent": "Combine a record's domain behavior and persistence operations in the same object.",
+   "family": "07.04",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0153",
+   "kind": "design_pattern",
+   "evolving": false,
+   "name": "Unit of Work",
+   "intent": "Track related object changes and coordinate their persistence within a transaction.",
+   "family": "07.04",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0154",
+   "kind": "design_pattern",
+   "evolving": false,
+   "name": "Identity Map",
+   "intent": "Reuse one in-memory representation for each loaded persistent identity within a scope.",
+   "family": "07.04",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0155",
+   "kind": "design_pattern",
+   "evolving": false,
+   "name": "Query Object",
+   "intent": "Represent a storage query through an explicit object abstraction.",
+   "family": "07.04",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0156",
+   "kind": "design_pattern",
+   "evolving": false,
+   "name": "Data Gateway",
+   "intent": "Encapsulate access to stored rows or tables behind a dedicated access boundary.",
+   "family": "07.04",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0157",
+   "kind": "technique",
+   "evolving": false,
+   "name": "Optimistic Concurrency Control",
+   "intent": "Detect conflicting changes at commit or update time and reject or reconcile them.",
+   "family": "07.05",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0158",
+   "kind": "technique",
+   "evolving": false,
+   "name": "Pessimistic Concurrency Control",
+   "intent": "Reserve access to contested data before allowing conflicting changes.",
+   "family": "07.05",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0159",
+   "kind": "technique",
+   "evolving": false,
+   "name": "Multi-Version Concurrency Control",
+   "intent": "Maintain record versions so reads and updates can proceed under defined isolation rules.",
+   "family": "07.05",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0160",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Leader-Follower Replication",
+   "intent": "Route authoritative writes through a leader and propagate them to followers.",
+   "family": "08.01",
+   "observability": "beyond_repository"
+  },
+  {
+   "id": "arch-0161",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Multi-Leader Replication",
+   "intent": "Permit several leaders to accept writes and reconcile their replicated changes.",
+   "family": "08.01",
+   "observability": "beyond_repository"
+  },
+  {
+   "id": "arch-0162",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Leaderless Replication",
+   "intent": "Accept requests through replicas using explicit coordination and conflict-handling rules.",
+   "family": "08.01",
+   "observability": "beyond_repository"
+  },
+  {
+   "id": "arch-0163",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Replicated State Machine",
+   "intent": "Apply an agreed ordered command sequence to equivalent state machines on multiple nodes.",
+   "family": "08.01",
+   "observability": "beyond_repository"
+  },
+  {
+   "id": "arch-0164",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Leader Election",
+   "intent": "Select a node authorized to coordinate a particular distributed responsibility.",
+   "family": "08.02",
+   "observability": "beyond_repository"
+  },
+  {
+   "id": "arch-0165",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Consensus",
+   "intent": "Have participants agree on values or an ordered log despite specified failures.",
+   "family": "08.02",
+   "observability": "beyond_repository"
+  },
+  {
+   "id": "arch-0166",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Quorum Coordination",
+   "intent": "Require intersecting response sets under defined read, write, or voting rules.",
+   "family": "08.02",
+   "observability": "beyond_repository"
+  },
+  {
+   "id": "arch-0167",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Lease",
+   "intent": "Grant temporary authority that expires unless renewed.",
+   "family": "08.02",
+   "observability": "beyond_repository"
+  },
+  {
+   "id": "arch-0168",
+   "kind": "technique",
+   "evolving": false,
+   "name": "Fencing Token",
+   "intent": "Reject operations from stale owners using a monotonically advancing authority token.",
+   "family": "08.02",
+   "observability": "beyond_repository"
+  },
+  {
+   "id": "arch-0169",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Sharding",
+   "intent": "Divide a logical data set into independently placed partitions.",
+   "family": "08.03",
+   "observability": "beyond_repository"
+  },
+  {
+   "id": "arch-0170",
+   "kind": "technique",
+   "evolving": false,
+   "name": "Hash Partitioning",
+   "intent": "Map keys to partitions through a hash function.",
+   "family": "08.03",
+   "observability": "beyond_repository"
+  },
+  {
+   "id": "arch-0171",
+   "kind": "technique",
+   "evolving": false,
+   "name": "Range Partitioning",
+   "intent": "Assign contiguous key ranges to partitions.",
+   "family": "08.03",
+   "observability": "beyond_repository"
+  },
+  {
+   "id": "arch-0172",
+   "kind": "technique",
+   "evolving": false,
+   "name": "Consistent Hashing",
+   "intent": "Map keys and owners so membership changes move a limited portion of keys.",
+   "family": "08.03",
+   "observability": "beyond_repository"
+  },
+  {
+   "id": "arch-0173",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Directory-based Partitioning",
+   "intent": "Use a mapping service to resolve keys or partitions to their current owners.",
+   "family": "08.03",
+   "observability": "beyond_repository"
+  },
+  {
+   "id": "arch-0174",
+   "kind": "technique",
+   "evolving": false,
+   "name": "Lamport Clock",
+   "intent": "Assign logical timestamps consistent with the happened-before relation.",
+   "family": "08.04",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0175",
+   "kind": "technique",
+   "evolving": false,
+   "name": "Vector Clock",
+   "intent": "Track causal progress across participants using a vector of counters.",
+   "family": "08.04",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0176",
+   "kind": "technique",
+   "evolving": false,
+   "name": "Hybrid Logical Clock",
+   "intent": "Combine physical time with logical ordering information.",
+   "family": "08.04",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0177",
+   "kind": "technique",
+   "evolving": false,
+   "name": "Version Vector",
+   "intent": "Track per-participant update versions to detect causality and concurrent changes.",
+   "family": "08.04",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0178",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Anti-Entropy",
+   "intent": "Compare replicas and exchange differences to reduce divergence.",
+   "family": "08.05",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0179",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Read Repair",
+   "intent": "Detect and repair inconsistent replicas while serving reads.",
+   "family": "08.05",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0180",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Hinted Handoff",
+   "intent": "Temporarily retain updates for an unavailable replica and deliver them later.",
+   "family": "08.05",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0181",
+   "kind": "technique",
+   "evolving": false,
+   "name": "Conflict-free Replicated Data Type",
+   "intent": "Use mathematically constrained data types and merge rules that support convergence.",
+   "family": "08.05",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0182",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Write-Ahead Log",
+   "intent": "Record recoverable change intent before considering an update durable.",
+   "family": "08.06",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0183",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Replicated Log",
+   "intent": "Copy an ordered change log to multiple nodes under defined agreement rules.",
+   "family": "08.06",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0184",
+   "kind": "technique",
+   "evolving": false,
+   "name": "Log Compaction",
+   "intent": "Reduce retained history according to state, key, or checkpoint rules without discarding required recovery information.",
+   "family": "08.06",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0185",
+   "kind": "technique",
+   "evolving": false,
+   "name": "ETL",
+   "intent": "Extract data, transform it, and then load the transformed result into the target.",
+   "family": "09.01",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0186",
+   "kind": "technique",
+   "evolving": false,
+   "name": "ELT",
+   "intent": "Load extracted data into the target platform before transforming it there.",
+   "family": "09.01",
+   "observability": "repository",
+   "detectors": [
+    "analytical-data"
+   ]
+  },
+  {
+   "id": "arch-0187",
+   "kind": "technique",
+   "evolving": false,
+   "name": "Change Data Capture",
+   "intent": "Propagate source changes rather than repeatedly copying the entire data set.",
+   "family": "09.01",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0188",
+   "kind": "technique",
+   "evolving": false,
+   "name": "Backfill and Replay",
+   "intent": "Reprocess historical input under controlled versioning and duplicate-handling rules.",
+   "family": "09.01",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0189",
+   "kind": "reference_architecture",
+   "evolving": false,
+   "name": "Data Warehouse",
+   "intent": "Organize governed integrated data for analytical consumption.",
+   "family": "09.02",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0190",
+   "kind": "reference_architecture",
+   "evolving": false,
+   "name": "Data Mart",
+   "intent": "Provide an analytical store focused on a particular business area or audience.",
+   "family": "09.02",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0191",
+   "kind": "reference_architecture",
+   "evolving": false,
+   "name": "Data Lake",
+   "intent": "Retain diverse raw or lightly processed data for later interpretation and processing.",
+   "family": "09.02",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0192",
+   "kind": "reference_architecture",
+   "evolving": false,
+   "name": "Lakehouse",
+   "intent": "Combine lake-style storage with managed table, transaction, and analytical-serving capabilities.",
+   "family": "09.02",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0193",
+   "kind": "style",
+   "evolving": false,
+   "name": "Batch Processing",
+   "intent": "Process bounded data sets as scheduled or triggered jobs.",
+   "family": "09.03",
+   "observability": "repository",
+   "detectors": [
+    "batch-and-workflows"
+   ]
+  },
+  {
+   "id": "arch-0194",
+   "kind": "style",
+   "evolving": false,
+   "name": "Stream Processing",
+   "intent": "Continuously process incoming records and maintain running state or results.",
+   "family": "09.03",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0195",
+   "kind": "technique",
+   "evolving": false,
+   "name": "Micro-batch Processing",
+   "intent": "Process a continuing input stream as successive small bounded batches.",
+   "family": "09.03",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0196",
+   "kind": "style",
+   "evolving": false,
+   "name": "Lambda Architecture",
+   "intent": "Combine separate batch and speed paths with a serving layer.",
+   "family": "09.03",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0197",
+   "kind": "style",
+   "evolving": false,
+   "name": "Kappa Architecture",
+   "intent": "Center processing on a replayable stream rather than separate batch and speed implementations.",
+   "family": "09.03",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0198",
+   "kind": "reference_architecture",
+   "evolving": false,
+   "name": "Hub-and-Spoke Data Warehouse",
+   "intent": "Use an integrated warehouse hub to supply dependent analytical data marts.",
+   "family": "09.04",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0199",
+   "kind": "model",
+   "evolving": false,
+   "name": "Data Mesh",
+   "intent": "Distribute data-product ownership by domain with shared platform and federated governance principles.",
+   "family": "09.04",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0200",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Data Virtualization",
+   "intent": "Expose a logical data-access layer over separately stored sources.",
+   "family": "09.04",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0201",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Federated Query",
+   "intent": "Execute coordinated queries across multiple data stores without requiring one physical store.",
+   "family": "09.04",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0202",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Medallion Data Layers",
+   "intent": "Progressively refine data through quality and serving layers; common names are bronze, silver, and gold.",
+   "family": "09.04",
+   "observability": "repository",
+   "detectors": [
+    "analytical-data"
+   ]
+  },
+  {
+   "id": "arch-0203",
+   "kind": "model",
+   "evolving": false,
+   "name": "Star Schema",
+   "intent": "Organize fact tables around directly connected dimension tables.",
+   "family": "09.05",
+   "observability": "repository",
+   "detectors": [
+    "analytical-data"
+   ]
+  },
+  {
+   "id": "arch-0204",
+   "kind": "model",
+   "evolving": false,
+   "name": "Snowflake Schema",
+   "intent": "Normalize some dimension structures into related dimension tables.",
+   "family": "09.05",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0205",
+   "kind": "model",
+   "evolving": false,
+   "name": "Data Vault",
+   "intent": "Organize historical integration around hubs, links, and descriptive satellites.",
+   "family": "09.05",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0206",
+   "kind": "model",
+   "evolving": false,
+   "name": "Anchor Modeling",
+   "intent": "Use highly decomposed structures to support evolving attributes and historical modeling.",
+   "family": "09.05",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0207",
+   "kind": "technique",
+   "evolving": false,
+   "name": "Windowed Aggregation",
+   "intent": "Aggregate events within explicitly defined count, key, or time windows.",
+   "family": "09.06",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0208",
+   "kind": "technique",
+   "evolving": false,
+   "name": "Event Time and Watermarks",
+   "intent": "Process according to event occurrence time with an explicit estimate of progress and lateness.",
+   "family": "09.06",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0209",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Complex Event Processing",
+   "intent": "Recognize meaningful event combinations, temporal relationships, or sequences.",
+   "family": "09.06",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0210",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Retry",
+   "intent": "Repeat an operation only for failures and conditions judged retryable.",
+   "family": "10.01",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0211",
+   "kind": "technique",
+   "evolving": false,
+   "name": "Exponential Backoff with Jitter",
+   "intent": "Spread retries in time to avoid synchronized overload.",
+   "family": "10.01",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0212",
+   "kind": "technique",
+   "evolving": false,
+   "name": "Timeout and Deadline Propagation",
+   "intent": "Bound waiting and carry an end-to-end time budget across dependency calls.",
+   "family": "10.01",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0213",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Circuit Breaker",
+   "intent": "Stop repeated calls to a failing dependency and probe for recovery.",
+   "family": "10.01",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0214",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Bulkhead",
+   "intent": "Separate resources or execution pools so one failing workload cannot consume all capacity.",
+   "family": "10.02",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0215",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Fail Fast",
+   "intent": "Reject work promptly when its required preconditions or dependencies cannot be satisfied.",
+   "family": "10.02",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0216",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Supervision Tree",
+   "intent": "Have supervisors monitor child processes and apply explicit restart or escalation policies.",
+   "family": "10.02",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0217",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Fallback",
+   "intent": "Use an explicitly defined alternative when the preferred operation cannot succeed.",
+   "family": "10.03",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0218",
+   "kind": "technique",
+   "evolving": false,
+   "name": "Graceful Degradation",
+   "intent": "Reduce optional capabilities while preserving the most valuable supported behavior.",
+   "family": "10.03",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0219",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Static Response",
+   "intent": "Return a predefined safe response when dynamic processing is unavailable or unnecessary.",
+   "family": "10.03",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0220",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Active-Passive",
+   "intent": "Keep a standby instance or site ready to take over from the active one.",
+   "family": "10.04",
+   "observability": "beyond_repository"
+  },
+  {
+   "id": "arch-0221",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Active-Active",
+   "intent": "Serve work from multiple active instances or sites under explicit state and routing rules.",
+   "family": "10.04",
+   "observability": "beyond_repository"
+  },
+  {
+   "id": "arch-0222",
+   "kind": "reference_architecture",
+   "evolving": false,
+   "name": "Warm Standby",
+   "intent": "Maintain a smaller functioning recovery environment that can be expanded.",
+   "family": "10.04",
+   "observability": "beyond_repository"
+  },
+  {
+   "id": "arch-0223",
+   "kind": "reference_architecture",
+   "evolving": false,
+   "name": "Pilot Light",
+   "intent": "Keep essential recovery foundations available while bringing remaining resources online after a failure.",
+   "family": "10.04",
+   "observability": "beyond_repository"
+  },
+  {
+   "id": "arch-0224",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Checkpoint-Restart",
+   "intent": "Resume computation from a durable state checkpoint.",
+   "family": "10.05",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0225",
+   "kind": "technique",
+   "evolving": false,
+   "name": "Backup and Restore",
+   "intent": "Recover data and configuration from retained recovery copies.",
+   "family": "10.05",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0226",
+   "kind": "technique",
+   "evolving": false,
+   "name": "Point-in-Time Recovery",
+   "intent": "Reconstruct stored data to a selected recoverable time using backups and change history.",
+   "family": "10.05",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0227",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Health-Based Failover",
+   "intent": "Switch traffic or responsibility when explicit health criteria indicate a failure.",
+   "family": "10.05",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0228",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Cache-Aside",
+   "intent": "Have application code populate cached values on misses and manage invalidation.",
+   "family": "11.01",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0229",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Read-Through Cache",
+   "intent": "Let the caching layer load missing values from the authoritative store.",
+   "family": "11.01",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0230",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Write-Through Cache",
+   "intent": "Write through the cache boundary to the backing store before reporting completion.",
+   "family": "11.01",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0231",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Write-Behind Cache",
+   "intent": "Buffer updates in the cache layer and persist them asynchronously with explicit durability semantics.",
+   "family": "11.01",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0232",
+   "kind": "technique",
+   "evolving": false,
+   "name": "Refresh-Ahead",
+   "intent": "Refresh likely-to-be-needed values before their cached versions expire.",
+   "family": "11.01",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0233",
+   "kind": "technique",
+   "evolving": false,
+   "name": "Stale-While-Revalidate",
+   "intent": "Serve an allowed stale value while refreshing the value asynchronously.",
+   "family": "11.01",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0234",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Load-Balanced Stateless Replicas",
+   "intent": "Distribute requests across interchangeable serving instances with state externalized as needed.",
+   "family": "11.02",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0235",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Partitioned Workers",
+   "intent": "Assign independent key or work partitions to workers with explicit ownership.",
+   "family": "11.02",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0236",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Queue-Based Load Leveling",
+   "intent": "Buffer incoming work to smooth bursts before backend processing.",
+   "family": "11.02",
+   "observability": "repository",
+   "detectors": [
+    "load-leveling"
+   ]
+  },
+  {
+   "id": "arch-0237",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Priority Queue",
+   "intent": "Choose work order using explicit priority and fairness rules.",
+   "family": "11.02",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0238",
+   "kind": "technique",
+   "evolving": false,
+   "name": "Backpressure",
+   "intent": "Signal limited capacity upstream so producers reduce or pause work.",
+   "family": "11.03",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0239",
+   "kind": "technique",
+   "evolving": false,
+   "name": "Rate Limiting",
+   "intent": "Bound allowed activity over a defined interval or token budget.",
+   "family": "11.03",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0240",
+   "kind": "technique",
+   "evolving": false,
+   "name": "Throttling",
+   "intent": "Constrain consumption or acceptance of work to protect service limits.",
+   "family": "11.03",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0241",
+   "kind": "technique",
+   "evolving": false,
+   "name": "Load Shedding",
+   "intent": "Reject or discard selected work when accepting it would damage overall service.",
+   "family": "11.03",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0242",
+   "kind": "technique",
+   "evolving": false,
+   "name": "Admission Control",
+   "intent": "Decide whether to admit work based on available capacity and resource requirements.",
+   "family": "11.03",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0243",
+   "kind": "technique",
+   "evolving": false,
+   "name": "Batching",
+   "intent": "Combine several operations into one processing or transport unit.",
+   "family": "11.04",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0244",
+   "kind": "technique",
+   "evolving": false,
+   "name": "Pipelining",
+   "intent": "Overlap operations so several stages or requests progress concurrently.",
+   "family": "11.04",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0245",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Request Coalescing",
+   "intent": "Combine equivalent concurrent requests into one underlying operation.",
+   "family": "11.04",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0246",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Connection Pool",
+   "intent": "Reuse bounded connections instead of repeatedly creating them.",
+   "family": "11.04",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0247",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Object Pool",
+   "intent": "Reuse costly objects under controlled ownership and capacity limits.",
+   "family": "11.04",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0248",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Static Content Hosting",
+   "intent": "Serve immutable or static assets from a dedicated content-delivery surface.",
+   "family": "11.05",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0249",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Edge Caching",
+   "intent": "Place eligible cached content near users with explicit freshness and invalidation rules.",
+   "family": "11.05",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0250",
+   "kind": "reference_architecture",
+   "evolving": false,
+   "name": "Content Delivery Network",
+   "intent": "Use a distributed delivery network to serve content from geographically suitable locations.",
+   "family": "11.05",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0251",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Service Instance per Host",
+   "intent": "Give each service instance its own host-level runtime boundary.",
+   "family": "12.01",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0252",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Service Instance per Container",
+   "intent": "Package a service instance in an isolated container runtime unit.",
+   "family": "12.01",
+   "observability": "repository",
+   "detectors": [
+    "runtime-packaging"
+   ]
+  },
+  {
+   "id": "arch-0253",
+   "kind": "model",
+   "evolving": false,
+   "name": "Serverless Execution",
+   "intent": "Delegate provisioning and scaling of execution capacity to a managed runtime.",
+   "family": "12.01",
+   "observability": "repository",
+   "detectors": [
+    "runtime-packaging"
+   ]
+  },
+  {
+   "id": "arch-0254",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Immutable Deployment",
+   "intent": "Replace deployed instances with newly built artifacts instead of changing instances in place.",
+   "family": "12.01",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0255",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Sidecar",
+   "intent": "Deploy a supporting component alongside an application with an intentionally coupled lifecycle.",
+   "family": "12.02",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0256",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Ambassador",
+   "intent": "Use a helper to handle outgoing communication on behalf of the application.",
+   "family": "12.02",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0257",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Adapter Container",
+   "intent": "Use a co-located helper to normalize an application's interface or output.",
+   "family": "12.02",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0258",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Service Mesh",
+   "intent": "Apply shared service-to-service network behavior through an infrastructure layer.",
+   "family": "12.03",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0259",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Node-Level Proxy",
+   "intent": "Share network mediation across workloads on a node rather than attaching one proxy to every workload.",
+   "family": "12.03",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0260",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Hub-and-Spoke Network",
+   "intent": "Connect workload networks through a controlled shared connectivity hub.",
+   "family": "12.03",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0261",
+   "kind": "reference_architecture",
+   "evolving": false,
+   "name": "Hybrid Split Deployment",
+   "intent": "Place selected application or data responsibilities on different on-premises and cloud environments.",
+   "family": "12.04",
+   "observability": "beyond_repository"
+  },
+  {
+   "id": "arch-0262",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Cloud Bursting",
+   "intent": "Expand selected workload execution into additional cloud capacity when local capacity is insufficient.",
+   "family": "12.04",
+   "observability": "beyond_repository"
+  },
+  {
+   "id": "arch-0263",
+   "kind": "reference_architecture",
+   "evolving": false,
+   "name": "Edge-Cloud Split",
+   "intent": "Place time-sensitive or local work at the edge and coordinated processing in central infrastructure.",
+   "family": "12.04",
+   "observability": "beyond_repository"
+  },
+  {
+   "id": "arch-0264",
+   "kind": "reference_architecture",
+   "evolving": false,
+   "name": "Disconnected Deployment",
+   "intent": "Operate within an isolated environment using explicit transfer, update, and synchronization boundaries.",
+   "family": "12.04",
+   "observability": "beyond_repository"
+  },
+  {
+   "id": "arch-0265",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Blue-Green Deployment",
+   "intent": "Maintain two environments and switch serving traffic to the newly validated version.",
+   "family": "12.05",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0266",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Canary Deployment",
+   "intent": "Expose a new version to a limited population before expanding its traffic.",
+   "family": "12.05",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0267",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Rolling Deployment",
+   "intent": "Replace serving instances incrementally while the service remains available.",
+   "family": "12.05",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0268",
+   "kind": "technique",
+   "evolving": false,
+   "name": "Shadow Deployment",
+   "intent": "Send copied inputs to a non-authoritative implementation while controlling its side effects.",
+   "family": "12.05",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0269",
+   "kind": "model",
+   "evolving": false,
+   "name": "Silo Model",
+   "intent": "Give a tenant dedicated resources for the selected isolation boundary.",
+   "family": "13.01",
+   "observability": "beyond_repository"
+  },
+  {
+   "id": "arch-0270",
+   "kind": "model",
+   "evolving": false,
+   "name": "Pool Model",
+   "intent": "Share resources between tenants with explicit logical isolation.",
+   "family": "13.01",
+   "observability": "beyond_repository"
+  },
+  {
+   "id": "arch-0271",
+   "kind": "model",
+   "evolving": false,
+   "name": "Bridge Model",
+   "intent": "Combine silo and pool approaches across layers or tenant groups.",
+   "family": "13.01",
+   "observability": "beyond_repository"
+  },
+  {
+   "id": "arch-0272",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Database per Tenant",
+   "intent": "Place each tenant's selected data in a dedicated database.",
+   "family": "13.02",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0273",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Schema per Tenant",
+   "intent": "Separate tenant data into distinct schemas within a shared database system.",
+   "family": "13.02",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0274",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Shared Tables with Tenant Keys",
+   "intent": "Co-locate tenant rows while enforcing tenant identity in access and query paths.",
+   "family": "13.02",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0275",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Deployment Stamp",
+   "intent": "Repeat a complete application deployment unit and assign tenants or workloads to instances.",
+   "family": "13.03",
+   "observability": "beyond_repository"
+  },
+  {
+   "id": "arch-0276",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Cell-Based Architecture",
+   "intent": "Place workloads in independently bounded cells to contain failures and limit blast radius.",
+   "family": "13.03",
+   "observability": "beyond_repository"
+  },
+  {
+   "id": "arch-0277",
+   "kind": "technique",
+   "evolving": false,
+   "name": "Shuffle Sharding",
+   "intent": "Assign overlapping subsets of resources so unrelated customers rarely share an entire failure set.",
+   "family": "13.03",
+   "observability": "beyond_repository"
+  },
+  {
+   "id": "arch-0278",
+   "kind": "technique",
+   "evolving": false,
+   "name": "Tenant Context Propagation",
+   "intent": "Carry verified tenant identity through all relevant execution and data-access boundaries.",
+   "family": "13.04",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0279",
+   "kind": "technique",
+   "evolving": false,
+   "name": "Per-Tenant Quotas",
+   "intent": "Apply tenant-specific resource budgets or limits.",
+   "family": "13.04",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0280",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Tenant-Aware Routing",
+   "intent": "Route work according to tenant placement, isolation, or service-tier rules.",
+   "family": "13.04",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0281",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Identity Federation",
+   "intent": "Accept identities through a defined trust relationship with external identity providers.",
+   "family": "14.01",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0282",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Identity Broker",
+   "intent": "Mediate identity exchange between applications and one or more identity providers.",
+   "family": "14.01",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0283",
+   "kind": "technique",
+   "evolving": false,
+   "name": "Workload Identity",
+   "intent": "Give running software verifiable identities for service-to-service access.",
+   "family": "14.01",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0284",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Policy Decision and Enforcement Separation",
+   "intent": "Separate policy evaluation from the components that enforce access decisions.",
+   "family": "14.02",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0285",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Reference Monitor",
+   "intent": "Mediate protected resource access through an explicitly trusted enforcement component.",
+   "family": "14.02",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0286",
+   "kind": "model",
+   "evolving": false,
+   "name": "Role-Based Access Control",
+   "intent": "Express permissions through assigned roles.",
+   "family": "14.02",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0287",
+   "kind": "model",
+   "evolving": false,
+   "name": "Attribute-Based Access Control",
+   "intent": "Evaluate access using attributes of subjects, resources, actions, and context.",
+   "family": "14.02",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0288",
+   "kind": "model",
+   "evolving": false,
+   "name": "Relationship-Based Access Control",
+   "intent": "Evaluate access using relevant relationships between subjects and resources.",
+   "family": "14.02",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0289",
+   "kind": "technique",
+   "evolving": false,
+   "name": "Token Exchange",
+   "intent": "Convert an accepted security token into one suitable for a downstream audience and delegation scope.",
+   "family": "14.03",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0290",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Valet Key",
+   "intent": "Grant narrow direct access to a resource using a constrained temporary credential.",
+   "family": "14.03",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0291",
+   "kind": "model",
+   "evolving": false,
+   "name": "Capability-Based Security",
+   "intent": "Represent authority through possession of explicit unforgeable capabilities.",
+   "family": "14.03",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0292",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Security Reverse Proxy",
+   "intent": "Enforce selected security checks at a controlled inbound service boundary.",
+   "family": "14.04",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0293",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Bastion",
+   "intent": "Provide a deliberately restricted administrative entry point.",
+   "family": "14.04",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0294",
+   "kind": "technique",
+   "evolving": false,
+   "name": "Microsegmentation",
+   "intent": "Constrain lateral communication using fine-grained network or workload boundaries.",
+   "family": "14.04",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0295",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Sandbox",
+   "intent": "Run less-trusted code or content with restricted resources and authority.",
+   "family": "14.04",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0296",
+   "kind": "technique",
+   "evolving": false,
+   "name": "Envelope Encryption",
+   "intent": "Encrypt data with data keys that are protected by separate wrapping keys.",
+   "family": "14.05",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0297",
+   "kind": "technique",
+   "evolving": false,
+   "name": "Tokenization",
+   "intent": "Replace sensitive values with references resolved through a protected token service.",
+   "family": "14.05",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0298",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Secret Broker",
+   "intent": "Provide controlled retrieval or issuance of secrets without embedding them in application artifacts.",
+   "family": "14.05",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0299",
+   "kind": "model",
+   "evolving": false,
+   "name": "Zero Trust",
+   "intent": "Continuously evaluate access under explicit identity, context, and least-privilege assumptions.",
+   "family": "14.06",
+   "observability": "beyond_repository"
+  },
+  {
+   "id": "arch-0300",
+   "kind": "technique",
+   "evolving": false,
+   "name": "Defense in Depth",
+   "intent": "Compose independent protective controls across relevant failure and attack paths.",
+   "family": "14.06",
+   "observability": "beyond_repository"
+  },
+  {
+   "id": "arch-0301",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Control Plane and Data Plane Separation",
+   "intent": "Separate configuration and orchestration decisions from request or data processing.",
+   "family": "15.01",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0302",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Management Plane",
+   "intent": "Provide a bounded administrative surface for operational lifecycle actions.",
+   "family": "15.01",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0303",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Reconciliation Loop",
+   "intent": "Repeatedly compare observed state with desired state and apply bounded corrective actions.",
+   "family": "15.02",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0304",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Operator",
+   "intent": "Encode application-specific lifecycle knowledge in controllers acting on declared resources.",
+   "family": "15.02",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0305",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "External Configuration Store",
+   "intent": "Keep operational configuration outside application deployment packages.",
+   "family": "15.02",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0306",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Microservice Chassis",
+   "intent": "Provide reusable infrastructure support for recurring service-level operational concerns.",
+   "family": "15.02",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0307",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Telemetry Agent",
+   "intent": "Collect observations near a workload and forward them to processing infrastructure.",
+   "family": "15.03",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0308",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Telemetry Gateway",
+   "intent": "Centralize telemetry processing and export for a group of workloads.",
+   "family": "15.03",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0309",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Centralized Log Aggregation",
+   "intent": "Collect distributed component logs into a shared searchable system.",
+   "family": "15.03",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0310",
+   "kind": "technique",
+   "evolving": false,
+   "name": "Distributed Trace Context Propagation",
+   "intent": "Carry request and span relationships across asynchronous and synchronous boundaries.",
+   "family": "15.03",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0311",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Append-Only Audit Ledger",
+   "intent": "Record significant operational or business actions without ordinary in-place history rewriting.",
+   "family": "15.04",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0312",
+   "kind": "technique",
+   "evolving": false,
+   "name": "Tamper-Evident Logging",
+   "intent": "Make unauthorized alteration of retained records detectable under explicit trust assumptions.",
+   "family": "15.04",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0313",
+   "kind": "technique",
+   "evolving": false,
+   "name": "Provenance Capture",
+   "intent": "Record the origins, transformations, and responsible actors associated with results or artifacts.",
+   "family": "15.04",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0314",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Health Endpoint Monitoring",
+   "intent": "Expose explicit health observations for external monitoring or routing decisions.",
+   "family": "15.05",
+   "observability": "repository",
+   "detectors": [
+    "health-endpoint"
+   ]
+  },
+  {
+   "id": "arch-0315",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Watchdog",
+   "intent": "Monitor a process or control loop and trigger a defined recovery action if it stops progressing.",
+   "family": "15.05",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0316",
+   "kind": "technique",
+   "evolving": false,
+   "name": "Autoscaling Feedback Loop",
+   "intent": "Adjust serving capacity using measurements, policies, delays, and stabilization rules.",
+   "family": "15.05",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0317",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Strangler Fig",
+   "intent": "Gradually redirect capabilities from an existing system into replacement implementations.",
+   "family": "16.01",
+   "observability": "beyond_repository"
+  },
+  {
+   "id": "arch-0318",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Branch by Abstraction",
+   "intent": "Introduce a stable abstraction so implementations can be replaced incrementally.",
+   "family": "16.01",
+   "observability": "beyond_repository"
+  },
+  {
+   "id": "arch-0319",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Parallel Run",
+   "intent": "Operate old and new implementations together and compare results before transferring authority.",
+   "family": "16.01",
+   "observability": "beyond_repository"
+  },
+  {
+   "id": "arch-0320",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Expand-Contract",
+   "intent": "Introduce compatible additions, migrate consumers, and only then remove the old interface or representation.",
+   "family": "16.01",
+   "observability": "beyond_repository"
+  },
+  {
+   "id": "arch-0321",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Decompose by Business Capability",
+   "intent": "Align extracted units with cohesive business capabilities.",
+   "family": "16.02",
+   "observability": "beyond_repository"
+  },
+  {
+   "id": "arch-0322",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Decompose by Subdomain",
+   "intent": "Use domain analysis to identify candidate boundaries for separately evolving capabilities.",
+   "family": "16.02",
+   "observability": "beyond_repository"
+  },
+  {
+   "id": "arch-0323",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Decompose by Transaction Boundary",
+   "intent": "Keep strongly coupled changes together where local atomicity is a dominant requirement.",
+   "family": "16.02",
+   "observability": "beyond_repository"
+  },
+  {
+   "id": "arch-0324",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Versioned Contract",
+   "intent": "Identify supported API, event, or schema contract versions explicitly.",
+   "family": "16.03",
+   "observability": "repository",
+   "detectors": [
+    "versioned-contract"
+   ]
+  },
+  {
+   "id": "arch-0325",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Tolerant Reader",
+   "intent": "Consume only required fields while handling compatible additions according to defined validation rules.",
+   "family": "16.03",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0326",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Schema Registry",
+   "intent": "Manage schema identity, versions, and compatibility rules in a shared contract facility.",
+   "family": "16.03",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0327",
+   "kind": "technique",
+   "evolving": false,
+   "name": "Consumer-Driven Contract Testing",
+   "intent": "Verify provider behavior against explicit expectations supplied by its consumers.",
+   "family": "16.03",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0328",
+   "kind": "technique",
+   "evolving": false,
+   "name": "Characterization Testing",
+   "intent": "Capture existing observable behavior before changing the implementation.",
+   "family": "16.04",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0329",
+   "kind": "technique",
+   "evolving": false,
+   "name": "Differential Testing",
+   "intent": "Run equivalent cases against implementations and inspect meaningful output differences.",
+   "family": "16.04",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0330",
+   "kind": "technique",
+   "evolving": false,
+   "name": "Recorded Traffic Replay",
+   "intent": "Exercise a replacement with recorded interactions under controlled data and side-effect rules.",
+   "family": "16.04",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0331",
+   "kind": "technique",
+   "evolving": false,
+   "name": "Reconciliation",
+   "intent": "Compare authoritative and migrated states and resolve discrepancies before or after cutover.",
+   "family": "16.04",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0332",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Batch Inference",
+   "intent": "Generate predictions for bounded sets of records in scheduled or triggered jobs.",
+   "family": "17.01",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0333",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Online Inference",
+   "intent": "Serve model predictions within an interactive request path.",
+   "family": "17.01",
+   "observability": "repository",
+   "detectors": [
+    "model-serving"
+   ]
+  },
+  {
+   "id": "arch-0334",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Streaming Inference",
+   "intent": "Apply inference continuously to an incoming event stream.",
+   "family": "17.01",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0335",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Two-Stage Retrieval and Ranking",
+   "intent": "Retrieve candidates cheaply and rank the smaller set with a more expensive model.",
+   "family": "17.01",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0336",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Online-Offline Feature Store",
+   "intent": "Coordinate reusable features across training and low-latency serving paths.",
+   "family": "17.01",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0337",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Training Pipeline",
+   "intent": "Represent repeatable data preparation, training, and validation as explicit pipeline stages.",
+   "family": "17.02",
+   "observability": "repository",
+   "detectors": [
+    "batch-and-workflows"
+   ]
+  },
+  {
+   "id": "arch-0338",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Registry-Mediated Model Promotion",
+   "intent": "Promote versioned model artifacts through a controlled registry and deployment boundary.",
+   "family": "17.02",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0339",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Feedback-Driven Retraining",
+   "intent": "Use monitored outcomes and approved triggers to initiate a new training and validation cycle.",
+   "family": "17.02",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0340",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Retrieval-Augmented Generation",
+   "intent": "Retrieve task-relevant material and supply it as grounding context to a generative model.",
+   "family": "17.03",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0341",
+   "kind": "technique",
+   "evolving": false,
+   "name": "Hybrid Retrieval",
+   "intent": "Combine lexical and semantic retrieval signals under an explicit result-merging strategy.",
+   "family": "17.03",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0342",
+   "kind": "technique",
+   "evolving": false,
+   "name": "Retrieve-Then-Rerank",
+   "intent": "Use a second scoring stage to refine an initially retrieved candidate set.",
+   "family": "17.03",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0343",
+   "kind": "reference_architecture",
+   "evolving": true,
+   "name": "GraphRAG",
+   "intent": "Use graph-derived structure or summaries in retrieval and grounding; implementations vary substantially.",
+   "family": "17.03",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0344",
+   "kind": "architectural_pattern",
+   "evolving": true,
+   "name": "Agentic Retrieval",
+   "intent": "Let a model iteratively choose retrieval steps under bounded execution and access rules.",
+   "family": "17.03",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0345",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Prompt Chaining",
+   "intent": "Pass results through predefined stages of model-based transformation.",
+   "family": "17.04",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0346",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Model Routing",
+   "intent": "Select a model or specialized processing path according to the task.",
+   "family": "17.04",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0347",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Parallel Model Calls",
+   "intent": "Run independent model operations and combine their results using explicit aggregation rules.",
+   "family": "17.04",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0348",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Orchestrator-Workers",
+   "intent": "Have an orchestrator decompose work and delegate specialized activities.",
+   "family": "17.04",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0349",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Evaluator-Optimizer",
+   "intent": "Iterate between producing a candidate and evaluating it against defined criteria.",
+   "family": "17.04",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0350",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Single Agent with Tools",
+   "intent": "Let one bounded agent select and invoke tools to pursue a task.",
+   "family": "17.05",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0351",
+   "kind": "architectural_pattern",
+   "evolving": true,
+   "name": "Supervisor-Worker Agents",
+   "intent": "Use a supervising agent to assign and coordinate specialized agent work.",
+   "family": "17.05",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0352",
+   "kind": "architectural_pattern",
+   "evolving": true,
+   "name": "Agent Handoff",
+   "intent": "Transfer control and selected context to a different specialized agent.",
+   "family": "17.05",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0353",
+   "kind": "architectural_pattern",
+   "evolving": true,
+   "name": "Shared-Conversation Agents",
+   "intent": "Coordinate multiple agents through a managed conversation with explicit turn and termination rules.",
+   "family": "17.05",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0354",
+   "kind": "architectural_pattern",
+   "evolving": true,
+   "name": "Model Gateway",
+   "intent": "Mediate model access through shared routing, identity, budget, and observation controls.",
+   "family": "17.06",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0355",
+   "kind": "architectural_pattern",
+   "evolving": true,
+   "name": "Model Cascade",
+   "intent": "Escalate from cheaper or narrower models to more capable models under explicit acceptance rules.",
+   "family": "17.06",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0356",
+   "kind": "technique",
+   "evolving": false,
+   "name": "Structured Output Validation",
+   "intent": "Check generated outputs against schemas and business constraints before downstream use.",
+   "family": "17.06",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0357",
+   "kind": "architectural_pattern",
+   "evolving": true,
+   "name": "Deterministic Execution Around Model Decisions",
+   "intent": "Keep authorization, state changes, and execution guarantees in explicit code around learned decisions.",
+   "family": "17.06",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0358",
+   "kind": "technique",
+   "evolving": false,
+   "name": "Retrieval-Backed Agent Memory",
+   "intent": "Persist selected task experience externally and retrieve it under bounded relevance and access rules.",
+   "family": "17.06",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0359",
+   "kind": "model",
+   "evolving": false,
+   "name": "Actor Model",
+   "intent": "Represent stateful participants as independently addressed message-processing actors.",
+   "family": "18.01",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0360",
+   "kind": "design_pattern",
+   "evolving": false,
+   "name": "Active Object",
+   "intent": "Separate a method's invocation from its execution using an explicit scheduling boundary.",
+   "family": "18.01",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0361",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Reactor",
+   "intent": "Dispatch handlers when synchronous event demultiplexing reports readiness.",
+   "family": "18.01",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0362",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Proactor",
+   "intent": "Dispatch completion handlers for operations performed asynchronously.",
+   "family": "18.01",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0363",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Half-Sync/Half-Async",
+   "intent": "Separate synchronous application work from asynchronous lower-level processing.",
+   "family": "18.01",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0364",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Leader/Followers Thread Pool",
+   "intent": "Rotate thread leadership for waiting on and dispatching events.",
+   "family": "18.01",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0365",
+   "kind": "design_pattern",
+   "evolving": false,
+   "name": "Monitor Object",
+   "intent": "Serialize access to an object's state using controlled synchronization and condition coordination.",
+   "family": "18.01",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0366",
+   "kind": "design_pattern",
+   "evolving": false,
+   "name": "Acceptor-Connector",
+   "intent": "Separate connection establishment and service initialization from subsequent connection processing.",
+   "family": "18.01",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0367",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Master-Worker",
+   "intent": "Have a coordinator distribute work among independently executing workers.",
+   "family": "18.02",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0368",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Fork-Join",
+   "intent": "Split a computation into parallel subcomputations and combine their results.",
+   "family": "18.02",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0369",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "MapReduce",
+   "intent": "Transform partitions into intermediate keyed results and combine values by key.",
+   "family": "18.02",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0370",
+   "kind": "model",
+   "evolving": false,
+   "name": "Bulk Synchronous Parallel",
+   "intent": "Organize parallel computation into local work, communication, and synchronization phases.",
+   "family": "18.02",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0371",
+   "kind": "technique",
+   "evolving": false,
+   "name": "Data Parallelism",
+   "intent": "Apply equivalent computations to different partitions of input data.",
+   "family": "18.02",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0372",
+   "kind": "technique",
+   "evolving": false,
+   "name": "Pipeline Parallelism",
+   "intent": "Execute different computational stages concurrently across work items.",
+   "family": "18.02",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0373",
+   "kind": "technique",
+   "evolving": false,
+   "name": "Model Parallelism",
+   "intent": "Partition a model's computations across execution resources.",
+   "family": "18.02",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0374",
+   "kind": "style",
+   "evolving": false,
+   "name": "Cyclic Executive",
+   "intent": "Execute scheduled tasks according to a repeating predetermined cycle.",
+   "family": "18.03",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0375",
+   "kind": "style",
+   "evolving": false,
+   "name": "Time-Triggered Architecture",
+   "intent": "Initiate coordinated actions according to an explicit time schedule.",
+   "family": "18.03",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0376",
+   "kind": "style",
+   "evolving": false,
+   "name": "Event-Triggered Architecture",
+   "intent": "Initiate processing in response to external or internal events.",
+   "family": "18.03",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0377",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Interrupt-to-Task Deferral",
+   "intent": "Keep immediate interrupt handling bounded and defer longer processing to scheduled tasks.",
+   "family": "18.03",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0378",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Feedback Control Loop",
+   "intent": "Adjust actions using observed differences between measured and desired conditions.",
+   "family": "18.04",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0379",
+   "kind": "style",
+   "evolving": false,
+   "name": "Hierarchical Control",
+   "intent": "Arrange controllers at levels with distinct time horizons and responsibilities.",
+   "family": "18.04",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0380",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Sense-Plan-Act",
+   "intent": "Separate environment observation, action planning, and action execution.",
+   "family": "18.04",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0381",
+   "kind": "style",
+   "evolving": false,
+   "name": "Subsumption Architecture",
+   "intent": "Layer reactive behaviors so higher-level behavior can suppress or influence lower-level behavior.",
+   "family": "18.04",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0382",
+   "kind": "reference_architecture",
+   "evolving": false,
+   "name": "Digital Twin",
+   "intent": "Maintain a software representation of a physical system connected to its observations and state.",
+   "family": "18.04",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0383",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Compiler Pipeline",
+   "intent": "Transform source through explicit analysis and generation stages.",
+   "family": "18.05",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0384",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Interpreter Architecture",
+   "intent": "Execute program meaning through an interpreter operating on a program representation.",
+   "family": "18.05",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0385",
+   "kind": "reference_architecture",
+   "evolving": false,
+   "name": "Virtual Machine",
+   "intent": "Execute an abstract instruction set through a portable or isolated runtime.",
+   "family": "18.05",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0386",
+   "kind": "technique",
+   "evolving": false,
+   "name": "Intermediate Representation",
+   "intent": "Use a defined internal program representation between analysis and generation stages.",
+   "family": "18.05",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0387",
+   "kind": "technique",
+   "evolving": false,
+   "name": "Just-in-Time Compilation",
+   "intent": "Compile selected program portions during execution.",
+   "family": "18.05",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0388",
+   "kind": "technique",
+   "evolving": false,
+   "name": "Tiered Compilation",
+   "intent": "Move execution between interpretation or compiled tiers based on runtime information.",
+   "family": "18.05",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0389",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Store-and-Forward",
+   "intent": "Persist outgoing data locally and transmit it when connectivity becomes available.",
+   "family": "18.06",
+   "observability": "repository"
+  },
+  {
+   "id": "arch-0390",
+   "kind": "architectural_pattern",
+   "evolving": false,
+   "name": "Device Gateway",
+   "intent": "Mediate device protocols, identities, aggregation, and upstream communication at an edge boundary.",
+   "family": "18.06",
+   "observability": "repository"
+  }
+ ],
+ "antipatterns": [
+  {
+   "id": "anti-0001",
+   "name": "Distributed monolith",
+   "typical_evidence": "Coordinated deployments, shared release coupling, chatty calls, or hidden shared data dependencies",
+   "remediation": [
+    "Modular monolith",
+    "improved service boundaries",
+    "asynchronous interactions where suitable"
+   ]
+  },
+  {
+   "id": "anti-0002",
+   "name": "Big ball of mud",
+   "typical_evidence": "Unclear ownership and uncontrolled dependencies across responsibilities",
+   "remediation": [
+    "Explicit module boundaries",
+    "layered or vertical-slice organization"
+   ]
+  },
+  {
+   "id": "anti-0003",
+   "name": "God service or god module",
+   "typical_evidence": "One unit owns unrelated behavior and becomes a change bottleneck",
+   "remediation": [
+    "Capability or domain decomposition"
+   ]
+  },
+  {
+   "id": "anti-0004",
+   "name": "Uncontrolled shared database",
+   "typical_evidence": "Services bypass ownership boundaries and depend directly on each other's storage details",
+   "remediation": [
+    "Explicit data ownership",
+    "APIs",
+    "read replicas or projections"
+   ],
+   "detectors": [
+    "data-ownership"
+   ]
+  },
+  {
+   "id": "anti-0005",
+   "name": "Chatty synchronous service chain",
+   "typical_evidence": "Many serial remote calls amplify latency and failure",
+   "remediation": [
+    "API composition",
+    "coarse-grained boundaries",
+    "local replicas",
+    "asynchronous workflows"
+   ]
+  },
+  {
+   "id": "anti-0006",
+   "name": "Dual-write gap",
+   "typical_evidence": "Database updates and message publication can succeed independently",
+   "remediation": [
+    "Transactional outbox",
+    "suitable transactional coordination"
+   ],
+   "detectors": [
+    "dual-write"
+   ]
+  },
+  {
+   "id": "anti-0007",
+   "name": "Retry storm",
+   "typical_evidence": "Many callers repeatedly retry the same overloaded dependency",
+   "remediation": [
+    "Jitter",
+    "bounded retries",
+    "circuit breaker",
+    "admission control"
+   ]
+  },
+  {
+   "id": "anti-0008",
+   "name": "Unbounded concurrency",
+   "typical_evidence": "Accepted work grows without resource limits or backpressure",
+   "remediation": [
+    "Bounded queues",
+    "quotas",
+    "backpressure",
+    "load shedding"
+   ]
+  },
+  {
+   "id": "anti-0009",
+   "name": "Uncontrolled agent loop",
+   "typical_evidence": "Repeated model or tool calls without progress or bounded authority",
+   "remediation": [
+    "Durable state",
+    "budgets",
+    "termination rules",
+    "approval and validation gates"
+   ]
+  }
+ ]
+}

@@ -15,9 +15,9 @@ export const PLANES: PlaneMeta[] = [
     id: "architecture",
     eyebrow: "01 · ARCHITECTURE",
     title: "Architecture",
-    blurb: "Packages, components, symbols and what they depend on.",
-    kinds: ["Repository", "Package", "Component", "Symbol", "ExternalDependency"],
-    coverage: ["import_resolution", "dependency_capability"],
+    blurb: "Packages, components, symbols and what they depend on, and the architecture patterns and antipatterns they show.",
+    kinds: ["Repository", "Package", "Component", "Symbol", "ExternalDependency", "ArchitecturePattern", "Antipattern"],
+    coverage: ["import_resolution", "dependency_capability", "architecture_patterns"],
   },
   {
     id: "contracts",
@@ -89,6 +89,7 @@ export const DOMAIN_LABEL: Record<string, string> = {
   data_lineage: "Data reads and writes named",
   contract_match: "Contracts matched",
   deployment_refs: "Deployment references resolved",
+  architecture_patterns: "Catalogue patterns looked for",
 };
 
 export function domainLabel(domain: string): string {

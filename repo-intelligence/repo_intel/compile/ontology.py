@@ -43,6 +43,11 @@ class EntityKind(StrEnum):
     # Teradata or T-SQL procedure. Legacy repositories rarely have a manifest, so each
     # declares its own unit of code. Natural key {platform, name}.
     PROGRAM = "Program"
+    # Architecture patterns and antipatterns (spec §8.8): catalogue entries a repository,
+    # component or resource exhibits. Natural key {catalog, id}; the id is the catalogue's own
+    # (`arch-0110`, `anti-0006`), never derived from the entry's position.
+    ARCHITECTURE_PATTERN = "ArchitecturePattern"
+    ANTIPATTERN = "Antipattern"
     FEATURE = "Feature"  # DM08 behaviour hypotheses only, behind a flag that is off by default
     # Reserved for DM09; not emitted in v1.
     REQUIREMENT = "Requirement"
@@ -113,6 +118,7 @@ class Predicate(StrEnum):
     DERIVED_FROM = "DERIVED_FROM"
     PRODUCES = "PRODUCES"
     SERVES = "SERVES"
+    EXHIBITS = "EXHIBITS"
 
 
 K = EntityKind
@@ -167,6 +173,9 @@ RELATIONS: dict[Predicate, RelationSchema] = {
     P.DERIVED_FROM: _r({K.DATASET, K.TABLE}, {K.DATASET, K.TABLE}),
     P.PRODUCES: _r(_CODE | _WORK, {K.ML_MODEL}),
     P.SERVES: _r({K.DEPLOYMENT_UNIT, K.COMPONENT}, {K.ML_MODEL}),
+    # What the compiled knowledge shows a pattern applies to. Never weaker than a heuristic:
+    # a pattern is derived from facts, or decided by DM11, which records the model's part.
+    P.EXHIBITS: _r({K.REPOSITORY, K.COMPONENT, K.INTERFACE, K.EVENT_TOPIC, K.TABLE, K.DATASET, K.JOB, K.DEPLOYMENT_UNIT, K.INFRASTRUCTURE_RESOURCE, K.ML_MODEL}, {K.ARCHITECTURE_PATTERN, K.ANTIPATTERN}),
 }
 assert set(RELATIONS) == set(Predicate)
 FUNCTIONAL: frozenset[Predicate] = frozenset(p for p, schema in RELATIONS.items() if schema.functional)

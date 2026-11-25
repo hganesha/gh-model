@@ -669,6 +669,57 @@
     }
    },
    "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "databricks",
+     "name": "orders_daily"
+    }
+   },
+   "predicate": "EXHIBITS",
+   "object": {
+    "kind": "ArchitecturePattern",
+    "natural_key": {
+     "catalog": "arch-taxonomy-v1",
+     "id": "arch-0125"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "databricks",
+     "name": "orders_daily"
+    }
+   },
+   "predicate": "EXHIBITS",
+   "object": {
+    "kind": "ArchitecturePattern",
+    "natural_key": {
+     "catalog": "arch-taxonomy-v1",
+     "id": "arch-0193"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Repository",
+    "natural_key": {}
+   },
+   "predicate": "EXHIBITS",
+   "object": {
+    "kind": "ArchitecturePattern",
+    "natural_key": {
+     "catalog": "arch-taxonomy-v1",
+     "id": "arch-0202"
+    }
+   },
+   "since": "M2"
   }
  ],
  "absent_entities": [

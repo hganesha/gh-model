@@ -9,6 +9,7 @@ import httpx
 import pytest
 
 from conftest import REPO_ID
+from repo_intel.decisions.architecture import GRANULARITY_SPEC
 from repo_intel.compile.contracts import DecisionSpec, entity_id
 from repo_intel.decisions import behavior as dm_behavior
 from repo_intel.decisions import component as dm
@@ -26,6 +27,9 @@ AMBIGUOUS = lambda f: RuleResult("ambiguous", candidates=("service", "library", 
 
 def spec_with(*steps, **extra):
     return DecisionSpec.model_validate({**dm.SPEC.row(), "strategy": [{"kind": "rules"}, *steps], **extra})
+
+
+GRANULARITY_LABELS = set(GRANULARITY_SPEC.labels)
 
 
 def gateway_with(pick, allowed=("scripted",), llm=None):
@@ -306,6 +310,8 @@ def test_ambiguous_http_and_deployment_matches_go_through_the_ledger(tmp_path):
     assert any(u["predicate"] == "DEPLOYED_AS" and "decision abstained" in u["reason"] for u in unknowns)
 
     def pick(state, options):
+        if "candidates" not in state["features"]:  # DM11 deployment granularity: not what this test is about
+            return options[0]
         cands = {c["id"]: c for c in state["features"]["candidates"]}
         return next(o for o in options if o in cands and (cands[o].get("root") == "apps/api" or "route" in cands[o] and o == sorted(cands)[0]))
 
@@ -318,7 +324,8 @@ def test_ambiguous_http_and_deployment_matches_go_through_the_ledger(tmp_path):
     assert consumes[0]["decision_ref"] in ledger
     deployed = [a for a in assertions if a["predicate"] == "DEPLOYED_AS"]
     assert len(deployed) == 1 and ents[deployed[0]["subject"]]["natural_key"]["root"] == "apps/api" and deployed[0]["decision_ref"] in ledger
-    assert model.calls and all(NONE_OF_THESE in c and all(o.startswith("ent_") for o in c if o != NONE_OF_THESE) for c in model.calls), "options are linker-proposed entities, plus a way to decline"
+    linker_calls = [c for c in model.calls if not set(c) <= {*GRANULARITY_LABELS, NONE_OF_THESE}]
+    assert linker_calls and all(NONE_OF_THESE in c and all(o.startswith("ent_") for o in c if o != NONE_OF_THESE) for c in linker_calls), "options are linker-proposed entities, plus a way to decline"
 
     calls = len(model.calls)
     again = compile_commit(store, repo, REPO_ID, sha, gateway=gw)

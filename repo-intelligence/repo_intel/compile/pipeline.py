@@ -16,8 +16,10 @@ from repo_intel import RKP_SCHEMA
 from repo_intel.ingest import secrets
 from repo_intel.compile.buildgraph import Ref, RunStats, StepRunner
 from repo_intel.compile.capabilities import load_catalogue
+from repo_intel.compile.patterns import load_patterns
 from repo_intel.compile.compiler import GLOBAL_UNIT, REPO_COMPILE, REPO_REQUESTS, ROOT_UNIT, STEPS, UNIT_COMPILE, UNIT_LINK, UNIT_PLAN
 from repo_intel.compile.contracts import DecisionResult, DecisionSpec, Entity, Manifest, ShardRef, entity_id
+from repo_intel.decisions import architecture as dm_architecture
 from repo_intel.decisions import behavior as dm_behavior
 from repo_intel.decisions import component as dm_component
 from repo_intel.decisions import dependency as dm_dependency
@@ -37,7 +39,7 @@ from repo_intel.compile.verify import content_leaves, verify_snapshot
 
 POLICY_VERSION = "repo-intelligence-policy-v3"
 EMPTY_OVERRIDES = override_store.EMPTY.set_hash
-SPECS: dict[str, DecisionSpec] = {s.id: s for s in (dm_component.SPEC, dm_component.TOPOLOGY_SPEC, dm_component.STACK_SPEC, *dm_linking.SPECS, dm_behavior.SPEC)}
+SPECS: dict[str, DecisionSpec] = {s.id: s for s in (dm_component.SPEC, dm_component.TOPOLOGY_SPEC, dm_component.STACK_SPEC, *dm_linking.SPECS, dm_behavior.SPEC, dm_architecture.GRANULARITY_SPEC)}
 
 
 class PublishGateError(RuntimeError):
@@ -86,6 +88,7 @@ def _toolchain_manifest(gateway: Gateway | None, catalogue_hash: str, policy: Co
         "extractors": _extractor_versions(),
         "step_executor": step_executor or _executor_name(),
         "capability_catalogue_hash": catalogue_hash,
+        "pattern_catalogue_hash": digest(load_patterns().row()),
         "compile_settings": policy.model_copy(update={"repository_egress": {}}).row() if policy else None,
         "allowed_providers": sorted(gateway.allowed_providers) if gateway else [],
     }
@@ -211,6 +214,8 @@ def stage_compile(store: ObjectStore, repository_id: str, path_manifest_digest: 
         spec = SPECS[req["spec"]]
         if spec.id == dm_component.TOPOLOGY_SPEC.id:
             rules, criteria = dm_component.topology_rules, dm_component.TOPOLOGY_CRITERIA
+        elif spec.id == dm_architecture.GRANULARITY_SPEC.id:
+            rules, criteria = dm_architecture.granularity_rules, dm_architecture.GRANULARITY_CRITERIA
         else:
             rules, criteria = dm_linking.rules, dm_linking.CRITERIA[spec.id]
         repo_decisions[req["key"]] = decide(spec, req["scope"], req["features"], rules, tuple(req["evidence_ids"]), criteria)
@@ -218,6 +223,7 @@ def stage_compile(store: ObjectStore, repository_id: str, path_manifest_digest: 
     final = runner.load(runner.run(REPO_COMPILE, {
         "repository_id": repository_id, "shards": shard_refs, "links": link_refs,
         "exclusions": pm["exclusions"], "oversize_paths": oversize, "capability_catalogue": catalogue_ref,
+        "pattern_catalogue": Ref(store.put_json(load_patterns().row())),
         "decisions": repo_decisions, "unit_decisions": unit_decisions, "overrides": overrides.document,
     }))
 
