@@ -150,6 +150,49 @@ def mark_inline(sql: str, params: Iterable[Any] = ()) -> str:
     return re.sub(r"(?<!:):([A-Za-z_]\w*)", mark, sql)
 
 
+_CONNECTION_TO = re.compile(r"\bCONNECTION\s+TO\s+(\w+)\s*\(", re.IGNORECASE)
+_EXECUTE_BY = re.compile(r"^\s*EXECUTE\s*\(", re.IGNORECASE)
+_BY_ENGINE = re.compile(r"\s*BY\s+(\w+)", re.IGNORECASE)
+
+
+def _close(sql: str, open_at: int) -> int:
+    """The index just past the parenthesis that closes the one at `open_at`, skipping quoted text."""
+    level, quote, i = 0, None, open_at
+    while i < len(sql):
+        c = sql[i]
+        if quote:
+            quote = None if c == quote else quote
+        elif c in "'\"":
+            quote = c
+        elif c == "(":
+            level += 1
+        elif c == ")":
+            level -= 1
+            if level == 0:
+                return i + 1
+        i += 1
+    return len(sql)
+
+
+def _without_passthrough(sql: str) -> tuple[str, list[str], bool]:
+    """SAS pass-through SQL with the remote database's text taken out.
+
+    `CONNECTION TO <engine> ( ... )` and `EXECUTE ( ... ) BY <engine>` hold SQL in the remote
+    database's own dialect, naming its tables, not SAS ones: they are never read as tables here.
+    Returns the local text, the engines named, and whether the whole statement runs remotely.
+    """
+    engines: list[str] = []
+    if _EXECUTE_BY.match(sql):
+        end = _close(sql, sql.index("("))
+        by = _BY_ENGINE.match(sql, end)
+        if by:
+            return "", [by.group(1).lower()], True
+    while (m := _CONNECTION_TO.search(sql)):
+        engines.append(m.group(1).lower())
+        sql = sql[:m.start()] + "(SELECT NULL)" + sql[_close(sql, m.end() - 1):]
+    return sql, engines, False
+
+
 def sql_tables(sql: str, params: Iterable[Any] = ()) -> dict[str, Any]:
     """The tables a SQL text names after FROM, JOIN, USING, INTO, UPDATE and CREATE, by a token scan.
 
@@ -158,8 +201,13 @@ def sql_tables(sql: str, params: Iterable[Any] = ()) -> dict[str, Any]:
     listed under `dynamic` as written and not resolved: `#x#` and `&x` substitutions, a word
     with a `:name` in it, and every `params` entry marked inline (see `mark_inline`).
     Common table expressions are not tables. `statement` is the main statement's keyword,
-    lower-case.
+    lower-case. SAS pass-through text is the remote database's and is not scanned; the
+    engines it goes to are listed under `remote`.
     """
+    sql, remote, remote_only = _without_passthrough(sql)
+    extra = {"remote": sorted(set(remote))} if remote else {}
+    if remote_only:
+        return {"statement": "execute", "reads": [], "writes": [], "dynamic": [], **extra}
     toks = _tokens(mark_inline(sql, params))
     up = [t.upper() if k == "ident" else t for k, t in toks]
 
@@ -261,7 +309,7 @@ def sql_tables(sql: str, params: Iterable[Any] = ()) -> dict[str, Any]:
                 if up[j:j + 3] == ["IF", "NOT", "EXISTS"]:
                     j += 3
                 table_at(j, True, as_list=False, call_ok=True)  # a column list may follow the name
-    return {"statement": statement.lower(), "reads": sorted(reads), "writes": sorted(writes), "dynamic": sorted(dynamic)}
+    return {"statement": statement.lower(), "reads": sorted(reads), "writes": sorted(writes), "dynamic": sorted(dynamic), **extra}
 
 
 # ------------------------------------------------------------------ facts from behaviour

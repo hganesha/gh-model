@@ -14,13 +14,22 @@ Every entity has one **core kind** from `repo_intel/compile/ontology.py`. Consum
 |---|---|---|
 | `Screen` | A page, view or report screen a user reaches | `{platform, name}`; `name` is the route, or the template path from the repository root |
 | `Form` | An input form on a screen | `{screen, name}`; `screen` is the screen's `name`, `name` the form's name or `form<n>` in document order |
-| `UIControl` | An input, select, button, link or display element | `{container, name}`; `container` is `<screen>#<form>` or `<screen>`; `name` is, in order of preference, the control's name, its id, its binding path, `link:<target>` for a link with a literal target, `submit` or `button:<text>` for a button, else `<type><n>` in document order |
+| `UIControl` | An input, select, button, link or display element | `{container, name}`; `container` is `<screen>#<form>` or `<screen>`; `name`: see UIControl names below |
 | `StyleToken` | A design value: colour, type size, spacing, radius | `{system, name}`; `system` is the stylesheet path from the repository root or the design-system name, `name` the variable or class |
 | `Report` | An output a person reads: ODS, PDF, spreadsheet | `{platform, name}` |
 | `BusinessRule` | A validation, calculation or decision | `{scope, name}`; `scope` is the owning entity's name |
 | `Workflow` | States and transitions of a business object | `{scope, name}` |
 | `CodeList` | Reference data: a lookup table, SAS format, enum | `{platform, name}` |
 | `Role`, `Permission` | Security principals and rights | `{realm, name}`; `realm` is the platform or application (`cfml`, `sas-metadata`, the database name) |
+
+**UIControl names.** Both packs that read markup name a control by the first of these that applies, after trimming whitespace (an empty value does not count):
+
+1. its `name` attribute, else its `id`, else its binding path (`v-model`, `formControlName`);
+2. `link:<target>` for a link whose target is literal, with the target's query string and fragment removed (a link to another host keeps only `<scheme>://<host>`);
+3. `submit` for a submit button, `button:<text>` for another button, where text is the button's value or all its descendant text, at most 40 characters, nothing computed;
+4. otherwise `<type><n>`: `type` is an input's `type` attribute (`text` when absent), else the tag (`select`, `textarea`, `button`, and `link` for `<a>`); `n` counts, in document order within the container, only the controls that reach this rule, so naming or adding another control renames nothing.
+
+When two controls in one container would get the same name, the second and later ones get `~2`, `~3`, ... in document order.
 
 Existing kinds keep their keys. Legacy code units stay `Program` (`{platform, name}`), functions and methods stay `Symbol`.
 
@@ -76,7 +85,8 @@ Rules:
 4. **Versioning.** Each extractor's version folds in its code digest and its pack's terms and constructs. Raise `version` on any intended output change.
 5. **Evidence.** Every entity, relation, construct and behaviour node has a span into the file. Classes: `E1` declared (a manifest or declarative config), `E2` parsed, `E3` resolved across files, `E4` heuristic. Extractors never emit `E5`; models do that through the decision runner.
 6. **No guessing.** A dynamic construct whose target cannot be read from the source (a variable `cfinclude`, a macro variable resolved at run time) is modelled as dynamic (a non-literal expression) and reported with a diagnostic, never resolved by guesswork.
-7. **Size.** Extraction is linear in the file's size. Files over the snapshot's parse limit are not parsed; do not work around it.
+7. **URLs and other values.** Structural output and behaviour literals keep a URL's scheme, host, path and query parameter *names*, never query values, fragments or user information: `login.cfm?token=abc123` is written `login.cfm?token=`. Mail addresses, passwords, keys and connection strings are never copied.
+8. **Size.** Extraction is linear in the file's size. Files over the snapshot's parse limit are not parsed; do not work around it.
 
 ### Construct coverage
 
@@ -92,7 +102,7 @@ Exports of platform configuration (ColdFusion Administrator `neo-*.xml`, SAS `au
 
 A unit may carry `kind` (`function`, `page`, `macro`, `data_step`, `sql_step`, `proc_step`, `open_code`, `handler`; pass `kind=` to `behavior_observation`) to tell apart several units of one owner, such as a SAS program's DATA steps.
 
-Statements (`op`): `assign`, `declare`, `call`, `if`, `switch`, `loop` (`kind`: `for`, `while`, `until`, `each`, `range`, `implicit` — a DATA step's row loop is `implicit`), `break`, `continue`, `return`, `throw`, `try`, `query` (SQL text with `:name` parameters, `params`, `datasource`, optional `target`; a parameter with `"inline": true` is text substituted into the SQL before it runs, CFML `#x#` or SAS `&x`, not a bind parameter, and consumers treat it as dynamic text), `output` (`channel`: `response`, `log`, `file`, `report`, `dataset`, `mail`), `include`, `redirect`, `transaction`, `lock`, `exit`, and `platform` for anything else.
+Statements (`op`): `assign`, `declare`, `call`, `if`, `switch`, `loop` (`kind`: `for`, `while`, `until`, `each`, `range`, `implicit` — a DATA step's row loop is `implicit`), `break`, `continue`, `return`, `throw`, `try`, `query` (SQL text with `:name` parameters, `params`, `datasource`, optional `target`; a parameter with `"inline": true` is text substituted into the SQL before it runs, CFML `#x#` or SAS `&x`, not a bind parameter, and consumers treat it as dynamic text; a query whose text, or part of it, runs in another database (SAS pass-through) carries `"remote": "<engine>"`, and consumers never read table names from that part), `output` (`channel`: `response`, `log`, `file`, `report`, `dataset`, `mail`), `include`, `redirect`, `transaction`, `lock`, `exit`, and `platform` for anything else.
 
 Expressions (`e`): `lit` (with `type`), `var` (with `scope`: `form`, `url`, `session`, `application`, `request`, `cgi`, `local`, `arguments`, `variables`, `this`, `macro`, `work`, ...), `member`, `index`, `call`, `name`, `binop`, `unop`, `cond`, `new`, `array`, `struct`, `lambda`, `template` (interpolation), and `platform`.
 
@@ -121,11 +131,15 @@ Each workstream works on its own branch from `claude/solution-ir-foundation`, na
 | W3 | Web experience pack: screens, forms, controls and navigation from HTML, JSX/TSX, Vue and Angular templates and router configuration; `StyleToken`s from CSS, SCSS and LESS and which screens use them | `claude/ir-web` | `repo_intel/platforms/web/**`, `tests/test_platform_web.py`, `benchmarks/fixtures/F22-web-frontend/**` |
 | W4 | Behaviour store: compile `behavior` observations into shards, keep them in the bundle's detail tier, answer them in the local API (`GET snapshots/{h}/behavior/{entity_id}`), derive call edges and data access from them | `claude/ir-behavior` | `repo_intel/compile/compiler.py` (behaviour only), `repo_intel/knowledge/bundle.py`, `repo_intel/knowledge/local_api.py`, `repo_intel/knowledge/behavior_store.py` (new), `tests/test_behavior_store.py`, `packages/bundle/**` (the TypeScript reader) |
 | W5 | Solution manifest: `.rkp/solution.json` listing the repositories and inputs of one application, loading several bundles, resolving one entity across them (exact rules first; candidates at `E4`), and database catalogue dumps from `.rkp/inputs/catalog/` | `claude/ir-solution` | `repo_intel/solution/**` (new), `repo_intel/platforms/catalog/**`, `repo_intel/cli.py` (a `solution` command only), `tests/test_solution.py`, `tests/fixtures/solution/**` (the golden format is single-repository, so F23 is test-only) |
-| W6 | Commands and views: `rkp verify` (re-check a bundle against its digests and the publish gate) and `rkp diff` (structural diff between two bundles, using `repo_intel/knowledge/delta.py`), and the Explorer's experience, business and security planes | `claude/ir-views` | `repo_intel/cli.py` (`verify`, `diff` only), `repo-intelligence/explorer/**`, `tests/test_cli_verify_diff.py` |
+| W6 | Commands and views (also owns `repo_intel/knowledge/bundle_check.py`, the shared bundle reader, and the command documentation in `repo-intelligence/README.md`): `rkp verify` (re-check a bundle against its digests and the publish gate) and `rkp diff` (structural diff between two bundles, using `repo_intel/knowledge/delta.py`), and the Explorer's experience, business and security planes | `claude/ir-views` | `repo_intel/cli.py` (`verify`, `diff` only), `repo-intelligence/explorer/**`, `tests/test_cli_verify_diff.py` |
 
 `repo_intel/cli.py` is shared by W5 and W6; each adds its own subcommand in a separate function and touches nothing else in the file. The integrator merges them.
 
 Shared, read-only for every workstream: `repo_intel/compile/ontology.py`, `repo_intel/compile/behavior.py`, `repo_intel/compile/contracts.py`, `repo_intel/compile/verify.py`, `repo_intel/platforms/__init__.py`, `repo_intel/extractors/__init__.py`, `repo_intel/extractors/base.py`, every existing extractor, every existing fixture and golden, and this document.
+
+### Solution identity (W5)
+
+A link between members is exact (`E3`) only when the natural keys say the two are one thing: a table by `{datastore, name}`, an endpoint by method and normalised path including a `?method=` selector, a queue or topic by name, a SAS dataset by `{library, name}` when both sides are SAS. A ConfigKey matched by name alone is exact only when one side is authoritative: the solution's inputs, a member whose role is `config` or `database`, or a declaration read from an export under `.rkp/inputs/` (evidence `E1`). Every other name-only match, ConfigKeys of the same kind of source included, is a candidate at `E4`.
 
 ## 5. Tests and fixtures
 

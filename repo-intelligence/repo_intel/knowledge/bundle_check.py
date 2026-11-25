@@ -24,7 +24,7 @@ from repo_intel.knowledge import bundle
 _UNIT_FILE = re.compile(r"^units/[A-Za-z0-9._-]+\.jsonl$")
 # The `table` field each shard table's rows carry in a unit file. A test keeps this in step
 # with the tables bundle.write_bundle writes.
-ROW_NAMES = {"entities": "entity", "assertions": "assertion", "evidence": "evidence", "unknowns": "unknown", "behaviors": "behavior"}
+ROW_NAMES = bundle.ROW_NAMES
 SIDE_TABLES = ("coverage", "conflicts", "unknowns", "decisions", "files")
 DECISION_ATTRIBUTES = ("decision_ref", "topology_decision_ref", "primary_language_decision_ref")
 

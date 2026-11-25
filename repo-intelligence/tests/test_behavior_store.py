@@ -420,6 +420,16 @@ def test_sql_table_scanner(sql, expected):
     assert (found["statement"], found["reads"], found["writes"], found["dynamic"]) == expected
 
 
+@pytest.mark.parametrize("sql, expected", [
+    ("create table rpt.local as select * from connection to oracle (select * from dbo.remote_tbl where x = ')')", ("create", [], ["rpt.local"], ["oracle"])),
+    ("execute (delete from dbo.x) by oracle", ("execute", [], [], ["oracle"])),
+    ("select a.* from work.a, connection to odbc (select 1 from y) b", ("select", ["work.a"], [], ["odbc"])),
+])
+def test_pass_through_sql_is_the_remote_databases_and_is_not_scanned(sql, expected):
+    found = behavior_store.sql_tables(sql)
+    assert (found["statement"], found["reads"], found["writes"], found["remote"]) == expected
+
+
 # ------------------------------------------------------------------ substitutions in SQL
 
 INLINE = lambda name, scope="url": {"name": name, "value": VAR(name, scope), "type": "any", "inline": True}  # noqa: E731
