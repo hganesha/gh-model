@@ -4,14 +4,29 @@
     {
       "name": "api",
       "runtimeExecutable": "sh",
-      "runtimeArgs": ["-c", "cd repo-intelligence && exec .venv/bin/python -m repo_intel.server.serve"],
+      "runtimeArgs": [
+        "-c",
+        "cd repo-intelligence && exec .venv/bin/python -m repo_intel.server.serve"
+      ],
       "port": 8787
     },
     {
       "name": "explorer",
       "runtimeExecutable": "sh",
-      "runtimeArgs": ["-c", "cd repo-intelligence/explorer && exec npm run dev"],
+      "runtimeArgs": [
+        "-c",
+        "cd repo-intelligence/explorer && exec npm run dev"
+      ],
       "port": 3100
+    },
+    {
+      "name": "webview",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": [
+        "-c",
+        "exec node packages/vscode-extension/scripts/preview-webview.mjs \"${RKP_PREVIEW_REPO:-.}\" 3200"
+      ],
+      "port": 3200
     }
   ]
 }

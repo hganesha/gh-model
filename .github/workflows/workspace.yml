@@ -19,7 +19,9 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: repo-intelligence/explorer/package-lock.json
+          cache-dependency-path: |
+            repo-intelligence/explorer/package-lock.json
+            package-lock.json
       - name: Install PostgreSQL and Python dependencies
         working-directory: repo-intelligence
         run: |
@@ -48,3 +50,26 @@ jobs:
           npm run typecheck
           npx playwright install --with-deps chromium
           npm run test:e2e
+      - name: Freeze the engine for the extension and check its sandbox
+        working-directory: repo-intelligence
+        run: |
+          .venv/bin/pip install -e '.[freeze]'
+          .venv/bin/python freeze/build_engine.py
+          ../packages/vscode-extension/engine/rkp/rkp __step_worker__ --selfcheck
+      - name: Build and test the TypeScript packages and the VS Code extension
+        # The extension's end-to-end cases run the frozen engine built above (engine/rkp/).
+        run: |
+          npm ci
+          npm run typecheck
+          npm run build
+          npm test --workspace @rkp/bundle
+          xvfb-run -a npm test --workspace rkp-vscode
+          npm run package:vscode
+          npm run package:target --workspace rkp-vscode -- linux-x64
+      - name: Keep the extension packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: rkp-vscode
+          path: |
+            packages/vscode-extension/dist/rkp-vscode.vsix
+            packages/vscode-extension/dist/rkp-vscode-linux-x64.vsix

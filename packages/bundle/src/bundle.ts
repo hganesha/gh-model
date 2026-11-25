@@ -1,0 +1,189 @@
+import { promises as fs } from "node:fs";
+import * as path from "node:path";
+import {
+  Assertion,
+  READABLE_FORMATS,
+  BundleManifest,
+  Conflict,
+  CoverageEntry,
+  Entity,
+  Evidence,
+  FileEntry,
+  Unknown,
+  UnitRow,
+  RowDefaults,
+} from "./types";
+
+export const BUNDLE_DIR = ".rkp";
+export const KNOWLEDGE_DIR = path.join(BUNDLE_DIR, "knowledge");
+export const MANIFEST_FILE = path.join(KNOWLEDGE_DIR, "manifest.json");
+
+export class BundleError extends Error {}
+
+/** A location in the repository that a piece of evidence points at. */
+export interface Location {
+  path: string;
+  blobSha256: string;
+  startLine: number;
+  endLine: number;
+}
+
+/** A loaded bundle, indexed for the lookups an editor makes. Read-only. */
+export class Bundle {
+  readonly entities = new Map<string, Entity>();
+  readonly assertions = new Map<string, Assertion>();
+  readonly evidence = new Map<string, Evidence>();
+  readonly unknowns: Unknown[] = [];
+  readonly outgoing = new Map<string, Assertion[]>();
+  readonly incoming = new Map<string, Assertion[]>();
+  private readonly byKind = new Map<string, Entity[]>();
+  private readonly pathsByBlob = new Map<string, string[]>();
+
+  constructor(
+    readonly root: string,
+    readonly manifest: BundleManifest,
+    rows: UnitRow[],
+    readonly files: FileEntry[],
+    readonly conflicts: Conflict[],
+    readonly repositoryUnknowns: Unknown[],
+    readonly coverage: CoverageEntry[],
+  ) {
+    for (const row of rows) {
+      const { table, ...value } = row;
+      switch (table) {
+        case "entity":
+          this.entities.set(value.id, value as Entity);
+          push(this.byKind, (value as Entity).kind, value as Entity);
+          break;
+        case "assertion":
+          this.assertions.set(value.id, value as Assertion);
+          push(this.outgoing, (value as Assertion).subject, value as Assertion);
+          push(this.incoming, (value as Assertion).object, value as Assertion);
+          break;
+        case "evidence":
+          this.evidence.set(value.id, value as Evidence);
+          break;
+        case "unknown":
+          this.unknowns.push(value as Unknown);
+          break;
+      }
+    }
+    for (const file of files) {
+      if (file.blob_sha256) push(this.pathsByBlob, file.blob_sha256, file.path);
+    }
+    for (const list of this.byKind.values()) list.sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
+  }
+
+  kinds(): string[] {
+    return [...this.byKind.keys()].sort();
+  }
+
+  ofKind(kind: string): Entity[] {
+    return this.byKind.get(kind) ?? [];
+  }
+
+  /** Every repository location of a piece of evidence (one blob can sit at several paths). */
+  locate(evidenceId: string): Location[] {
+    const ev = this.evidence.get(evidenceId);
+    if (!ev) return [];
+    return (this.pathsByBlob.get(ev.blob_sha256) ?? []).map((p) => ({
+      path: p,
+      blobSha256: ev.blob_sha256,
+      startLine: ev.span.start_line,
+      endLine: ev.span.end_line,
+    }));
+  }
+
+  /** The first location of the first evidence that resolves, for "go to source". */
+  firstLocation(evidenceIds: readonly string[]): Location | undefined {
+    for (const id of evidenceIds) {
+      const [location] = this.locate(id);
+      if (location) return location;
+    }
+    return undefined;
+  }
+
+  /** All unknowns, per unit and repository-wide. */
+  allUnknowns(): Unknown[] {
+    return [...this.unknowns, ...this.repositoryUnknowns];
+  }
+
+  label(entityId: string): string {
+    const entity = this.entities.get(entityId);
+    return entity ? `${entity.name} (${entity.kind})` : entityId;
+  }
+}
+
+function push<K, V>(map: Map<K, V[]>, key: K, value: V): void {
+  const list = map.get(key);
+  if (list) list.push(value);
+  else map.set(key, [value]);
+}
+
+async function readJsonl<T>(file: string): Promise<T[]> {
+  let text: string;
+  try {
+    text = await fs.readFile(file, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw error;
+  }
+  return text
+    .split("\n")
+    .filter((line) => line.trim() !== "")
+    .map((line, index) => {
+      try {
+        return JSON.parse(line) as T;
+      } catch {
+        throw new BundleError(`${file}:${index + 1} is not valid JSON`);
+      }
+    });
+}
+
+/** A unit row with the fields format 2 left out put back; each row gets its own copies. */
+function withDefaults(row: UnitRow, defaults: RowDefaults | undefined): UnitRow {
+  const fill = defaults?.[row.table];
+  return fill ? ({ ...structuredClone(fill), ...row } as UnitRow) : row;
+}
+
+/** Read the manifest only; undefined when the repository has no bundle. */
+export async function readManifest(repositoryRoot: string): Promise<BundleManifest | undefined> {
+  const file = path.join(repositoryRoot, MANIFEST_FILE);
+  let text: string;
+  try {
+    text = await fs.readFile(file, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw error;
+  }
+  let manifest: BundleManifest;
+  try {
+    manifest = JSON.parse(text) as BundleManifest;
+  } catch {
+    throw new BundleError(`${file} is not valid JSON`);
+  }
+  if (!READABLE_FORMATS.includes(manifest.bundle_format)) {
+    throw new BundleError(`${file} has format ${JSON.stringify(manifest.bundle_format)}; this reader supports ${READABLE_FORMATS.join(", ")}`);
+  }
+  return manifest;
+}
+
+/** Load and index the bundle of the repository at `repositoryRoot`; undefined when there is none. */
+export async function loadBundle(repositoryRoot: string): Promise<Bundle | undefined> {
+  const manifest = await readManifest(repositoryRoot);
+  if (!manifest) return undefined;
+  const knowledge = path.join(repositoryRoot, KNOWLEDGE_DIR);
+  const rows: UnitRow[] = [];
+  for (const unit of manifest.units) {
+    const file = path.resolve(knowledge, unit.file);
+    if (!file.startsWith(knowledge + path.sep)) throw new BundleError(`unit file ${unit.file} is outside the bundle`);
+    for (const row of await readJsonl<UnitRow>(file)) rows.push(withDefaults(row, manifest.row_defaults));
+  }
+  const [files, conflicts, unknowns, coverage] = await Promise.all([
+    readJsonl<FileEntry>(path.join(knowledge, "files.jsonl")),
+    readJsonl<Conflict>(path.join(knowledge, "conflicts.jsonl")),
+    readJsonl<Unknown>(path.join(knowledge, "unknowns.jsonl")),
+    readJsonl<CoverageEntry>(path.join(knowledge, "coverage.jsonl")),
+  ]);
+  return new Bundle(repositoryRoot, manifest, rows, files, conflicts, unknowns, coverage);
+}

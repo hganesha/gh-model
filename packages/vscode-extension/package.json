@@ -1,0 +1,179 @@
+{
+  "name": "rkp-vscode",
+  "displayName": "Repository Intelligence",
+  "description": "Evidence-backed knowledge of a repository's components, endpoints, data, deployment and architecture, compiled into a .rkp/ folder in the repository and reused whenever it is opened.",
+  "version": "0.1.0",
+  "publisher": "repo-intelligence",
+  "private": true,
+  "license": "UNLICENSED",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hganesha/gh-model.git",
+    "directory": "packages/vscode-extension"
+  },
+  "engines": {
+    "vscode": "^1.95.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "workspaceContains:.rkp/knowledge/manifest.json"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "In an untrusted workspace the engine never runs: an existing .rkp/ bundle can be browsed in the Knowledge view, but nothing is analysed and the Explorer does not open.",
+      "restrictedConfigurations": [
+        "rkp.engine.path",
+        "rkp.engine.python"
+      ]
+    },
+    "virtualWorkspaces": false
+  },
+  "contributes": {
+    "commands": [
+      {
+        "command": "rkp.analyze",
+        "title": "Analyze Repository",
+        "category": "Repository Intelligence",
+        "icon": "$(play)"
+      },
+      {
+        "command": "rkp.openExplorer",
+        "title": "Open Explorer",
+        "category": "Repository Intelligence",
+        "icon": "$(graph)"
+      },
+      {
+        "command": "rkp.refresh",
+        "title": "Refresh",
+        "category": "Repository Intelligence",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "rkp.openEvidence",
+        "title": "Open Evidence",
+        "category": "Repository Intelligence"
+      },
+      {
+        "command": "rkp.showOutput",
+        "title": "Show Engine Output",
+        "category": "Repository Intelligence"
+      }
+    ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "rkp.openEvidence",
+          "when": "false"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "rkp.openExplorer",
+          "when": "view == rkp.knowledge && rkp.hasBundle",
+          "group": "navigation@0"
+        },
+        {
+          "command": "rkp.analyze",
+          "when": "view == rkp.knowledge",
+          "group": "navigation@1"
+        },
+        {
+          "command": "rkp.refresh",
+          "when": "view == rkp.knowledge",
+          "group": "navigation@2"
+        }
+      ]
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "rkp",
+          "title": "Repository Intelligence",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "rkp": [
+        {
+          "id": "rkp.knowledge",
+          "name": "Knowledge"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "rkp.knowledge",
+        "contents": "This repository has no compiled knowledge yet.\n[Analyze Repository](command:rkp.analyze)\nThe result is written to .rkp/knowledge/ in the repository and reused the next time it is opened.",
+        "when": "workspaceFolderCount > 0 && isWorkspaceTrusted"
+      },
+      {
+        "view": "rkp.knowledge",
+        "contents": "This workspace is not trusted, so the engine will not run. Trust the workspace to analyse it.",
+        "when": "workspaceFolderCount > 0 && !isWorkspaceTrusted"
+      },
+      {
+        "view": "rkp.knowledge",
+        "contents": "Open a folder that is a Git repository to analyse it.",
+        "when": "workspaceFolderCount == 0"
+      }
+    ],
+    "configuration": {
+      "title": "Repository Intelligence",
+      "properties": {
+        "rkp.engine.path": {
+          "type": "string",
+          "default": "",
+          "scope": "machine-overridable",
+          "markdownDescription": "Path to the `rkp` engine executable. Takes precedence over `#rkp.engine.python#` and the engine bundled with the extension. When nothing is set and no engine is bundled for this platform, `rkp` is looked up on `PATH`."
+        },
+        "rkp.engine.python": {
+          "type": "string",
+          "default": "",
+          "scope": "machine-overridable",
+          "markdownDescription": "A Python interpreter with the `repo-intel` package installed, run as `python -m repo_intel.cli`. In this monorepo: `repo-intelligence/.venv/bin/python`."
+        },
+        "rkp.analysis.includeUncommittedChanges": {
+          "type": "boolean",
+          "default": true,
+          "scope": "resource",
+          "markdownDescription": "Analyse the files on disk, uncommitted changes included. When off, only the last commit (`HEAD`) is analysed. Either way nothing is written to `.git`, and the knowledge stays current once the same files are committed."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "npm run build:extension && npm run build:webview && npm run build:tests",
+    "build:extension": "esbuild src/extension.ts --bundle --platform=node --target=node20 --format=cjs --external:vscode --sourcemap --outfile=dist/extension.js",
+    "build:tests": "tsc -p tsconfig.test.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit && tsc -p webview/tsconfig.json",
+    "test": "npm run build && node out/test/runTest.js",
+    "package": "npm run build:extension && npm run build:webview && vsce package --no-dependencies --skip-license --out dist/rkp-vscode.vsix",
+    "build:webview": "node scripts/build-webview.mjs --minify",
+    "package:target": "npm run build:extension && npm run build:webview && node scripts/package-target.mjs",
+    "preview:webview": "node scripts/preview-webview.mjs"
+  },
+  "devDependencies": {
+    "@fontsource-variable/fraunces": "5.3.0",
+    "@fontsource-variable/hanken-grotesk": "5.3.0",
+    "@fontsource-variable/jetbrains-mono": "5.3.0",
+    "@rkp/bundle": "0.1.0",
+    "@types/d3-force": "3.0.10",
+    "@types/node": "22.19.15",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "@types/vscode": "1.95.0",
+    "@vscode/test-electron": "3.1.0",
+    "@vscode/vsce": "4.1.0",
+    "d3-force": "3.0.1",
+    "esbuild": "0.28.2",
+    "lucide-react": "1.78.0",
+    "react": "19.2.6",
+    "react-dom": "19.2.6",
+    "typescript": "5.9.3"
+  }
+}
