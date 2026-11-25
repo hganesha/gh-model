@@ -8,6 +8,7 @@ The GitHub Intelligence Engine: a compiler that turns a repository into evidence
 | [`docs/architecture.md`](docs/architecture.md) | Decision-model architecture and build specification (v2.0) |
 | [`docs/implementation-plan.md`](docs/implementation-plan.md) | Milestones M0–M5, tickets GI-001 onward, risks and the definition of done |
 | [`docs/business-map-plan.md`](docs/business-map-plan.md) | Business map, connectors and settings: reuse assessment and plan |
+| [`docs/vscode-plugin-plan.md`](docs/vscode-plugin-plan.md) | VS Code plug-in with in-repository storage: design and phased plan (proposal) |
 | [`docs/meta-harness-catalog.md`](docs/meta-harness-catalog.md) | AI-SDLC Meta-Harness capability catalog v0.3, which the architecture aligns to |
 | [`docs/archive/`](docs/archive) | Superseded designs (architecture v1.0) |
 
