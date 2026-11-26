@@ -20,6 +20,8 @@ function that runs it when nothing is rendered); a table named by a `#expression
 is not declared;
 `roles=`, `IsUserInRole` and `cfloginuser` give `Role`s; `Application.cfc` records
 its lifecycle events and settings; `cfschedule` gives scheduled `Task`s.
+Controls are named as the contract's "UIControl names" says, every link included;
+URLs in behaviour keep parameter names but never values (`urls`).
 
 Two deliberate differences from `legacy.cfml`: SQL of a query of queries
 (`dbtype="query"`) names in-memory result sets, not tables, so it is not read for
@@ -38,6 +40,7 @@ from repo_intel.platforms.cfml.lower import Lowerer
 from repo_intel.platforms.cfml.markup import Document, Node
 from repo_intel.platforms.cfml.scan import decode
 from repo_intel.platforms.cfml.script import ParseError, Parser
+from repo_intel.platforms.cfml.urls import scrub_unit
 
 _SCRIPT_COMPONENT = re.compile(r"^(?:\s|//[^\n]*\n|/\*.*?\*/|<!---.*?--->)*(?:import\b|component\b|interface\b|(?:abstract|final)\s+component\b)", re.I | re.S)
 _EXTERNAL = re.compile(r"^(?:[a-z][a-z0-9+.-]*:|//)", re.I)
@@ -72,7 +75,7 @@ def resolve_url(path: str, target: str) -> str | None:
     t = target.strip()
     if not t or _EXTERNAL.match(t) or t.startswith("#"):
         return None
-    t = re.split(r"[?#]", t, 1)[0]
+    t = re.split(r"[?#]", t, maxsplit=1)[0]
     if not t:
         return path  # "?x=1": the page itself
     resolved = t.lstrip("/") if t.startswith("/") else posixpath.normpath(posixpath.join(posixpath.dirname(path), t))
@@ -117,7 +120,7 @@ class _Emit:
 
 class CfmlSource:
     id = "cfml.source"
-    version = "1.1.0"
+    version = "1.2.0"
 
     def matches(self, path: str) -> bool:
         return path.lower().endswith((".cfc", ".cfm", ".cfml"))
@@ -380,6 +383,7 @@ def _drop_dynamic_tables(o: _Emit, q, found) -> int:
 
 
 def _behavior(o: _Emit, at, owner: dict[str, Any], body: list, params: list, kind: str) -> None:
+    scrub_unit(body, params)  # URLs keep parameter names, never values (contract rule 7)
     try:
         o.items.append(o.behavior_observation(o.blob, at, owner, "cfml", body, params, kind=kind))
     except ValueError as exc:  # a lowering bug must not lose the file's entities
@@ -447,29 +451,66 @@ _BUTTON_INPUTS = ("submit", "button", "reset", "image")
 _END_BUTTON = re.compile(r"</button\s*>", re.I)
 
 
+_HOST = re.compile(r"^([a-z][a-z0-9+.-]*:)?//(?:[^/?#@]*@)?([^/?#]*)", re.I)
+_OPAQUE_LINK = re.compile(r"^([a-z][a-z0-9+.-]*:)(?!//)", re.I)
+
+
 def _button_text(text: str, node: Node) -> str | None:
-    """The literal label of a button: an input's `value`, or the text of a `<button>`."""
+    """The literal label of a button: an input's `value`, or all the text inside a
+    `<button>`, tags removed and whitespace collapsed. None when any of it is computed:
+    a `#expression#` evaluated in a `cfoutput`, or a CFML tag."""
     if node.name != "button":
         return _plain(node, "value")
     close = _END_BUTTON.search(text, node.open_end)
     if close is None:
         return None
-    label = re.sub(r"\s+", " ", re.sub(r"<[^>]*>", " ", text[node.open_end: close.start()])).strip()
-    return label if label and "#" not in label else None
+    a, b = node.open_end, close.start()
+    if re.search(r"</?cf", text[a:b], re.I):
+        return None
+    if node.in_output:
+        from repo_intel.platforms.cfml.scan import hash_parts
+
+        parts = hash_parts(text, a, b)
+        if any(p[0] == "expr" for p in parts):
+            return None
+        raw = "".join(p[3] or "" for p in parts)  # `##` is a literal `#`
+    else:
+        raw = text[a:b]
+    label = re.sub(r"\s+", " ", re.sub(r"<[^>]*>", " ", raw)).strip()
+    return label or None
+
+
+def link_name(target: str | None) -> str | None:
+    """The `<target>` of a link's `link:<target>` name: the literal target, trimmed,
+    without its query string or fragment; a link to another host keeps only
+    `<scheme>://<host>` (never user information), and a link whose scheme has no host
+    (`mailto:`, `javascript:`) only its scheme. None when nothing is left."""
+    t = (target or "").strip()
+    m = _HOST.match(t)
+    if m:
+        host = m.group(2).strip()
+        return f"{m.group(1) or ''}//{host}" if host else None
+    m = _OPAQUE_LINK.match(t)
+    if m and not re.match(r"^[a-z]:[\\/]", t, re.I):
+        return m.group(1).lower()
+    path = re.split(r"[?#]", t, maxsplit=1)[0].strip()
+    return path or None
 
 
 def _control_name(text: str, node: Node, ctype: str, link: str | None, counts: dict[tuple[str, str], int], container: str) -> str:
-    """A control's name as the contract orders it: its name, its id, `link:<target>` for
-    a link with a literal target, `submit` or `button:<text>` for a button, else
-    `<type><n>` counted in document order among the controls of its container that
-    fall back to it. CFML has no binding attribute apart from the field name, so no
-    binding path is looked for."""
+    """A control's base name as the contract orders it: its name, its id, `link:<target>`
+    for a link with a literal target, `submit` or `button:<text>` for a button, else
+    `<type><n>` with `n` counted in document order among the controls of its container
+    that fall back to `<type>`. CFML has no binding attribute apart from the field
+    name, so no binding path is looked for. Values are trimmed; an empty one does not
+    count. Repeats in one container are told apart by the caller."""
     name = _plain(node, "name") or _plain(node, "id")
     if name:
         return name
-    link = re.split(r"[?#]", link, 1)[0].strip() if link else None
-    if ctype == "link" and link:
-        return "link:" + link  # as written, without its query string
+    if ctype == "link":
+        target = link_name(link)
+        if target:
+            return "link:" + target
     if node.name == "button" or ctype in _BUTTON_INPUTS:
         kind = (_plain(node, "type") or "").lower() if node.name == "button" else ctype
         if kind == "submit":
@@ -481,12 +522,19 @@ def _control_name(text: str, node: Node, ctype: str, link: str | None, counts: d
     return f"{ctype}{counts[(container, ctype)]}"
 
 
+def _unique(name: str, container: str, seen: dict[tuple[str, str], int]) -> str:
+    """The second and later controls of one name in one container get `~2`, `~3`, ..."""
+    n = seen[(container, name)] = seen.get((container, name), 0) + 1
+    return name if n == 1 else f"{name}~{n}"
+
+
 def _ui(o: _Emit, path: str, doc: Document, screen: dict[str, Any]) -> None:
     P, ctx = o.P, o.ctx
     screen_name = path
     form = None
     form_count = 0
-    counts: dict[tuple[str, str], int] = {}
+    counts: dict[tuple[str, str], int] = {}  # (container, type) -> controls named <type><n> so far
+    seen: dict[tuple[str, str], int] = {}  # (container, name) -> controls given that name so far
     for e in doc.ui:
         node = e.node
         if e.kind == "form_close":
@@ -522,21 +570,19 @@ def _ui(o: _Emit, path: str, doc: Document, screen: dict[str, Any]) -> None:
             form = (form_ref, f"{screen_name}#{fname}")
             continue
         tag = node.name
+        head = None
         if tag == "a":
             href = node.attr("href")
             if href is None:
-                continue
+                continue  # an anchor, not a link
             head = href.literal()
-            if head is None and href.parts and href.parts[0][0] == "lit" and "?" in (href.parts[0][3] or ""):
-                head = href.parts[0][3].split("?", 1)[0]
+            if head is None and href.parts and href.parts[0][0] == "lit" and re.search(r"[?#]", href.parts[0][3] or ""):
+                head = re.split(r"[?#]", href.parts[0][3], maxsplit=1)[0]  # literal up to a computed query
+            target = None
             if head is None:
                 ctx.note("link to a computed URL: target not resolved", node.start)
-                ctx.construct("cf:html-link", node.start, node.open_end, False)
-                continue
-            target = _target(o, path, head, href.literal())
-            if target is None:
-                ctx.construct("cf:html-link", node.start, node.open_end, False)
-                continue
+            else:
+                target = _target(o, path, head, href.literal())
             ctype = "link"
         elif tag in ("input", "cfinput"):
             ctype = (_plain(node, "type") or "text").lower()
@@ -548,7 +594,7 @@ def _ui(o: _Emit, path: str, doc: Document, screen: dict[str, Any]) -> None:
         else:  # <button>
             ctype, target = "button", None
         container = form[1] if form else screen_name
-        cname = _control_name(ctx.text, node, ctype, head if ctype == "link" else None, counts, container)
+        cname = _unique(_control_name(ctx.text, node, ctype, head, counts, container), container, seen)
         cattrs: dict[str, Any] = {"control": ctype, "tag": tag}
         if node.attr("name") is not None and _plain(node, "name") is None:
             cattrs["name_dynamic"] = True

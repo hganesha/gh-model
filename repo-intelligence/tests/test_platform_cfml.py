@@ -358,6 +358,117 @@ def test_control_names_follow_the_contract_order():
     assert after == before | {"link:z.cfm"}
 
 
+def control_names(out):
+    return [(e["natural_key"]["container"], e["natural_key"]["name"]) for e in entities(out, "UIControl")]
+
+
+def test_control_names_are_trimmed_and_empty_values_do_not_count():
+    text = """<form name=" f ">
+  <input name="  qty  ">
+  <input name="   " id=" who ">
+  <input name="" id="">
+  <input type=" CHECKBOX " name=" ">
+  <button type=" submit ">Go</button>
+  <button>   </button>
+  <button>  Save   and
+     close </button>
+</form>
+<a href="  list.cfm?x=1  ">L</a>
+<a href="   ">blank</a>"""
+    out = run("app/p.cfm", text)
+    assert control_names(out) == [
+        ("app/p.cfm#f", "qty"), ("app/p.cfm#f", "who"), ("app/p.cfm#f", "text1"), ("app/p.cfm#f", "checkbox1"),
+        ("app/p.cfm#f", "submit"), ("app/p.cfm#f", "button1"), ("app/p.cfm#f", "button:Save and close"),
+        ("app/p.cfm", "link:list.cfm"), ("app/p.cfm", "link1"),
+    ]
+
+
+def test_fallback_names_count_only_fallback_controls_per_container():
+    """`<type><n>`: n counts, per container and type, only the controls that fall back to it."""
+    text = """<input type="text"><input type="text" name="a"><input type="text">
+<form name="f"><input type="text"><select></select><input type="text" id="b"><select></select><textarea></textarea><input></form>
+<form name="g"><input type="text"></form>
+<a href="##x">x</a><a href="#url#">dyn</a>"""
+    out = run("app/p.cfm", "<cfoutput>" + text + "</cfoutput>")
+    assert control_names(out) == [
+        ("app/p.cfm", "text1"), ("app/p.cfm", "a"), ("app/p.cfm", "text2"),
+        ("app/p.cfm#f", "text1"), ("app/p.cfm#f", "select1"), ("app/p.cfm#f", "b"), ("app/p.cfm#f", "select2"),
+        ("app/p.cfm#f", "textarea1"), ("app/p.cfm#f", "text2"),
+        ("app/p.cfm#g", "text1"),
+        ("app/p.cfm", "link1"), ("app/p.cfm", "link2"),  # an anchor on the page and a computed target fall back
+    ]
+    # Naming a fallback control renames nothing else.
+    named = run("app/p.cfm", "<cfoutput>" + text.replace('<input type="text"><input type="text" name="a">', '<input type="text" name="z"><input type="text" name="a">', 1) + "</cfoutput>")
+    assert control_names(named)[:3] == [("app/p.cfm", "z"), ("app/p.cfm", "a"), ("app/p.cfm", "text1")]
+    assert control_names(named)[3:] == control_names(out)[3:]
+
+
+def test_repeated_control_names_in_one_container_get_a_suffix():
+    text = """<form name="f">
+  <input type="submit" value="Save"><input type="submit" value="Save and close"><button type="submit">Again</button>
+  <input type="button" value="Undo"><button type="button">Undo</button>
+  <input name="q"><input name="q">
+  <input name="text1"><input type="text">
+</form>
+<form name="g"><input type="submit"></form>
+<a href="list.cfm">All</a> <a href="list.cfm?status=open">Open</a> <a href="list.cfm##top">Top</a>
+<a href="https://a.example.com/x">A</a> <a href="https://a.example.com/y?q=1">A again</a>
+<a href="mailto:someone@example.com">mail</a>"""
+    out = run("app/p.cfm", "<cfoutput>" + text + "</cfoutput>")
+    assert control_names(out) == [
+        ("app/p.cfm#f", "submit"), ("app/p.cfm#f", "submit~2"), ("app/p.cfm#f", "submit~3"),
+        ("app/p.cfm#f", "button:Undo"), ("app/p.cfm#f", "button:Undo~2"),
+        ("app/p.cfm#f", "q"), ("app/p.cfm#f", "q~2"),
+        ("app/p.cfm#f", "text1"), ("app/p.cfm#f", "text1~2"),
+        ("app/p.cfm#g", "submit"),  # another container: no suffix
+        ("app/p.cfm", "link:list.cfm"), ("app/p.cfm", "link:list.cfm~2"), ("app/p.cfm", "link:list.cfm~3"),
+        ("app/p.cfm", "link:https://a.example.com"), ("app/p.cfm", "link:https://a.example.com~2"),
+        ("app/p.cfm", "link:mailto:"),
+    ]
+    assert len(set(control_names(out))) == len(control_names(out))  # no two controls share a key
+    # Every link is a control; only the ones that reach a page in the application navigate.
+    navs = [(r["subject"]["natural_key"]["name"], r["object"]["natural_key"]["name"]) for r in relations(out, "NAVIGATES_TO")]
+    assert navs == [("link:list.cfm", "app/list.cfm"), ("link:list.cfm~2", "app/list.cfm"), ("link:list.cfm~3", "app/list.cfm")]
+    assert constructs(out)["cf:html-link"] == [True] * 6
+
+
+def test_a_link_to_another_host_keeps_only_scheme_and_host():
+    text = """<a href="https://user:pw@help.example.com:8443/a/b?ticket=1##x">h</a>
+<a href="//cdn.example.com/lib.js">c</a>"""
+    out = run("p.cfm", "<cfoutput>" + text + "</cfoutput>")
+    assert [n for _, n in control_names(out)] == ["link:https://help.example.com:8443", "link://cdn.example.com"]
+    blob = json.dumps([o.payload for o in out.observations])
+    assert "pw@" not in blob and "user:" not in blob and "ticket=1" not in blob and "/a/b" not in json.dumps(control_names(out))
+
+
+def test_button_text_is_literal_and_at_most_40_characters():
+    text = """<form name="f">
+<button type="button">Label #x#</button>
+<button type="button"><cfif a>Yes<cfelse>No</cfif></button>
+<button type="button">#### Tag</button>
+<button type="button">{}</button>
+<input type="button" value="#label#">
+<input type="reset" value="Clear">
+<input type="image" src="go.png">
+</form>"""
+    out = run("p.cfm", "<cfoutput>" + text.format("x" * 41) + "</cfoutput>")
+    assert [n for _, n in control_names(out)] == ["button1", "button2", "button:## Tag", "button3", "button4", "button:Clear", "image1"]
+    static = run("q.cfm", '<form name="f"><button type="button">Colour #fff</button></form>')
+    assert [n for _, n in control_names(static)] == ["button:Colour #fff"]  # outside cfoutput a hash is text
+
+
+def test_url_handling_raises_no_deprecation_warning():
+    """`re.split` takes `maxsplit` by keyword: passing it by position is deprecated."""
+    import warnings
+
+    text = '<cflocation url="a.cfm?x=1"><cfoutput><a href="b.cfm?id=#id#">b</a><a href="c.cfm?y=2">c</a></cfoutput>'
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", DeprecationWarning)
+        out = run("p.cfm", text)
+        assert resolve_url("p.cfm", "d.cfm?z=3") == "d.cfm"
+    assert [n for _, n in control_names(out)] == ["link:b.cfm", "link:c.cfm"]
+
+
 def test_functions_belong_to_their_program_and_units_say_their_kind():
     out = run("services/OrderService.cfc", (F20 / "base/services/OrderService.cfc").read_text())
     contains = {(r["subject"]["kind"], r["subject"]["natural_key"]["name"], r["object"]["natural_key"]["name"]) for r in relations(out, "CONTAINS")}
@@ -375,7 +486,7 @@ def test_server_side_redirects_navigate_from_the_code_that_runs_them():
     save = run("orders/save.cfm", (F20 / "base/orders/save.cfm").read_text())
     assert not entities(save, "Screen")
     navs = {(r["subject"]["kind"], r["subject"]["natural_key"]["name"], r["object"]["natural_key"]["name"]) for r in relations(save, "NAVIGATES_TO")}
-    assert navs == {("Program", "orders/save.cfm", "orders/edit.cfm"), ("Program", "orders/save.cfm", "orders/list.cfm")}  # session.returnTo is not guessed
+    assert navs == {("Program", "orders/save.cfm", n) for n in ("orders/edit.cfm", "orders/list.cfm", "login.cfm")}  # session.returnTo is not guessed
     cfc = run("svc/Auth.cfc", 'component { function bounce() { location(url="../login.cfm", addtoken=false); } function away() { location(url=target); } }')
     (nav,) = relations(cfc, "NAVIGATES_TO")
     assert nav["subject"]["kind"] == "Symbol" and nav["subject"]["natural_key"]["name"] == "bounce"
@@ -587,6 +698,119 @@ def test_admin_refuses_doctype_and_ignores_other_files():
     assert not out.observations and out.parsed is False and "DOCTYPE" in out.diagnostics[0].message
     assert not ADMIN.matches("config/neo-datasource.xml") and not ADMIN.matches(".rkp/inputs/cfml/neo-mail.xml")
     assert ADMIN.matches(".rkp/inputs/cfml/neo-cron.xml")
+
+
+def unit_strings(out):
+    """Every literal string and template part in every behaviour unit."""
+    found = []
+    for o in out.observations:
+        if o.kind == "behavior":
+            for n in walk(o.payload):
+                if n.get("e") == "lit" and isinstance(n.get("value"), str):
+                    found.append(n["value"])
+                elif n.get("e") == "template":
+                    found += [p for p in n["parts"] if isinstance(p, str)]
+    return found
+
+
+def redirects(out):
+    return [st["target"] for o in out.observations if o.kind == "behavior" for st in ops(o.payload["body"]) if st["op"] == "redirect"]
+
+
+def test_redirect_urls_keep_parameter_names_not_values():
+    out = run("orders/x.cfm", '<cflocation url="login.cfm?token=abc123" addtoken="no">')
+    (target,) = redirects(out)
+    assert target["e"] == "lit" and target["value"] == "login.cfm?token="
+    script = run("svc/Auth.cfc", 'component { function bounce() { location("../home.cfm?sid=987"); } }')
+    (target,) = redirects(script)
+    assert target["value"] == "../home.cfm?sid="
+    assert [r["object"]["natural_key"]["name"] for r in relations(script, "NAVIGATES_TO")] == ["home.cfm"]
+    named = run("p.cfm", '<cfscript>location(url = "a.cfm?x=1&y=2##frag", addToken = false);</cfscript>')
+    assert redirects(named)[0]["value"] == "a.cfm?x=&y="
+    for o in (out, script, named):
+        blob = json.dumps([x.payload for x in o.observations])
+        assert "abc123" not in blob and "987" not in blob and "frag" not in blob
+
+
+def test_a_url_template_keeps_its_structure_and_expressions_but_no_literal_values():
+    out = run("orders/save.cfm", '<cflocation url="edit.cfm?id=#form.orderId#&error=1&mode=fixture-mode##top#anchor#" addtoken="no">')
+    (target,) = redirects(out)
+    assert target["e"] == "template"
+    parts = target["parts"]
+    assert parts[0] == "edit.cfm?id=" and parts[1]["e"] == "var" and parts[1]["name"] == "orderId" and parts[2] == "&error=&mode="
+    assert len(parts) == 3  # the fragment, and the expression in it, are gone
+    assert "fixture-mode" not in json.dumps([o.payload for o in out.observations])
+    assert [r["object"]["natural_key"]["name"] for r in relations(out, "NAVIGATES_TO")] == ["orders/edit.cfm"]
+    based = run("p.cfm", '<cfset next = "#application.base#/login.cfm?token=fixture-token-9">')
+    assert "fixture-token-9" not in json.dumps(unit_strings(based)) and "/login.cfm?token=" in unit_strings(based)
+
+
+def test_cfhttp_urls_and_parameter_values_are_not_copied():
+    secret = "https://svc-user:fixture-pass@api.example.com/oauth/token?client_id=desk&client_secret=fixture-client-secret##frag"
+    tag = run("p.cfm", f'''<cfhttp url="{secret}" method="post" result="r">
+  <cfhttpparam type="header" name="Authorization" value="Bearer fixture-bearer">
+  <cfhttpparam type="url" name="client_secret" value="fixture-param-secret">
+  <cfhttpparam type="formfield" name="who" value="#form.who#">
+</cfhttp>''')
+    script = run("Svc.cfc", 'component { function f() { cfhttp(url = "' + secret + '", method = "get", result = "r"); return r; } }')
+    for out in (tag, script):
+        (call,) = [n for o in out.observations if o.kind == "behavior" for n in walk(o.payload) if n.get("e") == "call" and n["callee"].get("name") == "cfhttp"]
+        assert call["named"]["url"]["value"] == "https://api.example.com/oauth/token?client_id=&client_secret="
+        blob = json.dumps([o.payload for o in out.observations])
+        for value in ("svc-user", "fixture-pass", "=desk", "fixture-client-secret", "frag", "fixture-bearer", "fixture-param-secret"):
+            assert value not in blob, value
+    params = [n["fields"] for o in tag.observations if o.kind == "behavior" for n in walk(o.payload) if n.get("e") == "struct" and "type" in n.get("fields", {})]
+    assert [sorted(p) for p in params] == [["name", "type"], ["name", "type"], ["name", "type", "value"]]  # a computed value stays
+
+
+def test_urls_in_links_form_actions_and_literals_are_scrubbed():
+    text = """<cfoutput>
+<a href="edit.cfm?id=#q.id#&token=fixture-link-token##sec">#q.id#</a>
+<a href='https://fixture-user@x.example.com/p?k=fixture-ext-key'>x</a>
+<form name="f" action="save.cfm?step=fixture-step&id=#q.id#" method="post"></form>
+</cfoutput>
+<cfset api = "https://api.example.com/v1/items?apikey=fixture-api-key">
+<cfset page = "list.cfm?filter=fixture-filter">
+<cfset mail = "mailto:fixture-person@example.com">
+<cfset html = '<a href="next.cfm?sid=fixture-sid">next</a>'>
+<cfset colour = "##ff0000">
+<cfset words = "Are you sure? Yes=1">
+<cfscript>writeOutput('<form action="go.cfm?x=fixture-script-value"></form>');</cfscript>"""
+    out = run("orders/p.cfm", text)
+    strings = unit_strings(out)
+    blob = json.dumps([o.payload for o in out.observations]) + json.dumps(messages(out))
+    for value in ("fixture-link-token", "sec\"", "fixture-user", "fixture-ext-key", "fixture-step", "fixture-api-key", "fixture-filter",
+                  "fixture-person", "fixture-sid", "fixture-script-value"):
+        assert value not in blob, value
+    for kept in ("https://api.example.com/v1/items?apikey=", "list.cfm?filter=", "mailto:", '<a href="next.cfm?sid=">next</a>', "#ff0000",
+                 "Are you sure? Yes=1", '<form action="go.cfm?x="></form>'):
+        assert kept in strings, kept
+    link = next(s for s in strings if 'href="edit.cfm' in s)
+    assert link.endswith('href="edit.cfm?id=')
+    assert any(s.startswith('&token="') for s in strings)  # the value and fragment are gone, the expression stays
+    (submit,) = relations(out, "SUBMITS_TO")
+    assert submit["object"]["natural_key"]["name"] == "orders/save.cfm"
+
+
+def test_no_planted_value_in_f20_reaches_any_output():
+    """The F20 pages and components carry values in their URLs (`f20-planted-...`), and its
+    Administrator exports carry connection details: none of them is in any output."""
+    planted = ("f20-planted", "FIXTURE-NOT-A-SECRET", "fixture-db-host", "fixture-report-host", "fixture-intranet-host", "fixture_app_user", "fixture_scheduler")
+    layers = [F20 / "base", *(p for p in sorted((F20 / "commits").iterdir()) if p.is_dir())]
+    seen = 0
+    for layer in layers:
+        for path in sorted(p for p in layer.rglob("*") if p.is_file()):
+            rel = str(path.relative_to(layer))
+            for extractor in (SOURCE, ADMIN):
+                if not extractor.matches(rel):
+                    continue
+                out = extractor.extract(rel, path.read_bytes(), BLOB)
+                blob = json.dumps([o.payload for o in out.observations]) + json.dumps(messages(out))
+                for value in planted:
+                    assert value not in blob, (rel, value)
+                seen += 1
+    assert seen >= 15
+    assert "f20-planted" in (F20 / "base/services/ReportService.cfc").read_text()  # the values are there to be left out
 
 
 def test_credentials_and_addresses_in_code_are_not_copied():

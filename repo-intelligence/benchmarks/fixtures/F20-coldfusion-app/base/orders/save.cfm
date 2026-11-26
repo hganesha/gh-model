@@ -1,3 +1,6 @@
+<cfif NOT structKeyExists(session, "lastSaved") AND NOT isUserLoggedIn()>
+  <cflocation url="../login.cfm?token=f20-planted-token-5d1e&sid=f20-planted-sid-77##relogin" addtoken="no">
+</cfif>
 <cfset svc = new services.OrderService()>
 <cftry>
   <cfset svc.saveOrder(form.orderId, form.qty, form.status, form.notes)>

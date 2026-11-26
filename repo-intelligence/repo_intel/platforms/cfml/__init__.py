@@ -140,7 +140,7 @@ _SCRIPT = (
     ("cf:html-select", "HTML select", "entity:UIControl"),
     ("cf:html-textarea", "HTML text area", "entity:UIControl"),
     ("cf:html-button", "HTML button", "entity:UIControl"),
-    ("cf:html-link", "HTML link to a literal page", "relation:NAVIGATES_TO"),
+    ("cf:html-link", "HTML link; NAVIGATES_TO when its target is a literal page", "entity:UIControl"),
 )
 
 
@@ -160,7 +160,7 @@ PACK = PlatformPack(
     id="cfml",
     name="ColdFusion (CFML)",
     prefix="cf",
-    version="1.1.0",
+    version="1.2.0",
     terms=TERMS,
     constructs=_constructs(),
     extractors=(CfmlSource(), CfmlAdmin()),

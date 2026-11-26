@@ -23,6 +23,14 @@ component displayname="ReportService" output=false {
         return q.total ?: 0;
     }
 
+    public struct function exchangeRates() {
+        cfhttp(url = "https://f20-planted-user:f20-planted-pass@rates.example.com/v2/latest?client_id=orderdesk&client_secret=f20-planted-client-secret##rates", method = "get", result = "res");
+        if (res.statusCode != "200 OK") {
+            location("../index.cfm?sid=f20-planted-sid-987", false);
+        }
+        return deserializeJSON(res.fileContent);
+    }
+
     private string function fmt(numeric n) {
         return numberFormat(arguments.n, "9,999.99") & " " & variables.currency;
     }
