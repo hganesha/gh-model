@@ -190,3 +190,28 @@ def test_rank_decides_which_units_row_of_an_entity_wins(tmp_path):
     assert repeated
     for entity_id in repeated:
         assert forward.first(entity_id) == backward.entity_rows[entity_id][-1][1] != backward.first(entity_id)
+
+
+def test_behaviour_answers_with_transform_shapes_and_shapes_alone_are_an_answer(tmp_path):
+    path = tmp_path / "repo"
+    materialize("F24-transform-shapes", path)
+    h = bundle.compile_bundle(path)["rkp_hash"]
+    api = local_api.LocalApi(path)
+    snap = api.snapshot()
+
+    def find(kind, **key):
+        return next(i for i, rows in snap.entity_rows.items() if rows[0][1]["kind"] == kind and rows[0][1]["natural_key"] == key)
+
+    notebook = find("Notebook", path="notebooks/orders_daily.py")
+    status, body = api.handle("GET", f"snapshots/{h}/behavior/{notebook}")
+    assert status == 200, "a PySpark notebook has shapes and no behaviour units"
+    assert body["units"] == [] and body["summary"]["units"] == 0
+    assert [r["language"] for r in body["transforms"]] == ["pyspark", "sql"] and {r["owner"] for r in body["transforms"]} == {notebook}
+
+    program = find("Program", platform="sas", name="sas/programs/monthly_orders.sas")
+    status, body = api.handle("GET", f"snapshots/{h}/behavior/{program}")
+    assert status == 200 and body["units"] and len(body["transforms"]) == 6, "behaviour and shapes side by side"
+
+    table = find("Table", datastore="default", name="stg.orders_latest")
+    status, body = api.handle("GET", f"snapshots/{h}/behavior/{table}")
+    assert status == 404 and body["code"] == "no_behavior"
