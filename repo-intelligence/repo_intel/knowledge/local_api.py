@@ -38,7 +38,7 @@ from repo_intel.compile.contracts import Manifest
 from repo_intel.compile.pipeline import render_evidence
 from repo_intel.decisions.overrides import OverrideDocument, Overrides, SaveOverrides
 from repo_intel.ingest import secrets
-from repo_intel.knowledge import behavior_store, bundle
+from repo_intel.knowledge import behavior_store, bundle, profile
 from repo_intel.storage.store import ObjectStore
 from repo_intel.workspace import business_graph
 
@@ -290,6 +290,7 @@ class LocalApi:
             "counts_by_kind": counts,
             "planes": {plane: {"kinds": {k: counts.get(k, 0) for k in kinds}, "total": sum(counts.get(k, 0) for k in kinds)} for plane, kinds in PLANES.items()},
             "files": counts.get("Artifact", 0),
+            "profile": profile.for_snapshot(snap.list_entities, counts, coverage),
             "coverage_totals": {d: {"numerator": n, "denominator": m} for d, (n, m) in sorted(totals.items())},
             "coverage": coverage,
             "unknowns": snap.store.get_json(snap.manifest.unknowns_ref),

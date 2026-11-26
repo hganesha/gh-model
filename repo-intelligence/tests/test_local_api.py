@@ -10,7 +10,7 @@ import pytest
 from repo_intel import cli
 from repo_intel.compile.contracts import Manifest
 from repo_intel.compile.fixtures import materialize
-from repo_intel.knowledge import bundle, local_api, projection
+from repo_intel.knowledge import bundle, local_api, profile, projection
 from repo_intel.server.service import PLANES
 
 
@@ -49,7 +49,7 @@ def test_answers_match_the_postgres_projection(tmp_path, pg_conninfo, fixture):
     t, h = store.tenant_id, manifest.rkp_hash
     with projection.connect(pg_conninfo, t) as conn:
         assert snap.count_by_kind() == projection.count_by_kind(conn, t, h)
-        for kinds, text in [(None, None), (["Component", "Package"], None), (None, "app"), (["Artifact"], "py"), (["Endpoint"], "_%")]:
+        for kinds, text in [(None, None), (["Component", "Package"], None), (None, "app"), (["Artifact"], "py"), (["Endpoint"], "_%"), (profile.PROFILE_KINDS, None)]:
             assert snap.list_entities(kinds, text, 500) == projection.list_entities(conn, t, h, kinds, text, 500), (kinds, text)
         assert snap.find_entities("Package", None) == projection.find_entities(conn, t, h, "Package", None)
         ids = sorted(snap.entity_rows)

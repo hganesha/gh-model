@@ -118,10 +118,39 @@ export interface LineageResponse {
   truncated: boolean;
 }
 
+export interface ProfileValue {
+  text: string;
+  detail?: string;
+  /** Entities this value rests on, capped; `entities` is how many there are in all. */
+  entity_ids: string[];
+  entities: number;
+}
+
+export interface ProfileField {
+  id: string;
+  label: string;
+  group: string;
+  /** The plane to open for this field, when one shows it. */
+  plane: string | null;
+  status: "supported" | "inferred" | "not_found";
+  values: ProfileValue[];
+  more: number;
+}
+
+/** What the application is, rolled up from the snapshot's facts (repo_intel/knowledge/profile.py). */
+export interface Profile {
+  version: number;
+  groups: Record<string, string>;
+  fields: ProfileField[];
+  partial: boolean;
+}
+
 export interface Summary {
   manifest: { commit_sha: string; repository_id: string; status: string; rkp_hash: string; [key: string]: unknown };
   topology: string | null;
   files: number;
+  /** Absent from a server older than the profile. */
+  profile?: Profile;
   counts_by_kind: Record<string, number>;
   planes: Record<string, { kinds: Record<string, number>; total: number }>;
   coverage_totals: Record<string, Ratio>;

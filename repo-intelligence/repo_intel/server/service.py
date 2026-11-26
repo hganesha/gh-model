@@ -33,7 +33,7 @@ from psycopg.types.json import Jsonb
 
 from repo_intel.workspace import business_graph, business_map, settings
 from repo_intel.ingest import connectors, github, triggers
-from repo_intel.knowledge import cross_repository, lineage, parity, projection, registry
+from repo_intel.knowledge import cross_repository, lineage, parity, profile, projection, registry
 from repo_intel.storage import gc
 from repo_intel.compile.contracts import Manifest
 from repo_intel.storage.hashing import digest
@@ -1069,6 +1069,7 @@ class Service:
         with projection.connect(self.conninfo, self.store.tenant_id) as conn:
             counts = projection.count_by_kind(conn, self.store.tenant_id, manifest["rkp_hash"])
             repo_entity = projection.list_entities(conn, self.store.tenant_id, manifest["rkp_hash"], ["Repository"], None, 1)
+            profile_rows = projection.list_entities(conn, self.store.tenant_id, manifest["rkp_hash"], profile.PROFILE_KINDS, None, profile.ROW_LIMIT + 1)
         coverage = self.store.get_json(manifest["coverage_ref"])
         unknowns = self.store.get_json(manifest["unknowns_ref"])
         conflicts = self.store.get_json(manifest["conflicts_ref"])
@@ -1083,6 +1084,7 @@ class Service:
             "counts_by_kind": counts,
             "planes": {plane: {"kinds": {k: counts.get(k, 0) for k in kinds}, "total": sum(counts.get(k, 0) for k in kinds)} for plane, kinds in PLANES.items()},
             "files": counts.get("Artifact", 0),
+            "profile": profile.build(profile_rows[: profile.ROW_LIMIT], counts, coverage, truncated=len(profile_rows) > profile.ROW_LIMIT),
             "coverage_totals": {d: {"numerator": n, "denominator": m} for d, (n, m) in sorted(totals.items())},
             "coverage": coverage,
             "unknowns": unknowns,

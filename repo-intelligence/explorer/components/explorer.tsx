@@ -12,6 +12,7 @@ import { EntityDrawer } from "./entity-drawer";
 import { DEFAULT_GRAPH_PREFS, GraphView, type GraphPrefs } from "./graph-view";
 import { MapView, ZOOM_STEPS, type MapPrefs, type Purpose } from "./map-view";
 import { PlaneView } from "./plane-view";
+import { ProfileBand } from "./profile-band";
 import { QualityView } from "./quality-view";
 import { SearchDialog } from "./search-dialog";
 import { TimelineView, type ComparePick } from "./timeline-view";
@@ -410,7 +411,9 @@ export function Explorer() {
 
           {hash && summary.data && (
             <>
-              {view === "map" && plane === null && repo?.description && <p className="repo-description">{repo.description}</p>}
+              {view === "map" && plane === null && (summary.data.profile
+                ? <ProfileBand profile={summary.data.profile} description={repo?.description} onOpenEntity={openEntity} onOpenPlane={setPlane} />
+                : repo?.description && <p className="repo-description">{repo.description}</p>)}
               {view === "map" &&
                 (plane === null ? (
                   <MapView summary={summary.data} prefs={prefs.map} onPrefs={(map) => updatePrefs({ ...prefs, map })} onOpenPlane={setPlane} onOpenQuality={() => switchView("quality")} purpose={purpose} onOpenPurpose={() => openWorkspace("business")} />
