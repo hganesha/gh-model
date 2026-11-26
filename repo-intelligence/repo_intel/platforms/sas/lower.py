@@ -112,8 +112,11 @@ class Lowerer:
             self.a.construct(toks[0].start, st.end, construct, modelled)
         return {"op": "platform", "construct": construct, "at": self.node_at(toks, st), "detail": detail}
 
-    def ds_list(self, toks: list[Tok], i: int, role: str, construct: str) -> tuple[list[Any], int]:
-        """Dataset names from toks[i:], up to an option (`end=`), a `/` or the end."""
+    def ds_list(self, toks: list[Tok], i: int, role: str, construct: str, options: dict[str, dict] | None = None) -> tuple[list[Any], int]:
+        """Dataset names from toks[i:], up to an option (`end=`), a `/` or the end.
+
+        With `options`, the dataset options that name columns or variables (KEEP=, DROP=,
+        RENAME=, IN=, WHERE=) are recorded there by dataset name, for transform shapes."""
         out = []
         while i < len(toks):
             t = toks[i]
@@ -125,12 +128,17 @@ class Lowerer:
                     self.a.dynamic_list(t, self.scope, role)
                     i += 3 if nxt.text == "-" else 2
                     continue
-                for name in self.a.ds_names(t, self.scope):
+                names = self.a.ds_names(t, self.scope)
+                for name in names:
                     out.append(name)
                     self.a.dataset_use(name, role, self.owner, construct)
                 i += 1
                 if i < len(toks) and toks[i].text == "(":
-                    i = skip_parens(toks, i)
+                    end = skip_parens(toks, i)
+                    found = dataset_options(toks[i + 1 : end - 1]) if options is not None else {}
+                    for name in names if found else ():
+                        options[name.label] = found
+                    i = end
                 continue
             if t.kind == "str":
                 self.a.physical_file(t, role)
@@ -368,12 +376,16 @@ class Lowerer:
         if w in ("set", "merge", "update", "modify"):
             cid = {"set": "sas:set", "merge": "sas:merge", "update": "sas:update", "modify": "sas:modify"}[w]
             c(cid)
-            names, _ = self.ds_list(toks, 1, "read", cid)
+            options: dict[str, dict] = {}
+            names, _ = self.ds_list(toks, 1, "read", cid, options)
             if w == "modify":
                 for name in names:
                     self.a.dataset_use(name, "write", self.owner, cid)
             self.inputs += names
-            return [{"op": "platform", "construct": cid, "at": at, "detail": {"datasets": [n.label for n in names]}}], i
+            read: dict[str, Any] = {"datasets": [n.label for n in names]}
+            if options:
+                read["options"] = options
+            return [{"op": "platform", "construct": cid, "at": at, "detail": read}], i
         if w == "by":
             c("sas:by_group")
             names = [t.low for t in toks[1:] if t.kind == "word" and t.low not in ("descending", "notsorted", "groupformat")]
@@ -598,12 +610,15 @@ class DataStep(Lowerer):
         header = toks_of(self.header)
         self.a.construct(header[0].start, self.header.end, "sas:data_step", True)
         slash = split_at(header, "/")
-        names, _ = self.ds_list(header[: slash] if slash else header, 1, "write", "sas:data_step")
+        options: dict[str, dict] = {}
+        names, _ = self.ds_list(header[: slash] if slash else header, 1, "write", "sas:data_step", options)
         self.outputs = names
         if slash is not None and any(t.low == "view" for t in header[slash:]):
             self.a.construct(header[slash].start, self.header.end, "sas:data_view", False)
         body, _ = self.block(0, frozenset())
         detail = {"data": [n.label for n in names], **{k: v for k, v in self.detail.items() if v}}
+        if options:  # KEEP=, DROP=, RENAME= on the datasets written
+            detail["options"] = options
         return {
             "op": "loop", "kind": "implicit", "at": self.a.at(self.step.start, self.step.end),
             "over": {"e": "array", "items": [n.expr for n in self.inputs]}, "body": body, "detail": detail,
@@ -630,3 +645,41 @@ class Container(Lowerer):
 
 def string_value(tok: Tok) -> str:
     return unquote(tok) if tok.kind == "str" else tok.text
+
+
+# Dataset options kept as detail: the ones that name variables. Other options (OBS=,
+# COMPRESS=, PW=, ...) carry values and are never copied.
+_COLUMN_OPTIONS = ("keep", "drop", "rename", "in", "where")
+
+
+def dataset_options(toks: list[Tok]) -> dict[str, Any]:
+    """The variable-naming options inside a dataset's parentheses: `keep`, `drop` (variable
+    lists), `rename` ({old: new}), `in` (the flag variable) and `where` (the condition's text)."""
+    out: dict[str, Any] = {}
+    j = 0
+    while j < len(toks):
+        t = toks[j]
+        if not (t.kind == "word" and j + 1 < len(toks) and toks[j + 1].text == "="):
+            j += 1
+            continue
+        key, j = t.low, j + 2
+        if j < len(toks) and toks[j].text == "(":
+            end = skip_parens(toks, j)
+            value = toks[j + 1 : end - 1]
+            j = end
+        else:
+            start = j
+            while j < len(toks) and not (toks[j].kind == "word" and j + 1 < len(toks) and toks[j + 1].text == "="):
+                j += 1
+            value = toks[start:j]
+        if key not in _COLUMN_OPTIONS:
+            continue
+        if key in ("keep", "drop"):
+            out[key] = [v.low for v in value if v.kind == "word"]
+        elif key == "in" and value and value[0].kind == "word":
+            out["in"] = value[0].low
+        elif key == "rename":
+            out["rename"] = {value[k].low: value[k + 2].low for k in range(len(value) - 2) if value[k + 1].text == "=" and value[k].kind == "word" and value[k + 2].kind == "word"}
+        elif key == "where" and value:
+            out["where"] = " ".join(v.text for v in value)
+    return {k: v for k, v in out.items() if v}

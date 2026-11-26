@@ -1,0 +1,127 @@
+{
+ "fixture": "F24-transform-shapes",
+ "description": "One order domain in three toolchains, read for what each unit does to its rows. A stand-alone SQL script keeps the latest row per key with ROW_NUMBER, merges into a customer table, totals per region and cleans columns; a SAS program sorts, keeps FIRST.k, anti-joins with MERGE and IN= flags, totals per BY group with RETAIN and LAST.k, transposes and summarises with PROC MEANS; a Databricks notebook does the PySpark equivalents plus a %sql cell; a plain PySpark job unions by name, drops duplicates and writes to a table named from a parameter. The owners carry their primitives and purpose. Commits add a type 2 history procedure, add a pivot notebook and retire the job. Every item is due at M2.",
+ "entities": [
+  {
+   "kind": "Program",
+   "natural_key": {"platform": "sql", "name": "sql/load_staging.sql"},
+   "since": "M2",
+   "attributes": {
+    "kind": "script",
+    "transforms": {
+     "primitives": ["aggregate", "apply_defaults", "conditional_flag", "dedupe_by_key", "map_codes", "merge_into", "normalize_case", "select_columns", "trim_strings"],
+     "purpose": "cleaning"
+    }
+   }
+  },
+  {
+   "kind": "Program",
+   "natural_key": {"platform": "sas", "name": "sas/programs/monthly_orders.sas"},
+   "since": "M2",
+   "attributes": {
+    "kind": "program",
+    "transforms": {
+     "primitives": ["aggregate", "dedupe_by_key", "join", "pivot", "select_columns"],
+     "purpose": "structural_reshaping"
+    }
+   }
+  },
+  {
+   "kind": "Notebook",
+   "natural_key": {"path": "notebooks/orders_daily.py"},
+   "since": "M2",
+   "attributes": {
+    "format": "databricks",
+    "transforms": {
+     "primitives": ["aggregate", "apply_defaults", "dedupe_by_key", "drop_columns", "join", "normalize_case", "parse_timestamp", "rename_columns", "trim_strings"],
+     "purpose": "cleaning"
+    }
+   }
+  },
+  {
+   "kind": "Artifact",
+   "natural_key": {"path": "jobs/archive_orders.py"},
+   "since": "M2",
+   "attributes": {
+    "transforms": {
+     "primitives": ["dedupe_by_key", "union_by_name"],
+     "purpose": "deduplication"
+    }
+   }
+  },
+  {"kind": "Table", "natural_key": {"datastore": "default", "name": "stg.orders_latest"}, "since": "M2"},
+  {"kind": "Table", "natural_key": {"datastore": "default", "name": "mart.region_daily"}, "since": "M2"},
+  {"kind": "Dataset", "natural_key": {"name": "mart.last_order"}, "since": "M2"},
+  {"kind": "Dataset", "natural_key": {"name": "mart.no_orders"}, "since": "M2"},
+  {"kind": "Dataset", "natural_key": {"name": "mart.region_summary"}, "since": "M2"},
+  {"kind": "Dataset", "natural_key": {"name": "gold.region_summary"}, "since": "M2"},
+  {"kind": "Dataset", "natural_key": {"name": "gold.top_customers"}, "since": "M2"},
+  {"kind": "Dataset", "natural_key": {"name": "silver.orders_all"}, "since": "M2"},
+  {"kind": "Dataset", "natural_key": {"name": "silver.orders_{region}"}, "since": "M2", "attributes": {"parameterized": true}}
+ ],
+ "edges": [
+  {
+   "subject": {"kind": "Program", "natural_key": {"platform": "sql", "name": "sql/load_staging.sql"}},
+   "predicate": "WRITES_TO",
+   "object": {"kind": "Table", "natural_key": {"datastore": "default", "name": "stg.orders_latest"}},
+   "since": "M2"
+  },
+  {
+   "subject": {"kind": "Program", "natural_key": {"platform": "sas", "name": "sas/programs/monthly_orders.sas"}},
+   "predicate": "WRITES_TO",
+   "object": {"kind": "Dataset", "natural_key": {"name": "mart.no_orders"}},
+   "since": "M2"
+  },
+  {
+   "subject": {"kind": "Notebook", "natural_key": {"path": "notebooks/orders_daily.py"}},
+   "predicate": "WRITES_TO",
+   "object": {"kind": "Dataset", "natural_key": {"name": "gold.region_summary"}},
+   "since": "M2"
+  }
+ ],
+ "absent_entities": [
+  {"kind": "Dataset", "natural_key": {"name": "work.orders_sorted"}, "why": "WORK is SAS's temporary library"},
+  {"kind": "Dataset", "natural_key": {"name": "{df}"}, "why": "a DataFrame passed in as a parameter is a placeholder in the transform shapes, never a dataset"},
+  {"kind": "Table", "natural_key": {"datastore": "default", "name": "ranked"}, "why": "a derived table in FROM is a subquery, not a table"}
+ ],
+ "exclusions": [],
+ "forbidden_kinds": ["Package", "Component"],
+ "expected_unknowns": [
+  {"since": "M2", "detail": "load_region reads a DataFrame passed in and writes silver.orders_{region}: both stay placeholders and the transform is marked dynamic"},
+  {"since": "M2", "detail": "PySpark dropDuplicates keeps an arbitrary row per key: dedupe_by_key without an order"}
+ ],
+ "expected_conflicts": [],
+ "commits": [
+  {
+   "dir": "01-customer-history",
+   "expect": "A procedure closes the current customer rows and inserts the new versions: a type 2 history",
+   "added_entities": [
+    {"kind": "Program", "natural_key": {"platform": "sql", "name": "dim.load_customer_history"}, "since": "M2"},
+    {"kind": "Table", "natural_key": {"datastore": "default", "name": "dim.customer_history"}, "since": "M2"},
+    {"kind": "Table", "natural_key": {"datastore": "default", "name": "stg.customers_changed"}, "since": "M2"}
+   ],
+   "removed_entities": []
+  },
+  {
+   "dir": "02-monthly-pivot",
+   "expect": "A notebook pivots spend by month",
+   "added_entities": [
+    {"kind": "Notebook", "natural_key": {"path": "notebooks/monthly_spend.py"}, "since": "M2"},
+    {"kind": "Dataset", "natural_key": {"name": "gold.monthly_spend"}, "since": "M2"}
+   ],
+   "removed_entities": []
+  },
+  {
+   "dir": "03-retire-archive-job",
+   "expect": "The archive job is deleted with the datasets only it wrote",
+   "added_entities": [],
+   "removed_entities": [
+    {"kind": "Artifact", "natural_key": {"path": "jobs/archive_orders.py"}, "since": "M2"},
+    {"kind": "Dataset", "natural_key": {"name": "silver.orders_all"}, "since": "M2"},
+    {"kind": "Dataset", "natural_key": {"name": "silver.orders_{region}"}, "since": "M2"}
+   ]
+  }
+ ],
+ "decision_cases": [],
+ "granularity": {"label": null, "why": "batch data pipelines, not a deployed application", "source": "fixture design"}
+}

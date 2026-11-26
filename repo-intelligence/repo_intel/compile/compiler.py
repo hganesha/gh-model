@@ -83,6 +83,7 @@ class _Shard:
         self.evidence: dict[str, dict] = {}
         self.unknowns: dict[str, dict] = {}
         self.behaviors: dict[str, dict] = {}  # behaviour units (compile.behavior), by row id
+        self.transforms: dict[tuple, dict] = {}  # transform shapes (compile.transforms), by sort key
 
     def entity(self, e: Entity) -> str:
         """Add an entity; a repeated declaration merges attributes and evidence."""
@@ -114,6 +115,8 @@ class _Shard:
         rows = {"unit": self.unit, "entities": ordered(self.entities), "assertions": ordered(self.assertions), "evidence": ordered(self.evidence), "unknowns": ordered(self.unknowns)}
         if self.behaviors:  # only when there are any, so a shard without behaviour keeps its digest
             rows["behaviors"] = ordered(self.behaviors)
+        if self.transforms:  # the same for transform shapes
+            rows["transforms"] = [self.transforms[k] for k in sorted(self.transforms)]
         return rows
 
 
@@ -245,6 +248,9 @@ def _unit_compile(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, An
         for o in s["observations"]:
             if o["kind"] == "behavior":
                 _behavior(shard, repo, unit_root, artifact_of[s["path"]][0], o)
+
+    # 4c. Transform shapes: derived from the behaviour units just stored, and emitted by extractors.
+    _transforms(shard, repo, unit_root, packages[0][0] if packages else None, artifact_of, summaries)
 
     # 5. DM05: ORM uses the linker could not resolve, settled by a table decision.
     settled: set[tuple[str, str, str]] = set()
@@ -380,6 +386,98 @@ def _behavior(shard: _Shard, repo: str, unit_root: str, artifact: str, o: Mappin
         "evidence_ids": [ev], "evidence_class": o["evidence_class"],
     }
     shard.behaviors[row["id"]] = row
+
+
+TRANSFORM_OWNER = "transform_owner"  # the unknown's predicate when a transform unit's owner is not declared
+
+
+def _transforms(shard: _Shard, repo: str, unit_root: str, package: str | None, artifact_of: Mapping[str, tuple[str, str]], summaries: list[dict[str, Any]]) -> None:
+    """Transform shapes (repo_intel.compile.transforms) as the shard's `transforms` rows, and
+    each owner's `attributes.transforms`: its primitives and the category most of them share.
+
+    Behaviour units stored in 4b are read again through `transforms.from_behavior`; `transform`
+    observations come from extractors. "@package" is the unit's package, or the file's Artifact
+    when the unit has none. A unit whose owner nothing declares, or that does not validate,
+    becomes an unknown on its file, counted in `transform_shapes` coverage.
+    """
+    from repo_intel.compile import transforms as tx
+
+    stored = {(b["artifact"], b["evidence_ids"][0], b["owner"]) for b in shard.behaviors.values()}
+    for s in summaries:
+        artifact = artifact_of[s["path"]][0]
+        for o in s["observations"]:
+            p = o["payload"]
+            span = o["evidence"]["span"]
+            at = [span["start_byte"], span["end_byte"]]
+            if o["kind"] == "behavior":
+                owner = p.get("owner") if isinstance(p.get("owner"), dict) else {}
+                try:
+                    owner_id = entity_id(repo, EntityKind(owner["kind"]), _bind_unit(owner["natural_key"], unit_root))
+                except (KeyError, TypeError, ValueError):
+                    continue
+                if (artifact, o["evidence"]["id"], owner_id) not in stored:
+                    continue  # not stored: 4b already recorded why
+                derived = tx.from_behavior(p)
+                if derived is None:
+                    continue  # moves no data
+                language, transforms = derived
+                problems = tx.validate_shape({"owner": owner, "language": language, "transforms": transforms})
+            elif o["kind"] == "transform":
+                owner, language, transforms = p.get("owner"), p.get("language"), p.get("transforms")
+                problems = tx.validate_shape(p)
+                if owner == "@file":
+                    owner_id = artifact
+                elif owner == "@package":
+                    owner_id = package or artifact
+                else:
+                    try:
+                        owner_id = entity_id(repo, EntityKind(owner["kind"]), _bind_unit(owner["natural_key"], unit_root))
+                    except (KeyError, TypeError, ValueError):
+                        owner_id = None
+            else:
+                continue
+            where = f"bytes {at[0]}-{at[1]}"
+            if problems:
+                reason = f"transform unit at {where} is not valid: {problems[0]}"
+            elif owner_id not in shard.entities:
+                reason = f"transform unit at {where} belongs to {owner.get('kind')} {owner.get('name')!r}, which nothing in this unit declares"
+            else:
+                reason = None
+            if reason is not None:
+                row = Unknown.make(artifact, TRANSFORM_OWNER, "unknown", reason, f"transform_shapes:{shard.unit}").row()
+                shard.unknowns[row["id"]] = row
+                continue
+            row = {"owner": owner_id, "path": s["path"], "at": at, "language": language, "transforms": transforms}
+            shard.transforms[(owner_id, s["path"], at[0], at[1], language, digest(transforms))] = row
+
+    by_owner: dict[str, list[dict[str, Any]]] = {}
+    for key in sorted(shard.transforms):
+        by_owner.setdefault(key[0], []).extend(shard.transforms[key]["transforms"])
+    for owner_id, transforms in by_owner.items():
+        primitives, counts = tx.summary(transforms)
+        purpose = tx.purpose(counts)
+        e = shard.entities[owner_id]
+        attributes = {"transforms": {"primitives": primitives, **({"purpose": purpose} if purpose else {})}}
+        shard.entity(Entity.make(repo, EntityKind(e["kind"]), e["natural_key"], e["name"], attributes=attributes))
+
+
+def transform_coverage(shards: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+    """`transform_shapes` coverage per unit that has any: units with at least one recognised
+    (non-`platform`) transform over units that move data, counting those dropped as unknowns."""
+    from repo_intel.compile.transforms import moves_data
+
+    out = []
+    for name in sorted(shards):
+        shard = shards[name]
+        rows = shard.get("transforms", [])
+        dropped = sum(1 for u in shard.get("unknowns", []) if u["predicate"] == TRANSFORM_OWNER)
+        if rows or dropped:
+            languages: dict[str, int] = {}
+            for r in rows:
+                languages[r["language"]] = languages.get(r["language"], 0) + 1
+            recognised = sum(1 for r in rows if moves_data(r["transforms"]))
+            out.append(CoverageEntry(domain="transform_shapes", scope=name, numerator=recognised, denominator=len(rows) + dropped, detail={"by_language": dict(sorted(languages.items()))}).row())
+    return out
 
 
 def behavior_coverage(shards: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
@@ -666,6 +764,7 @@ def _repo_compile(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, An
         coverage.append(CoverageEntry(domain="parse", scope=name, numerator=sum(v[0] for v in by_lang.values()), denominator=len(files), detail={"by_language": {k: {"parsed": v[0], "files": v[1]} for k, v in sorted(by_lang.items())}}).row())
     coverage += platform_construct_coverage(shards)
     coverage += behavior_coverage(shards)
+    coverage += transform_coverage(shards)
 
     # Repo-level linking: things that cross unit boundaries.
     links: dict[str, dict[str, Any]] = inputs["links"]
