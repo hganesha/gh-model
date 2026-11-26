@@ -1,0 +1,38 @@
+DEFINE JOB load_orders
+DESCRIPTION 'Load daily orders'
+(
+  DEFINE SCHEMA orders_schema
+  (
+    order_id   VARCHAR(18),
+    customer_id VARCHAR(18),
+    amount     VARCHAR(20)
+  );
+
+  DEFINE OPERATOR file_reader
+  TYPE DATACONNECTOR PRODUCER
+  SCHEMA orders_schema
+  ATTRIBUTES
+  (
+    VARCHAR DirectoryPath = '/data/in/',
+    VARCHAR FileName = 'orders.csv',
+    VARCHAR Format = 'Delimited',
+    VARCHAR TextDelimiter = ','
+  );
+
+  DEFINE OPERATOR load_op
+  TYPE LOAD
+  SCHEMA *
+  ATTRIBUTES
+  (
+    VARCHAR TdpId = @TdpId,
+    VARCHAR UserName = @UserName,
+    VARCHAR UserPassword = @UserPassword,
+    VARCHAR TargetTable = 'stg.orders',
+    VARCHAR LogTable = 'stg.orders_log'
+  );
+
+  APPLY
+  ('INSERT INTO stg.orders (order_id, customer_id, amount) VALUES (:order_id, :customer_id, :amount);')
+  TO OPERATOR (load_op)
+  SELECT * FROM OPERATOR (file_reader);
+);

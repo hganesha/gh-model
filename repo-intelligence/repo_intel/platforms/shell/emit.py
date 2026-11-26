@@ -122,17 +122,19 @@ class Out:
         self.rel(a, b, subject, predicate, t, None, ev)
         self.resolved += 1
 
-    def dataset(self, a: int, b: int, subject: dict[str, Any], predicate: Predicate, name: str, attrs: dict[str, Any] | None = None, ev: EvidenceClass = E2) -> None:
+    def dataset(self, a: int, b: int, subject: dict[str, Any], predicate: Predicate, name: str, attrs: dict[str, Any] | None = None, ev: EvidenceClass = E2) -> str | None:
+        """The dataset `name` names, read or written by `subject`; its clean name, or None."""
         from repo_intel.extractors.data_python import dataset_name
 
         clean = dataset_name(name)
         if not clean:
             self.note(f"a dataset path that is not a name was left out ({predicate.value.lower()})")
-            return
+            return None
         d = self.base.ref(K.DATASET, {"name": clean}, clean)
         self.entity(a, b, K.DATASET, {"name": clean}, clean, attrs, ev)
         self.rel(a, b, subject, predicate, d, None, ev)
         self.resolved += 1
+        return clean
 
     # -- coverage, behaviour, shapes, diagnostics
 

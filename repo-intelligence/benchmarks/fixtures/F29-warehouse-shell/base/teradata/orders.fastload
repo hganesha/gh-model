@@ -1,0 +1,18 @@
+/* load the daily orders file into an empty staging table */
+SESSIONS 4;
+ERRLIMIT 25;
+LOGON tdprod/etl_user,$TD_LOGON_SECRET;
+DATABASE stg;
+DROP TABLE orders_e1;
+DROP TABLE orders_e2;
+DELETE FROM orders;
+SET RECORD VARTEXT ",";
+DEFINE order_id (VARCHAR(18)),
+       customer_id (VARCHAR(18)),
+       amount (VARCHAR(20))
+FILE = /data/in/orders.csv;
+BEGIN LOADING orders ERRORFILES orders_e1, orders_e2 CHECKPOINT 100000;
+INSERT INTO orders (order_id, customer_id, amount)
+VALUES (:order_id, :customer_id, :amount);
+END LOADING;
+LOGOFF;
