@@ -1,0 +1,35 @@
+CREATE OR REPLACE PROCEDURE mart.load_daily_sales(DATE, VARCHAR(10))
+RETURNS INTEGER
+EXECUTE AS OWNER
+LANGUAGE NZPLSQL AS
+BEGIN_PROC
+DECLARE
+  p_day ALIAS FOR $1;
+  p_region ALIAS FOR $2;
+  v_rows INTEGER := 0;
+  rec RECORD;
+BEGIN
+  DELETE FROM mart.daily_sales WHERE sale_day = p_day AND region = p_region;
+  INSERT INTO mart.daily_sales (sale_day, region, total)
+    SELECT sale_day, region, SUM(amount) FROM stage.sales
+    WHERE sale_day = $1 AND region = $2
+    GROUP BY sale_day, region;
+  v_rows := ROW_COUNT;
+  IF v_rows = 0 THEN
+    RAISE NOTICE 'no sales for %', p_day;
+  ELSIF v_rows > 1000 THEN
+    RAISE NOTICE 'large day';
+  END IF;
+  FOR rec IN SELECT region FROM mart.regions WHERE active LOOP
+    EXECUTE IMMEDIATE 'GROOM TABLE mart.daily_sales_' || rec.region;
+  END LOOP;
+  FOR i IN 1..3 LOOP
+    EXIT WHEN v_rows > 10;
+  END LOOP;
+  CALL mart.refresh_summary(p_day);
+  RETURN v_rows;
+EXCEPTION
+  WHEN OTHERS THEN
+    RAISE EXCEPTION 'load failed: %', SQLERRM;
+END;
+END_PROC;
