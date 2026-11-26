@@ -9,7 +9,9 @@ strings and app settings it names. C# and VB code is not lowered: only the redir
 transfers, navigation and role checks in it are read.
 
 `aspnet.config` reads `web.config`: authorization rules as Permissions that Roles are
-granted, and connection strings and app settings by name.
+granted, connection strings and app settings by name, and whether the file marks an
+application root. Version 1.2.0 adds that last part: a `web.config` that only sets
+authorization no longer roots a site, and each root is its own `component_root`.
 
 Modules: `razor` (where server code is in Razor and Web Forms markup), `vocabulary`,
 `source` and `config` (the extractors). The forms, controls and emission helpers are
@@ -27,7 +29,7 @@ PACK = PlatformPack(
     id="aspnet",
     name="ASP.NET (Web Forms, Razor, Blazor, web.config)",
     prefix="aspx",
-    version="1.1.0",
+    version="1.2.0",
     terms=TERMS,
     constructs=CONSTRUCTS,
     extractors=(AspNetSource(), AspNetConfig()),

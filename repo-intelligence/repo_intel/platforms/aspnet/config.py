@@ -4,13 +4,19 @@ What it declares:
 
 - the `<authorization>` rules of `<system.web>` (for the application, or for the path
   of an enclosing `<location path>`), as one Permission (`aspx:AuthorizationRule`)
-  named by that path; each role an `<allow roles>` names is a Role that GRANTS it. A
+  named by that path: `/` + the path in the application when the file roots one, else
+  (a folder's file that only sets authorization) the folder's repository path, joined
+  with the location path, since the application root is another file. Each role an
+  `<allow roles>` names is a Role that GRANTS it. A
   page the path names exactly (an `.aspx` file) REQUIRES the role. `deny users="?"`
   (anonymous users denied) and `allow users="*"` are kept as attributes, never roles;
   user names are not recorded;
 - `<connectionStrings>` entries by name (`aspx:ConnectionString`, `connectionstring:<name>`,
   the key the pages use) with the provider; the connection string is never read;
-- `<appSettings>` keys (`aspx:AppSetting`, `appsetting:<key>`); values are never read.
+- `<appSettings>` keys (`aspx:AppSetting`, `appsetting:<key>`); values are never read;
+- whether the file marks a Web Forms application root (an `app_root` observation,
+  `{"root": true | false}`): it does unless it only sets authorization
+  (`application_root`). The unit linker keys a page's Endpoint below the nearest root.
 
 Authentication, custom errors, handlers, modules and session state are counted as
 constructs, not modelled. A file with entity declarations is not read.
@@ -44,9 +50,39 @@ def _split(value: str | None) -> list[str]:
     return [x.strip() for x in (value or "").split(",") if x.strip()]
 
 
+def application_root(root: ET.Element) -> bool:
+    """Whether a `web.config` marks an application root (contract section 9.2).
+
+    It does unless it only sets authorization: its top-level elements are `system.web`
+    and `location` alone, each `location` holds only `system.web`, every `system.web`
+    holds only `authorization`, and at least one `authorization` is there. That is the
+    file a folder of a site carries to restrict who may read it; anything else (settings,
+    connection strings, compilation, handlers, an empty file) is read as an application's
+    own configuration. Comments are not elements here (ElementTree drops them)."""
+    authorizations = 0
+
+    def web_only(el: ET.Element) -> bool:
+        nonlocal authorizations
+        if any(part.tag != "authorization" for part in el):
+            return False
+        authorizations += len(el)
+        return True
+
+    for child in root:
+        if child.tag == "system.web":
+            if not web_only(child):
+                return True
+        elif child.tag == "location":
+            if any(part.tag != "system.web" or not web_only(part) for part in child):
+                return True
+        else:
+            return True
+    return authorizations == 0
+
+
 class AspNetConfig:
     id = "aspnet.config"
-    version = "1.0.0"
+    version = "1.1.0"
 
     def matches(self, path: str) -> bool:
         base = posixpath.basename(path).lower()
@@ -80,6 +116,7 @@ class _Config:
         self.roles: set[str] = set()
         self.declared: set[str] = set()
         self.here = posixpath.dirname(path)
+        self.app_root = application_root(root)
 
     def at(self, needle: str | None):
         """Span of the next occurrence of `needle` (elements are visited in document order)."""
@@ -115,6 +152,9 @@ class _Config:
         for loc in (c for c in self.root if c.tag == "location"):
             path = (loc.get("path") or "").strip()
             self.section(loc, path or None)
+        # Whether this file marks a Web Forms application root (contract section 9.2); the
+        # unit linker reads it in `link_app_relative_routes`.
+        self.items.append(self.base.obs("app_root", self.blob, self.base.whole_file(self.data), {"root": application_root(self.root)}, E1))
         return self.base.Extraction(self.items, [])
 
     def section(self, holder: ET.Element, location: str | None) -> None:
@@ -151,7 +191,10 @@ class _Config:
             self.construct(at, "aspx:config.authorization", False)
             return
         self.construct(at, "aspx:config.authorization", True)
-        target = "/" + location.lstrip("~/") if location else "/"
+        if self.app_root:  # a path in the application this file roots
+            target = "/" + location.lstrip("~/") if location else "/"
+        else:  # a folder's own rules: the root is another file, so the path is the repository's
+            target = posixpath.normpath(posixpath.join(self.here, location.lstrip("~/") if location else ""))
         allowed = sorted({r for c in rules if c.tag == "allow" for r in _split(c.get("roles"))})
         denied = sorted({r for c in rules if c.tag == "deny" for r in _split(c.get("roles"))})
         users = [(c.tag, u) for c in rules for u in _split(c.get("users"))]

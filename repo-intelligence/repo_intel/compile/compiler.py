@@ -373,11 +373,21 @@ def _screen_apps(summaries: list[dict[str, Any]], unit_root: str) -> list[dict[s
     keeps its key: which router it belongs to is not known from one file, so it is not
     guessed.
 
-    Relation ends naming a rekeyed Screen are rekeyed with it. An end is matched by its old
-    key among the unit's Screen declarations: the declaration in the same file whose span
-    holds the relation's span first, else the only declaration with that key in the unit.
-    An end that still matches several Screens, or one whose key some unrouted Screen keeps,
-    is left as written. Summaries are copied where changed, never modified in place.
+    The web Forms on a rekeyed Screen gain the same `app` (section 9.2), so two apps with a
+    form on the same route do not share a Form key. The web UIControls on it gain it too,
+    since a control's `container` names the Screen (`<screen>` or `<screen>#<form>`) and
+    would otherwise still join the two apps' controls. A Form or control is on a Screen when
+    the Screen is declared in its own file with the name its key gives (`screen`, or the
+    part of `container` before `#`); when that file declares the name under more than one
+    app, or under none, the key stays as written.
+
+    Relation ends naming a rekeyed Screen, Form or UIControl are rekeyed with it. An end is
+    matched by its old key among the unit's declarations of that kind: the declaration in
+    the same file whose span holds the relation's span first, then (for a Form or control,
+    whose span is only its own tag) the declarations in the same file when they agree on
+    `app`, else the only declaration with that key in the unit. An end that still matches
+    several, or one whose key some declaration keeps (an unrouted Screen, a Form of another
+    platform), is left as written. Summaries are copied where changed, never modified in place.
     """
     def routed(o: Mapping[str, Any]) -> bool:
         p = o["payload"]
@@ -417,25 +427,61 @@ def _screen_apps(summaries: list[dict[str, Any]], unit_root: str) -> list[dict[s
         for router in clashing:
             level[router] += 1
 
-    def key_of(natural_key: Mapping[str, Any]) -> str:
-        return digest(natural_key)
+    def key_of(kind: str, natural_key: Mapping[str, Any]) -> str:
+        return f"{kind}:{digest(natural_key)}"
 
     # Every web Screen declaration by its key as written: (path, start, end, app or None).
     declared: dict[str, list[tuple[str, int, int, str | None]]] = {}
+    screen_apps: dict[tuple[str, str], set[str | None]] = {}  # (path, screen name) -> apps declared there
     for s in summaries:
         for o in s["observations"]:
             p = o["payload"]
             if o["kind"] == "entity" and p.get("kind") == EntityKind.SCREEN and p.get("attributes", {}).get("platform") == "web":
                 sp = o["evidence"]["span"]
-                declared.setdefault(key_of(p["natural_key"]), []).append((s["path"], sp["start_byte"], sp["end_byte"], app[p["attributes"]["router"]] if routed(o) else None))
+                a = app[p["attributes"]["router"]] if routed(o) else None
+                declared.setdefault(key_of(EntityKind.SCREEN, p["natural_key"]), []).append((s["path"], sp["start_byte"], sp["end_byte"], a))
+                if isinstance(p["natural_key"].get("name"), str):
+                    screen_apps.setdefault((s["path"], p["natural_key"]["name"]), set()).add(a)
+
+    on_screen = (EntityKind.FORM, EntityKind.UI_CONTROL)  # kinds whose key names their Screen
+
+    def screen_named(kind: str, natural_key: Mapping[str, Any], path: str) -> set[str | None]:
+        """The apps of the Screens declared in `path` that a Form or control key names."""
+        if kind == EntityKind.FORM:
+            return set(screen_apps.get((path, natural_key.get("screen")), set()))
+        container = natural_key.get("container")
+        if not isinstance(container, str):
+            return set()
+        return {a for (where, name), apps in screen_apps.items() if where == path and (container == name or container.startswith(name + "#")) for a in apps}
+
+    def owned_app(o: Mapping[str, Any], path: str) -> str | None:
+        """The `app` a web Form or UIControl declaration gains from its Screen, or None."""
+        p = o["payload"]
+        if o["kind"] != "entity" or p.get("kind") not in on_screen or not isinstance(p.get("natural_key"), dict) or "app" in p["natural_key"] or p.get("attributes", {}).get("platform") != "web":
+            return None
+        apps = screen_named(p["kind"], p["natural_key"], path)
+        return next(iter(apps)) if len(apps) == 1 else None
+
+    # Every Form and UIControl declaration, of any platform, by its key as written, so a key
+    # that one of another platform shares is never rekeyed by a relation end.
+    for s in summaries:
+        for o in s["observations"]:
+            p = o["payload"]
+            if o["kind"] == "entity" and p.get("kind") in on_screen and isinstance(p.get("natural_key"), dict):
+                sp = o["evidence"]["span"]
+                declared.setdefault(key_of(p["kind"], p["natural_key"]), []).append((s["path"], sp["start_byte"], sp["end_byte"], owned_app(o, s["path"])))
 
     def end_app(end: Any, path: str, span: Mapping[str, int]) -> str | None:
-        if not isinstance(end, dict) or end.get("kind") != EntityKind.SCREEN or not isinstance(end.get("natural_key"), dict):
+        if not isinstance(end, dict) or end.get("kind") not in (EntityKind.SCREEN, *on_screen) or not isinstance(end.get("natural_key"), dict) or "app" in end["natural_key"]:
             return None
-        found = declared.get(key_of(end["natural_key"]), [])
+        found = declared.get(key_of(end["kind"], end["natural_key"]), [])
         here = [d for d in found if d[0] == path and d[1] <= span["start_byte"] and span["end_byte"] <= d[2]]
         if len(here) == 1:
             return here[0][3]
+        if end["kind"] in on_screen:  # a Form's span is its opening tag: its controls lie outside it
+            same_file = {d[3] for d in found if d[0] == path}
+            if len(same_file) == 1:
+                return next(iter(same_file))
         if len({d[3] for d in found}) == 1:
             return found[0][3]
         return None
@@ -447,6 +493,8 @@ def _screen_apps(summaries: list[dict[str, Any]], unit_root: str) -> list[dict[s
             p = o["payload"]
             if routed(o):
                 o = {**o, "payload": {**p, "natural_key": {**p["natural_key"], "app": app[p["attributes"]["router"]]}}}
+            elif (fa := owned_app(o, s["path"])) is not None:
+                o = {**o, "payload": {**p, "natural_key": {**p["natural_key"], "app": fa}}}
             elif o["kind"] == "relation":
                 changed = {}
                 for side in ("subject", "object"):
