@@ -55,7 +55,7 @@ def test_connect_compile_and_read_a_repository(client, f01):
 
     repos = c.get("/v1/repositories", headers=AUTH).json()
     assert [r["full_name"] for r in repos["repositories"]] == ["repo"] and repos["repositories"][0]["snapshots"][0]["rkp_hash"] == job["rkp_hash"]
-    assert "local_path" in repos["repositories"][0] and set(repos["planes"]) == {"architecture", "contracts", "data", "jobs", "ai", "tests", "deployment"}
+    assert "local_path" in repos["repositories"][0] and set(repos["planes"]) == {"architecture", "contracts", "data", "jobs", "ai", "tests", "deployment", "experience", "business", "security"}
 
     h = job["rkp_hash"]
     summary = c.get(f"/v1/snapshots/{h}/summary", headers=AUTH).json()

@@ -25,6 +25,10 @@ export interface StatusResult {
   uncommitted_changes: boolean;
   working_tree: boolean;
   bundle_working_tree?: boolean;
+  /** What the bundle commits. */
+  tier?: "architecture" | "full";
+  /** `architecture` when function-level detail is neither committed nor compiled on this machine. */
+  detail?: "complete" | "architecture";
 }
 
 export class EngineError extends Error {

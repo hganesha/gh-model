@@ -62,6 +62,28 @@ export interface Unknown {
   coverage_ref: string;
 }
 
+/** What a unit of behaviour is, when one owner has several (repo_intel.compile.behavior.UNIT_KINDS). */
+export type BehaviorKind = "function" | "page" | "macro" | "data_step" | "sql_step" | "proc_step" | "open_code" | "handler";
+
+/**
+ * One unit of behaviour (repo_intel.compile.behavior) for the entity `owner`: a function,
+ * page, DATA step or macro as statements. Function-level detail, so only a full bundle has
+ * these rows; `body` and `params` follow the behavioural IR and are left untyped here.
+ */
+export interface Behavior {
+  id: string;
+  owner: string;
+  artifact: string;
+  schema: string;
+  language: string;
+  /** Absent when the pack did not say; a newer engine may add kinds, so read unknown ones as text. */
+  kind?: BehaviorKind | (string & {});
+  params: Record<string, unknown>[];
+  body: Record<string, unknown>[];
+  evidence_ids: string[];
+  evidence_class: EvidenceClass;
+}
+
 export interface Conflict {
   id: string;
   conflict_type: string;
@@ -96,6 +118,8 @@ export interface UnitRef {
   assertions: number;
   evidence: number;
   unknowns: number;
+  /** Behaviour rows in the unit file; absent in bundles written before the table existed. */
+  behaviors?: number;
 }
 
 export interface BundleManifest {
@@ -112,6 +136,14 @@ export interface BundleManifest {
   counts: Record<string, number>;
   /** Format 2: values to fill in for fields a unit row leaves out. Absent in format 1. */
   row_defaults?: RowDefaults;
+  /** What was committed: everything, or the architecture tier without function-level detail. Absent means full. */
+  tier?: "architecture" | "full";
+  /** Architecture tier: the entity kinds left out, with the rows that touch them. */
+  detail_kinds?: string[];
+  /** Architecture tier: the tables left out whole (behaviour). */
+  detail_tables?: string[];
+  /** Architecture tier: how many rows of each table were left out. */
+  detail_omitted?: Record<"entities" | "assertions" | "evidence" | "unknowns", number> & { behaviors?: number };
 }
 
 /** One row of a unit file: a contract row tagged with its table. */
@@ -119,4 +151,5 @@ export type UnitRow =
   | ({ table: "entity" } & Entity)
   | ({ table: "assertion" } & Assertion)
   | ({ table: "evidence" } & Evidence)
-  | ({ table: "unknown" } & Unknown);
+  | ({ table: "unknown" } & Unknown)
+  | ({ table: "behavior" } & Behavior);

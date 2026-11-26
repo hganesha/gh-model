@@ -1,7 +1,8 @@
 """Compiler steps: `unit.plan`, `unit.compile`, `repo.requests`, `repo.compile` (spec §3.3, §5).
 
 `unit.compile` is generic: it materializes the "entity" and "relation"
-observations that extractors emit (see `extractors/base.py`), then what the
+observations that extractors emit (see `extractors/base.py`), stores "behavior"
+observations as the shard's `behaviors` rows keyed by owner, then what the
 unit's decisions settled (DM02, DM03, DM05, DM08).
 
 Every step here is pure. Decisions are not: a model may be called, so they run
@@ -17,11 +18,12 @@ import re
 from collections.abc import Mapping
 from typing import Any
 
+from repo_intel.compile.behavior import SCHEMA as BEHAVIOR_SCHEMA, validate_unit
 from repo_intel.compile.buildgraph import Step, StepInputs
 from repo_intel.compile.capabilities import CLASSIFIED_ECOSYSTEMS, CapabilityCatalogue, match_package
-from repo_intel.compile.contracts import Assertion, Conflict, CoverageEntry, Entity, Evidence, Unknown
+from repo_intel.compile.contracts import Assertion, Conflict, CoverageEntry, Entity, Evidence, Unknown, entity_id
 from repo_intel.decisions import dependency as dm_dependency
-from repo_intel.storage.hashing import digest
+from repo_intel.storage.hashing import digest, make_id
 from repo_intel.compile.link import link_repo, match_call, normalize_route
 from repo_intel.compile.ontology import AssertionKind, EntityKind, EpistemicStatus, EvidenceClass, Predicate, functional_violations
 from repo_intel.compile.patterns import SERVERLESS_DEPLOYMENT_KINDS, Graph, PatternCatalogue, detect, granularity_features
@@ -51,6 +53,28 @@ UNIT_PLAN = Step("unit.plan", "0.4.0", _unit_plan)
 # --------------------------------------------------------------- unit.compile
 
 
+_PLATFORM_ATTRS = ("platform", "platform_kind", "fidelity")
+
+
+def _merge_attributes(old: dict[str, Any], new: dict[str, Any]) -> dict[str, Any]:
+    """Merge two declarations of one entity; platform attributes move together, never half from each.
+
+    A declaration through a platform term (platform_kind) wins over a neutral one. When two
+    platforms declare the same entity (a JCL and a SAS Dataset), both are kept in `platforms`.
+    """
+    merged = {**old, **new}
+    if old.get("platform_kind") or new.get("platform_kind"):
+        source = new if new.get("platform_kind") else old
+        for key in _PLATFORM_ATTRS:
+            merged.pop(key, None)
+            if key in source:
+                merged[key] = source[key]
+    seen = {a.get("platform") for a in (old, new) if a.get("platform")} | set(old.get("platforms", [])) | set(new.get("platforms", []))
+    if len(seen) > 1:
+        merged["platforms"] = sorted(seen)
+    return merged
+
+
 class _Shard:
     def __init__(self, unit: str):
         self.unit = unit
@@ -58,13 +82,14 @@ class _Shard:
         self.assertions: dict[str, dict] = {}
         self.evidence: dict[str, dict] = {}
         self.unknowns: dict[str, dict] = {}
+        self.behaviors: dict[str, dict] = {}  # behaviour units (compile.behavior), by row id
 
     def entity(self, e: Entity) -> str:
         """Add an entity; a repeated declaration merges attributes and evidence."""
         row = e.row()
         old = self.entities.get(e.id)
         if old:
-            row["attributes"] = {**old["attributes"], **row["attributes"]}
+            row["attributes"] = _merge_attributes(old["attributes"], row["attributes"])
             row["evidence_ids"] = sorted(set(old["evidence_ids"]) | set(row["evidence_ids"]))
         self.entities[e.id] = row
         return e.id
@@ -86,7 +111,10 @@ class _Shard:
     def rows(self) -> dict[str, Any]:
         def ordered(d: dict[str, dict]) -> list[dict]:
             return [d[k] for k in sorted(d)]
-        return {"unit": self.unit, "entities": ordered(self.entities), "assertions": ordered(self.assertions), "evidence": ordered(self.evidence), "unknowns": ordered(self.unknowns)}
+        rows = {"unit": self.unit, "entities": ordered(self.entities), "assertions": ordered(self.assertions), "evidence": ordered(self.evidence), "unknowns": ordered(self.unknowns)}
+        if self.behaviors:  # only when there are any, so a shard without behaviour keeps its digest
+            rows["behaviors"] = ordered(self.behaviors)
+        return rows
 
 
 def _status(evidence_class: str) -> EpistemicStatus:
@@ -123,6 +151,15 @@ def _unit_compile(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, An
         attributes = {"language": s["language"], "parsed": s["parsed"]}
         if traits:
             attributes["code_traits"] = [{**o["payload"], "evidence_id": shard.cite(o["evidence"])} for o in traits]
+        # Platform constructs this file shows, and how many were modelled (repo_intel.platforms).
+        constructs: dict[str, dict[str, int]] = {}
+        for o in s["observations"]:
+            if o["kind"] == "construct":
+                count = constructs.setdefault(o["payload"]["construct"], {"seen": 0, "modelled": 0})
+                count["seen"] += 1
+                count["modelled"] += 1 if o["payload"]["modelled"] else 0
+        if constructs:
+            attributes["constructs"] = dict(sorted(constructs.items()))
         art = shard.entity(Entity.make(repo, EntityKind.ARTIFACT, {"path": s["path"]}, posixpath.basename(s["path"]), attributes=attributes, evidence_ids=[shard.cite(file_ev), *(a["evidence_id"] for a in attributes.get("code_traits", []))]))
         artifact_of[s["path"]] = (art, file_ev["id"])
     standing, redirect = effective_declarations([(s["path"], o) for s in summaries for o in s["observations"] if o["kind"] == "package_declaration" and unit_name(o["payload"]["manifest_dir"]) == unit["name"]])
@@ -202,6 +239,12 @@ def _unit_compile(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, An
             continue
         evs = [shard.cite(e) for e in o["evidence"]]
         shard.assertion(Assertion.make(subject, Predicate(p["predicate"]), obj, qualifiers=p.get("qualifiers", {}), assertion_kind=AssertionKind.DERIVED_RELATION, epistemic_status=_status(o["evidence_class"]), evidence_class=o["evidence_class"], evidence_ids=evs, resolution=o["resolution"]))
+
+    # 4b. Behaviour units, now that every entity of the unit is known.
+    for s in summaries:
+        for o in s["observations"]:
+            if o["kind"] == "behavior":
+                _behavior(shard, repo, unit_root, artifact_of[s["path"]][0], o)
 
     # 5. DM05: ORM uses the linker could not resolve, settled by a table decision.
     settled: set[tuple[str, str, str]] = set()
@@ -298,6 +341,62 @@ def _unit_compile(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, An
     return shard.rows()
 
 
+BEHAVIOR_OWNER = "behavior_owner"  # the unknown's predicate when a behaviour unit's owner is not declared
+
+
+def _behavior(shard: _Shard, repo: str, unit_root: str, artifact: str, o: Mapping[str, Any]) -> None:
+    """One `behavior` observation (repo_intel.compile.behavior) as a shard row keyed by its owner's entity id.
+
+    The owner resolves as a relation endpoint does, but is never declared here: a unit of
+    behaviour for an entity nothing declares, or one that no longer validates, becomes an
+    unknown on the file that holds it, counted in the unit's `behavior` coverage.
+    """
+    p = o["payload"]
+    owner = p.get("owner") if isinstance(p.get("owner"), dict) else {}
+    problems = validate_unit(p)
+    owner_id = None
+    if not problems:
+        try:
+            owner_id = entity_id(repo, EntityKind(owner["kind"]), _bind_unit(owner["natural_key"], unit_root))
+        except (KeyError, TypeError, ValueError):
+            owner_id = None
+    span = o["evidence"]["span"]
+    where = f"bytes {span['start_byte']}-{span['end_byte']}"
+    if problems:
+        reason = f"behaviour unit at {where} is not valid: {problems[0]}"
+    elif owner_id not in shard.entities:
+        reason = f"behaviour unit at {where} belongs to {owner.get('kind')} {owner.get('name')!r}, which nothing in this unit declares"
+    else:
+        reason = None
+    if reason is not None:
+        row = Unknown.make(artifact, BEHAVIOR_OWNER, "unknown", reason, f"behavior:{shard.unit}").row()
+        shard.unknowns[row["id"]] = row
+        return
+    ev = shard.cite(o["evidence"])
+    row = {
+        "id": make_id("bhv", owner_id, ev, digest(p["body"])), "owner": owner_id, "artifact": artifact,
+        "schema": p.get("schema", BEHAVIOR_SCHEMA), "language": p["language"], "params": p.get("params", []), "body": p["body"],
+        **({"kind": p["kind"]} if p.get("kind") else {}),
+        "evidence_ids": [ev], "evidence_class": o["evidence_class"],
+    }
+    shard.behaviors[row["id"]] = row
+
+
+def behavior_coverage(shards: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+    """`behavior` coverage per unit that has any: units stored over units the extractors emitted."""
+    out = []
+    for name in sorted(shards):
+        shard = shards[name]
+        stored = len(shard.get("behaviors", []))
+        dropped = sum(1 for u in shard.get("unknowns", []) if u["predicate"] == BEHAVIOR_OWNER)
+        if stored or dropped:
+            languages: dict[str, int] = {}
+            for b in shard.get("behaviors", []):
+                languages[b["language"]] = languages.get(b["language"], 0) + 1
+            out.append(CoverageEntry(domain="behavior", scope=name, numerator=stored, denominator=stored + dropped, detail={"by_language": dict(sorted(languages.items()))}).row())
+    return out
+
+
 def decision_status(decision: Mapping[str, Any]) -> str:
     """How a decided label is presented: rules and verifier-confirmed answers are supported,
     other model answers inferred, an owner's label is the owner's (spec §7.3, §8.6)."""
@@ -310,7 +409,7 @@ def decision_status(decision: Mapping[str, Any]) -> str:
     return "inferred"
 
 
-UNIT_COMPILE = Step("unit.compile", "0.9.0", _unit_compile)
+UNIT_COMPILE = Step("unit.compile", "0.10.0", _unit_compile)
 
 
 # --------------------------------------------------------------- repo.compile
@@ -375,6 +474,31 @@ def _dependency_capabilities(
         denominator=len(declarations), detail={"ecosystems": sorted(CLASSIFIED_ECOSYSTEMS)},
     )
     return decisions, coverage
+
+
+def platform_construct_coverage(shards: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+    """`platform_constructs` coverage, one entry per platform seen: occurrences modelled over
+    occurrences seen, with each construct's counts and the constructs looked for but not seen."""
+    from repo_intel import platforms
+
+    by_platform: dict[str, dict[str, dict[str, int]]] = {}
+    for shard in shards.values():
+        for e in shard["entities"]:
+            for construct_id, count in e["attributes"].get("constructs", {}).items() if e["kind"] == EntityKind.ARTIFACT else ():
+                pack = platforms.CONSTRUCTS[construct_id][0].id if construct_id in platforms.CONSTRUCTS else construct_id.split(":")[0]
+                total = by_platform.setdefault(pack, {}).setdefault(construct_id, {"seen": 0, "modelled": 0})
+                total["seen"] += count["seen"]
+                total["modelled"] += count["modelled"]
+    out = []
+    for pack_id, counts in sorted(by_platform.items()):
+        pack = platforms.packs().get(pack_id)
+        looked_for = [c.id for c in pack.constructs] if pack else []
+        out.append(CoverageEntry(
+            domain="platform_constructs", scope=pack_id,
+            numerator=sum(c["modelled"] for c in counts.values()), denominator=sum(c["seen"] for c in counts.values()),
+            detail={"constructs": dict(sorted(counts.items())), "not_seen": sorted(set(looked_for) - set(counts))},
+        ).row())
+    return out
 
 
 def _norm_name(text: str) -> str:
@@ -540,6 +664,8 @@ def _repo_compile(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, An
             n[0] += 1 if f["attributes"]["parsed"] else 0
             n[1] += 1
         coverage.append(CoverageEntry(domain="parse", scope=name, numerator=sum(v[0] for v in by_lang.values()), denominator=len(files), detail={"by_language": {k: {"parsed": v[0], "files": v[1]} for k, v in sorted(by_lang.items())}}).row())
+    coverage += platform_construct_coverage(shards)
+    coverage += behavior_coverage(shards)
 
     # Repo-level linking: things that cross unit boundaries.
     links: dict[str, dict[str, Any]] = inputs["links"]
@@ -732,7 +858,7 @@ def _preference(overrides: Mapping[str, Any], predicate: str, subject: str) -> s
     return next((p["object"] for p in overrides.get("preferences", []) if p["predicate"] == predicate and p["subject"] == subject), None)
 
 
-REPO_COMPILE = Step("repo.compile", "0.8.0", _repo_compile)
+REPO_COMPILE = Step("repo.compile", "0.9.0", _repo_compile)
 
 from repo_intel.compile.link import UNIT_LINK  # noqa: E402
 

@@ -45,8 +45,8 @@ def compiled(tmp_path_factory):
     return run
 
 
-def test_there_are_nineteen_fixtures():
-    assert len(FIXTURES) == 19 and [f[:3] for f in FIXTURES] == [f"F{i:02d}" for i in range(1, 20)]
+def test_fixtures_are_numbered_contiguously():
+    assert len(FIXTURES) >= 22 and [f[:3] for f in FIXTURES] == [f"F{i:02d}" for i in range(1, len(FIXTURES) + 1)]
 
 
 @pytest.mark.parametrize("name", FIXTURES)

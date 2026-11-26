@@ -7,6 +7,7 @@ from typing import Any
 from repo_intel.compile.contracts import Assertion, Entity, Evidence, Unknown, entity_id
 from repo_intel.storage.hashing import digest, merkle_root
 from repo_intel.compile.ontology import check_relation, functional_violations
+from repo_intel.platforms import check_platform_kind
 
 
 def content_leaves(shard_digests: dict[str, str], coverage_ref: str, conflicts_ref: str) -> dict[str, str]:
@@ -35,6 +36,9 @@ def verify_snapshot(*, repository_id: str, path_manifest: dict[str, Any], shards
                 continue
             if row["id"] != entity_id(repository_id, row["kind"], row["natural_key"]):
                 problems.append(f"entity {row['id']}: id does not re-derive")
+            reason = check_platform_kind(row["kind"], row.get("attributes", {}))
+            if reason:
+                problems.append(f"entity {row['id']}: {reason}")
             entities[row["id"]] = row
         for row in shard["evidence"]:
             try:

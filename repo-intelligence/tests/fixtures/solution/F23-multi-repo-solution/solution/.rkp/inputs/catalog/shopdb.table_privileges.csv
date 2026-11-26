@@ -1,0 +1,7 @@
+GRANTOR,GRANTEE,TABLE_CATALOG,TABLE_SCHEMA,TABLE_NAME,PRIVILEGE_TYPE,IS_GRANTABLE
+postgres,orders_reader,shopdb,public,orders,SELECT,NO
+postgres,orders_reader,shopdb,public,customers,SELECT,NO
+postgres,orders_writer,shopdb,public,orders,INSERT,NO
+postgres,orders_writer,shopdb,public,orders,UPDATE,NO
+postgres,PUBLIC,shopdb,public,order_summary,SELECT,NO
+postgres,auditor,shopdb,audit,order_events,SELECT,YES

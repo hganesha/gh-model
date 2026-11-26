@@ -503,7 +503,19 @@ def worker_command() -> list[str]:
     if getattr(sys, "frozen", False):
         # The frozen `rkp` executable dispatches this first argument to step_worker.main.
         return [_real(sys.executable), FROZEN_WORKER_ARG]
-    return [os.path.normpath(os.path.abspath(sys.executable)), "-I", "-B", "-m", f"{__name__.rsplit('.', 1)[0]}.step_worker"]
+    # Load the engine package from the directory this host imported it from, not from
+    # whatever the interpreter's site-packages points at: a venv shared between checkouts
+    # (an editable install of another worktree) would otherwise run other code, outside
+    # the sandbox's read roots. Only the package directory is read, which _code_roots allows.
+    package_dir = str(Path(importlib.import_module(PACKAGE).__file__ or "").parent)
+    bootstrap = (
+        "import importlib.util, sys\n"
+        f"spec = importlib.util.spec_from_file_location({PACKAGE!r}, {os.path.join(package_dir, '__init__.py')!r}, submodule_search_locations=[{package_dir!r}])\n"
+        "module = importlib.util.module_from_spec(spec); sys.modules[spec.name] = module; spec.loader.exec_module(module)\n"
+        f"from {__name__.rsplit('.', 1)[0]}.step_worker import main\n"
+        "raise SystemExit(main())\n"
+    )
+    return [os.path.normpath(os.path.abspath(sys.executable)), "-I", "-B", "-c", bootstrap]
 
 
 class _Worker:

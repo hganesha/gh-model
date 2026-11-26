@@ -5,6 +5,7 @@ import hashlib
 import hmac
 import json
 import subprocess
+import sys
 import threading
 import time
 from unittest.mock import patch
@@ -124,7 +125,7 @@ def test_projection_rebuilds_from_the_store(system, f01, pg_conninfo):
         result = rebuild(conn, store)
         assert result["snapshots"] == 2 and result["tombstones"] == 1
         assert projection.dump(conn, "tenant-a") == before
-    run = subprocess.run([".venv/bin/python", "-m", "repo_intel.knowledge.rebuild_projection", "--tenant", "tenant-a", "--store-root", str(store.root.parent), "--conninfo", pg_conninfo, "--dry-run"], capture_output=True, text=True)
+    run = subprocess.run([sys.executable, "-m", "repo_intel.knowledge.rebuild_projection", "--tenant", "tenant-a", "--store-root", str(store.root.parent), "--conninfo", pg_conninfo, "--dry-run"], capture_output=True, text=True)
     assert run.returncode == 0 and "3 snapshot(s)" in run.stdout
 
 

@@ -1,0 +1,10 @@
+{
+  "schema": "rkp-solution/1",
+  "name": "shop",
+  "description": "A shop: a web front end, the orders service it calls, and the orders database's catalogue.",
+  "members": [
+    {"id": "web", "path": "web", "role": "web"},
+    {"id": "orders", "path": "service", "role": "service", "database": "shopdb"}
+  ],
+  "inputs": [".rkp/inputs/catalog/*.json", ".rkp/inputs/catalog/*.csv"]
+}

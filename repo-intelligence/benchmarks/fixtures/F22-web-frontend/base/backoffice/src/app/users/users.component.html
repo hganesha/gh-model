@@ -1,0 +1,11 @@
+<h1 i18n>Users</h1>
+<form #f="ngForm" (ngSubmit)="search()">
+  <input name="query" [(ngModel)]="query" placeholder="Search by email" />
+  <button type="submit">Search</button>
+</form>
+<a routerLink="/backoffice/users/new">New user</a>
+<table>
+  <tr *ngFor="let u of users">
+    <td>{{ u.email | translate }}</td>
+  </tr>
+</table>

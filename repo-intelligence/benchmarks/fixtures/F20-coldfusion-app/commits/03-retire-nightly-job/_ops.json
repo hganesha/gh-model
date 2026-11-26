@@ -1,0 +1,1 @@
+{"message": "Drafts expire in the database now: retire the nightly clean-up", "delete": ["jobs/nightly.cfm", "admin/schedule.cfm"]}

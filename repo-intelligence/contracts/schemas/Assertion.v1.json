@@ -58,7 +58,16 @@
         "DERIVED_FROM",
         "PRODUCES",
         "SERVES",
-        "EXHIBITS"
+        "EXHIBITS",
+        "RENDERS",
+        "SUBMITS_TO",
+        "NAVIGATES_TO",
+        "BINDS_TO",
+        "STYLED_BY",
+        "ENFORCES",
+        "APPLIES_TO",
+        "REQUIRES_ROLE",
+        "GRANTS"
       ],
       "title": "Predicate",
       "type": "string"

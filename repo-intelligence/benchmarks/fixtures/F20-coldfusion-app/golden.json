@@ -1,0 +1,1714 @@
+{
+ "fixture": "F20-coldfusion-app",
+ "description": "A ColdFusion order desk with no package manifests: Application.cfc lifecycle, tag and script components with remote and role-restricted functions, pages with HTML and cfform forms, links and redirects, a custom tag, cflogin roles, a cfschedule task, and ColdFusion Administrator exports (neo-datasource.xml, neo-cron.xml) under .rkp/inputs/cfml/ of which only names, drivers and URL paths are read. 'since' names the milestone whose compiler must produce the item.",
+ "entities": [
+  {
+   "kind": "Program",
+   "natural_key": {
+    "platform": "cfml",
+    "name": "services.orderservice"
+   },
+   "since": "M2",
+   "attributes": {
+    "kind": "component",
+    "platform_kind": "cf:Component"
+   }
+  },
+  {
+   "kind": "Program",
+   "natural_key": {
+    "platform": "cfml",
+    "name": "services.reportservice"
+   },
+   "since": "M2",
+   "attributes": {
+    "kind": "component",
+    "properties": [
+     "currency"
+    ]
+   }
+  },
+  {
+   "kind": "Program",
+   "natural_key": {
+    "platform": "cfml",
+    "name": "application"
+   },
+   "since": "M2",
+   "attributes": {
+    "kind": "component"
+   }
+  },
+  {
+   "kind": "Program",
+   "natural_key": {
+    "platform": "cfml",
+    "name": "index.cfm"
+   },
+   "since": "M2",
+   "attributes": {
+    "kind": "page",
+    "platform_kind": "cf:Page"
+   }
+  },
+  {
+   "kind": "Program",
+   "natural_key": {
+    "platform": "cfml",
+    "name": "login.cfm"
+   },
+   "since": "M2"
+  },
+  {
+   "kind": "Program",
+   "natural_key": {
+    "platform": "cfml",
+    "name": "orders/list.cfm"
+   },
+   "since": "M2"
+  },
+  {
+   "kind": "Program",
+   "natural_key": {
+    "platform": "cfml",
+    "name": "orders/edit.cfm"
+   },
+   "since": "M2"
+  },
+  {
+   "kind": "Program",
+   "natural_key": {
+    "platform": "cfml",
+    "name": "orders/save.cfm"
+   },
+   "since": "M2"
+  },
+  {
+   "kind": "Program",
+   "natural_key": {
+    "platform": "cfml",
+    "name": "orders/pager.cfm"
+   },
+   "since": "M2"
+  },
+  {
+   "kind": "Program",
+   "natural_key": {
+    "platform": "cfml",
+    "name": "reports/sales.cfm"
+   },
+   "since": "M2"
+  },
+  {
+   "kind": "Program",
+   "natural_key": {
+    "platform": "cfml",
+    "name": "reports/weekly.cfm"
+   },
+   "since": "M2"
+  },
+  {
+   "kind": "Program",
+   "natural_key": {
+    "platform": "cfml",
+    "name": "jobs/nightly.cfm"
+   },
+   "since": "M2"
+  },
+  {
+   "kind": "Symbol",
+   "natural_key": {
+    "platform": "cfml",
+    "program": "services.orderservice",
+    "name": "getorder"
+   },
+   "since": "M2",
+   "attributes": {
+    "access": "remote",
+    "returntype": "struct",
+    "roles": [
+     "clerk",
+     "manager"
+    ],
+    "platform_kind": "cf:Function"
+   }
+  },
+  {
+   "kind": "Symbol",
+   "natural_key": {
+    "platform": "cfml",
+    "program": "services.orderservice",
+    "name": "saveorder"
+   },
+   "since": "M2",
+   "attributes": {
+    "access": "public",
+    "params": [
+     "orderId",
+     "qty",
+     "status",
+     "notes"
+    ]
+   }
+  },
+  {
+   "kind": "Symbol",
+   "natural_key": {
+    "platform": "cfml",
+    "program": "services.orderservice",
+    "name": "notify"
+   },
+   "since": "M2",
+   "attributes": {
+    "access": "private"
+   }
+  },
+  {
+   "kind": "Symbol",
+   "natural_key": {
+    "platform": "cfml",
+    "program": "services.reportservice",
+    "name": "salesbyregion"
+   },
+   "since": "M2",
+   "attributes": {
+    "access": "remote",
+    "syntax": "script",
+    "roles": [
+     "manager"
+    ]
+   }
+  },
+  {
+   "kind": "Symbol",
+   "natural_key": {
+    "platform": "cfml",
+    "program": "services.reportservice",
+    "name": "fmt"
+   },
+   "since": "M2",
+   "attributes": {
+    "access": "private"
+   }
+  },
+  {
+   "kind": "Symbol",
+   "natural_key": {
+    "platform": "cfml",
+    "program": "application",
+    "name": "onapplicationstart"
+   },
+   "since": "M2",
+   "attributes": {
+    "lifecycle_event": "onApplicationStart"
+   }
+  },
+  {
+   "kind": "Symbol",
+   "natural_key": {
+    "platform": "cfml",
+    "program": "application",
+    "name": "onrequeststart"
+   },
+   "since": "M2",
+   "attributes": {
+    "lifecycle_event": "onRequestStart",
+    "params": [
+     "targetPage"
+    ]
+   }
+  },
+  {
+   "kind": "Endpoint",
+   "natural_key": {
+    "component_root": "",
+    "protocol": "http",
+    "method": "ANY",
+    "route": "/services/OrderService.cfc?method=getOrder"
+   },
+   "since": "M2",
+   "attributes": {
+    "framework": "coldfusion",
+    "handler": "getOrder"
+   }
+  },
+  {
+   "kind": "Endpoint",
+   "natural_key": {
+    "component_root": "",
+    "protocol": "http",
+    "method": "ANY",
+    "route": "/services/ReportService.cfc?method=salesByRegion"
+   },
+   "since": "M2",
+   "attributes": {
+    "framework": "coldfusion",
+    "handler": "salesByRegion"
+   }
+  },
+  {
+   "kind": "Endpoint",
+   "natural_key": {
+    "component_root": "",
+    "protocol": "http",
+    "method": "ANY",
+    "route": "/index.cfm"
+   },
+   "since": "M2",
+   "attributes": {
+    "framework": "coldfusion"
+   }
+  },
+  {
+   "kind": "Endpoint",
+   "natural_key": {
+    "component_root": "",
+    "protocol": "http",
+    "method": "ANY",
+    "route": "/orders/edit.cfm"
+   },
+   "since": "M2"
+  },
+  {
+   "kind": "Screen",
+   "natural_key": {
+    "platform": "cfml",
+    "name": "index.cfm"
+   },
+   "since": "M2",
+   "attributes": {
+    "platform_kind": "cf:Template",
+    "fidelity": "lossy"
+   }
+  },
+  {
+   "kind": "Screen",
+   "natural_key": {
+    "platform": "cfml",
+    "name": "login.cfm"
+   },
+   "since": "M2",
+   "attributes": {
+    "title": "Sign in",
+    "document": true
+   }
+  },
+  {
+   "kind": "Screen",
+   "natural_key": {
+    "platform": "cfml",
+    "name": "orders/list.cfm"
+   },
+   "since": "M2"
+  },
+  {
+   "kind": "Screen",
+   "natural_key": {
+    "platform": "cfml",
+    "name": "orders/edit.cfm"
+   },
+   "since": "M2"
+  },
+  {
+   "kind": "Screen",
+   "natural_key": {
+    "platform": "cfml",
+    "name": "reports/sales.cfm"
+   },
+   "since": "M2"
+  },
+  {
+   "kind": "Form",
+   "natural_key": {
+    "screen": "login.cfm",
+    "name": "signin"
+   },
+   "since": "M2",
+   "attributes": {
+    "kind": "html",
+    "method": "post"
+   }
+  },
+  {
+   "kind": "Form",
+   "natural_key": {
+    "screen": "orders/edit.cfm",
+    "name": "orderForm"
+   },
+   "since": "M2",
+   "attributes": {
+    "kind": "cfform",
+    "method": "post"
+   }
+  },
+  {
+   "kind": "Form",
+   "natural_key": {
+    "screen": "orders/list.cfm",
+    "name": "filter"
+   },
+   "since": "M2",
+   "attributes": {
+    "method": "get"
+   }
+  },
+  {
+   "kind": "Form",
+   "natural_key": {
+    "screen": "reports/sales.cfm",
+    "name": "regionPicker"
+   },
+   "since": "M2"
+  },
+  {
+   "kind": "UIControl",
+   "natural_key": {
+    "container": "login.cfm#signin",
+    "name": "username"
+   },
+   "since": "M2",
+   "attributes": {
+    "control": "text",
+    "required": true
+   }
+  },
+  {
+   "kind": "UIControl",
+   "natural_key": {
+    "container": "login.cfm#signin",
+    "name": "password"
+   },
+   "since": "M2",
+   "attributes": {
+    "control": "password"
+   }
+  },
+  {
+   "kind": "UIControl",
+   "natural_key": {
+    "container": "orders/edit.cfm#orderForm",
+    "name": "qty"
+   },
+   "since": "M2",
+   "attributes": {
+    "control": "text",
+    "tag": "cfinput",
+    "required": true,
+    "validate": "integer"
+   }
+  },
+  {
+   "kind": "UIControl",
+   "natural_key": {
+    "container": "orders/edit.cfm#orderForm",
+    "name": "status"
+   },
+   "since": "M2",
+   "attributes": {
+    "control": "select",
+    "tag": "cfselect"
+   }
+  },
+  {
+   "kind": "UIControl",
+   "natural_key": {
+    "container": "orders/edit.cfm#orderForm",
+    "name": "notes"
+   },
+   "since": "M2",
+   "attributes": {
+    "control": "textarea"
+   }
+  },
+  {
+   "kind": "UIControl",
+   "natural_key": {
+    "container": "orders/list.cfm#filter",
+    "name": "status"
+   },
+   "since": "M2",
+   "attributes": {
+    "control": "select"
+   }
+  },
+  {
+   "kind": "UIControl",
+   "natural_key": {
+    "container": "index.cfm",
+    "name": "link:orders/list.cfm"
+   },
+   "since": "M2",
+   "attributes": {
+    "control": "link"
+   }
+  },
+  {
+   "kind": "UIControl",
+   "natural_key": {
+    "container": "index.cfm",
+    "name": "link:reports/sales.cfm"
+   },
+   "since": "M2",
+   "attributes": {
+    "control": "link"
+   }
+  },
+  {
+   "kind": "UIControl",
+   "natural_key": {
+    "container": "index.cfm",
+    "name": "link:orders/list.cfm~2"
+   },
+   "since": "M2",
+   "attributes": {
+    "control": "link"
+   }
+  },
+  {
+   "kind": "UIControl",
+   "natural_key": {
+    "container": "index.cfm",
+    "name": "link:https://help.example.com"
+   },
+   "since": "M2",
+   "attributes": {
+    "control": "link"
+   }
+  },
+  {
+   "kind": "UIControl",
+   "natural_key": {
+    "container": "orders/list.cfm#filter",
+    "name": "submit"
+   },
+   "since": "M2",
+   "attributes": {
+    "control": "submit"
+   }
+  },
+  {
+   "kind": "UIControl",
+   "natural_key": {
+    "container": "login.cfm#signin",
+    "name": "go"
+   },
+   "since": "M2",
+   "attributes": {
+    "control": "button"
+   }
+  },
+  {
+   "kind": "Role",
+   "natural_key": {
+    "realm": "cfml",
+    "name": "clerk"
+   },
+   "since": "M2",
+   "attributes": {
+    "platform_kind": "cf:Role"
+   }
+  },
+  {
+   "kind": "Role",
+   "natural_key": {
+    "realm": "cfml",
+    "name": "manager"
+   },
+   "since": "M2"
+  },
+  {
+   "kind": "ConfigKey",
+   "natural_key": {
+    "name": "datasource:orderdb"
+   },
+   "since": "M2",
+   "attributes": {
+    "driver": "MSSQLServer",
+    "source": "cfml_datasource"
+   }
+  },
+  {
+   "kind": "ConfigKey",
+   "natural_key": {
+    "name": "datasource:reportdb"
+   },
+   "since": "M2",
+   "attributes": {
+    "driver": "PostgreSQL"
+   }
+  },
+  {
+   "kind": "Job",
+   "natural_key": {
+    "framework": "cfschedule",
+    "name": "default"
+   },
+   "since": "M2",
+   "attributes": {
+    "platform_kind": "cf:ScheduleGroup"
+   }
+  },
+  {
+   "kind": "Job",
+   "natural_key": {
+    "framework": "cfschedule",
+    "name": "reports"
+   },
+   "since": "M2"
+  },
+  {
+   "kind": "Task",
+   "natural_key": {
+    "framework": "cfschedule",
+    "job": "default",
+    "name": "nightly-cleanup"
+   },
+   "since": "M2",
+   "attributes": {
+    "url_path": "/jobs/nightly.cfm",
+    "interval": "daily"
+   }
+  },
+  {
+   "kind": "Task",
+   "natural_key": {
+    "framework": "cfschedule",
+    "job": "reports",
+    "name": "weekly-sales"
+   },
+   "since": "M2",
+   "attributes": {
+    "url_path": "/reports/weekly.cfm",
+    "source": "neo-cron"
+   }
+  },
+  {
+   "kind": "Table",
+   "natural_key": {
+    "datastore": "default",
+    "name": "orders"
+   },
+   "since": "M2"
+  },
+  {
+   "kind": "Table",
+   "natural_key": {
+    "datastore": "default",
+    "name": "customers"
+   },
+   "since": "M2"
+  },
+  {
+   "kind": "Table",
+   "natural_key": {
+    "datastore": "default",
+    "name": "order_history"
+   },
+   "since": "M2"
+  },
+  {
+   "kind": "Table",
+   "natural_key": {
+    "datastore": "default",
+    "name": "app_users"
+   },
+   "since": "M2"
+  },
+  {
+   "kind": "Table",
+   "natural_key": {
+    "datastore": "default",
+    "name": "sales_daily"
+   },
+   "since": "M2"
+  },
+  {
+   "kind": "Table",
+   "natural_key": {
+    "datastore": "default",
+    "name": "sales_weekly"
+   },
+   "since": "M2"
+  },
+  {
+   "kind": "Table",
+   "natural_key": {
+    "datastore": "default",
+    "name": "order_drafts"
+   },
+   "since": "M2"
+  }
+ ],
+ "edges": [
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "cfml",
+     "name": "services.orderservice"
+    }
+   },
+   "predicate": "EXPOSES",
+   "object": {
+    "kind": "Endpoint",
+    "natural_key": {
+     "component_root": "",
+     "protocol": "http",
+     "method": "ANY",
+     "route": "/services/OrderService.cfc?method=getOrder"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Symbol",
+    "natural_key": {
+     "platform": "cfml",
+     "program": "services.orderservice",
+     "name": "getorder"
+    }
+   },
+   "predicate": "IMPLEMENTS",
+   "object": {
+    "kind": "Endpoint",
+    "natural_key": {
+     "component_root": "",
+     "protocol": "http",
+     "method": "ANY",
+     "route": "/services/OrderService.cfc?method=getOrder"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Symbol",
+    "natural_key": {
+     "platform": "cfml",
+     "program": "services.orderservice",
+     "name": "getorder"
+    }
+   },
+   "predicate": "REQUIRES_ROLE",
+   "object": {
+    "kind": "Role",
+    "natural_key": {
+     "realm": "cfml",
+     "name": "clerk"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Endpoint",
+    "natural_key": {
+     "component_root": "",
+     "protocol": "http",
+     "method": "ANY",
+     "route": "/services/OrderService.cfc?method=getOrder"
+    }
+   },
+   "predicate": "REQUIRES_ROLE",
+   "object": {
+    "kind": "Role",
+    "natural_key": {
+     "realm": "cfml",
+     "name": "manager"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Endpoint",
+    "natural_key": {
+     "component_root": "",
+     "protocol": "http",
+     "method": "ANY",
+     "route": "/services/ReportService.cfc?method=salesByRegion"
+    }
+   },
+   "predicate": "REQUIRES_ROLE",
+   "object": {
+    "kind": "Role",
+    "natural_key": {
+     "realm": "cfml",
+     "name": "manager"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Screen",
+    "natural_key": {
+     "platform": "cfml",
+     "name": "reports/sales.cfm"
+    }
+   },
+   "predicate": "REQUIRES_ROLE",
+   "object": {
+    "kind": "Role",
+    "natural_key": {
+     "realm": "cfml",
+     "name": "manager"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "cfml",
+     "name": "reports/sales.cfm"
+    }
+   },
+   "predicate": "REQUIRES_ROLE",
+   "object": {
+    "kind": "Role",
+    "natural_key": {
+     "realm": "cfml",
+     "name": "manager"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Symbol",
+    "natural_key": {
+     "platform": "cfml",
+     "program": "services.orderservice",
+     "name": "getorder"
+    }
+   },
+   "predicate": "READS_FROM",
+   "object": {
+    "kind": "Table",
+    "natural_key": {
+     "datastore": "default",
+     "name": "orders"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Symbol",
+    "natural_key": {
+     "platform": "cfml",
+     "program": "services.orderservice",
+     "name": "saveorder"
+    }
+   },
+   "predicate": "WRITES_TO",
+   "object": {
+    "kind": "Table",
+    "natural_key": {
+     "datastore": "default",
+     "name": "orders"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Symbol",
+    "natural_key": {
+     "platform": "cfml",
+     "program": "services.orderservice",
+     "name": "saveorder"
+    }
+   },
+   "predicate": "WRITES_TO",
+   "object": {
+    "kind": "Table",
+    "natural_key": {
+     "datastore": "default",
+     "name": "order_history"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "cfml",
+     "name": "services.orderservice"
+    }
+   },
+   "predicate": "WRITES_TO",
+   "object": {
+    "kind": "Table",
+    "natural_key": {
+     "datastore": "default",
+     "name": "order_history"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Symbol",
+    "natural_key": {
+     "platform": "cfml",
+     "program": "services.orderservice",
+     "name": "saveorder"
+    }
+   },
+   "predicate": "REFERENCES_CONFIG",
+   "object": {
+    "kind": "ConfigKey",
+    "natural_key": {
+     "name": "datasource:orderdb"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Symbol",
+    "natural_key": {
+     "platform": "cfml",
+     "program": "services.orderservice",
+     "name": "saveorder"
+    }
+   },
+   "predicate": "CALLS",
+   "object": {
+    "kind": "Symbol",
+    "natural_key": {
+     "platform": "cfml",
+     "program": "services.orderservice",
+     "name": "notify"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "cfml",
+     "name": "services.reportservice"
+    }
+   },
+   "predicate": "READS_FROM",
+   "object": {
+    "kind": "Table",
+    "natural_key": {
+     "datastore": "default",
+     "name": "sales_daily"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Symbol",
+    "natural_key": {
+     "platform": "cfml",
+     "program": "services.reportservice",
+     "name": "salesbyregion"
+    }
+   },
+   "predicate": "REFERENCES_CONFIG",
+   "object": {
+    "kind": "ConfigKey",
+    "natural_key": {
+     "name": "datasource:reportdb"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Symbol",
+    "natural_key": {
+     "platform": "cfml",
+     "program": "services.reportservice",
+     "name": "salesbyregion"
+    }
+   },
+   "predicate": "CALLS",
+   "object": {
+    "kind": "Symbol",
+    "natural_key": {
+     "platform": "cfml",
+     "program": "services.reportservice",
+     "name": "fmt"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "cfml",
+     "name": "application"
+    }
+   },
+   "predicate": "REFERENCES_CONFIG",
+   "object": {
+    "kind": "ConfigKey",
+    "natural_key": {
+     "name": "datasource:orderdb"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "cfml",
+     "name": "login.cfm"
+    }
+   },
+   "predicate": "READS_FROM",
+   "object": {
+    "kind": "Table",
+    "natural_key": {
+     "datastore": "default",
+     "name": "app_users"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "cfml",
+     "name": "orders/list.cfm"
+    }
+   },
+   "predicate": "READS_FROM",
+   "object": {
+    "kind": "Table",
+    "natural_key": {
+     "datastore": "default",
+     "name": "customers"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "cfml",
+     "name": "index.cfm"
+    }
+   },
+   "predicate": "RENDERS",
+   "object": {
+    "kind": "Screen",
+    "natural_key": {
+     "platform": "cfml",
+     "name": "index.cfm"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "cfml",
+     "name": "index.cfm"
+    }
+   },
+   "predicate": "CALLS",
+   "object": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "cfml",
+     "name": "header.cfm"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "cfml",
+     "name": "orders/list.cfm"
+    }
+   },
+   "predicate": "CALLS",
+   "object": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "cfml",
+     "name": "orders/pager.cfm"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "cfml",
+     "name": "orders/edit.cfm"
+    }
+   },
+   "predicate": "CALLS",
+   "object": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "cfml",
+     "name": "services.orderservice"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "cfml",
+     "name": "orders/edit.cfm"
+    }
+   },
+   "predicate": "CALLS",
+   "object": {
+    "kind": "Symbol",
+    "natural_key": {
+     "platform": "cfml",
+     "program": "services.orderservice",
+     "name": "getorder"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "cfml",
+     "name": "orders/save.cfm"
+    }
+   },
+   "predicate": "CALLS",
+   "object": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "cfml",
+     "name": "services.orderservice"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "cfml",
+     "name": "reports/sales.cfm"
+    }
+   },
+   "predicate": "CALLS",
+   "object": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "cfml",
+     "name": "services.reportservice"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Screen",
+    "natural_key": {
+     "platform": "cfml",
+     "name": "login.cfm"
+    }
+   },
+   "predicate": "CONTAINS",
+   "object": {
+    "kind": "Form",
+    "natural_key": {
+     "screen": "login.cfm",
+     "name": "signin"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Form",
+    "natural_key": {
+     "screen": "login.cfm",
+     "name": "signin"
+    }
+   },
+   "predicate": "CONTAINS",
+   "object": {
+    "kind": "UIControl",
+    "natural_key": {
+     "container": "login.cfm#signin",
+     "name": "username"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Form",
+    "natural_key": {
+     "screen": "login.cfm",
+     "name": "signin"
+    }
+   },
+   "predicate": "SUBMITS_TO",
+   "object": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "cfml",
+     "name": "login.cfm"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Form",
+    "natural_key": {
+     "screen": "orders/edit.cfm",
+     "name": "orderForm"
+    }
+   },
+   "predicate": "SUBMITS_TO",
+   "object": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "cfml",
+     "name": "orders/save.cfm"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Form",
+    "natural_key": {
+     "screen": "orders/edit.cfm",
+     "name": "orderForm"
+    }
+   },
+   "predicate": "CONTAINS",
+   "object": {
+    "kind": "UIControl",
+    "natural_key": {
+     "container": "orders/edit.cfm#orderForm",
+     "name": "qty"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Form",
+    "natural_key": {
+     "screen": "orders/list.cfm",
+     "name": "filter"
+    }
+   },
+   "predicate": "SUBMITS_TO",
+   "object": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "cfml",
+     "name": "orders/list.cfm"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Form",
+    "natural_key": {
+     "screen": "reports/sales.cfm",
+     "name": "regionPicker"
+    }
+   },
+   "predicate": "SUBMITS_TO",
+   "object": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "cfml",
+     "name": "reports/sales.cfm"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "UIControl",
+    "natural_key": {
+     "container": "index.cfm",
+     "name": "link:orders/list.cfm"
+    }
+   },
+   "predicate": "NAVIGATES_TO",
+   "object": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "cfml",
+     "name": "orders/list.cfm"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Screen",
+    "natural_key": {
+     "platform": "cfml",
+     "name": "login.cfm"
+    }
+   },
+   "predicate": "NAVIGATES_TO",
+   "object": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "cfml",
+     "name": "index.cfm"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Screen",
+    "natural_key": {
+     "platform": "cfml",
+     "name": "reports/sales.cfm"
+    }
+   },
+   "predicate": "NAVIGATES_TO",
+   "object": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "cfml",
+     "name": "index.cfm"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "cfschedule",
+     "name": "default"
+    }
+   },
+   "predicate": "CONTAINS",
+   "object": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "cfschedule",
+     "job": "default",
+     "name": "nightly-cleanup"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "cfschedule",
+     "job": "default",
+     "name": "nightly-cleanup"
+    }
+   },
+   "predicate": "RUNS",
+   "object": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "cfml",
+     "name": "jobs/nightly.cfm"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "cfschedule",
+     "name": "reports"
+    }
+   },
+   "predicate": "CONTAINS",
+   "object": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "cfschedule",
+     "job": "reports",
+     "name": "weekly-sales"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "cfschedule",
+     "job": "reports",
+     "name": "weekly-sales"
+    }
+   },
+   "predicate": "RUNS",
+   "object": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "cfml",
+     "name": "reports/weekly.cfm"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "cfml",
+     "name": "jobs/nightly.cfm"
+    }
+   },
+   "predicate": "WRITES_TO",
+   "object": {
+    "kind": "Table",
+    "natural_key": {
+     "datastore": "default",
+     "name": "order_drafts"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "cfml",
+     "name": "orders/save.cfm"
+    }
+   },
+   "predicate": "NAVIGATES_TO",
+   "object": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "cfml",
+     "name": "login.cfm"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "cfml",
+     "name": "orders/save.cfm"
+    }
+   },
+   "predicate": "NAVIGATES_TO",
+   "object": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "cfml",
+     "name": "orders/list.cfm"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "cfml",
+     "name": "orders/save.cfm"
+    }
+   },
+   "predicate": "NAVIGATES_TO",
+   "object": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "cfml",
+     "name": "orders/edit.cfm"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "cfml",
+     "name": "logout.cfm"
+    }
+   },
+   "predicate": "NAVIGATES_TO",
+   "object": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "cfml",
+     "name": "login.cfm"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "cfml",
+     "name": "services.orderservice"
+    }
+   },
+   "predicate": "CONTAINS",
+   "object": {
+    "kind": "Symbol",
+    "natural_key": {
+     "platform": "cfml",
+     "program": "services.orderservice",
+     "name": "saveorder"
+    }
+   },
+   "since": "M2"
+  }
+ ],
+ "absent_entities": [
+  {
+   "kind": "Program",
+   "natural_key": {
+    "platform": "cfml",
+    "name": "orders.services.orderservice"
+   },
+   "why": "a component name is tried against the caller's directories, and only candidates that exist are kept"
+  },
+  {
+   "kind": "Endpoint",
+   "natural_key": {
+    "component_root": "",
+    "protocol": "http",
+    "method": "ANY",
+    "route": "/services/OrderService.cfc?method=saveOrder"
+   },
+   "why": "saveOrder is public, not remote"
+  },
+  {
+   "kind": "Screen",
+   "natural_key": {
+    "platform": "cfml",
+    "name": "orders/save.cfm"
+   },
+   "why": "save.cfm only redirects: it renders nothing"
+  },
+  {
+   "kind": "Screen",
+   "natural_key": {
+    "platform": "cfml",
+    "name": "logout.cfm"
+   },
+   "why": "logout.cfm only redirects: it renders nothing"
+  },
+  {
+   "kind": "UIControl",
+   "natural_key": {
+    "container": "index.cfm",
+    "name": "link:https://help.example.com/orderdesk"
+   },
+   "why": "a link to another host is named by its scheme and host only: its path, query and user information are not kept"
+  },
+  {
+   "kind": "Endpoint",
+   "natural_key": {
+    "component_root": "",
+    "protocol": "http",
+    "method": "ANY",
+    "route": "/Application.cfc"
+   },
+   "why": "Application.cfc is not requested by URL"
+  }
+ ],
+ "exclusions": [],
+ "forbidden_kinds": [
+  "Package",
+  "Component"
+ ],
+ "expected_unknowns": [
+  {
+   "since": "M2",
+   "detail": "reports/sales.cfm includes a template named by url.extra: the target is not resolved and a diagnostic says so"
+  },
+  {
+   "since": "M2",
+   "detail": "orders/save.cfm redirects to session.returnTo: the target is not resolved and a diagnostic says so"
+  }
+ ],
+ "expected_conflicts": [],
+ "commits": [
+  {
+   "dir": "01-customer-screen",
+   "expect": "A customer screen with a form posting to a remote function of a new script component",
+   "added_entities": [
+    {
+     "kind": "Screen",
+     "natural_key": {
+      "platform": "cfml",
+      "name": "customers/edit.cfm"
+     },
+     "since": "M2"
+    },
+    {
+     "kind": "Form",
+     "natural_key": {
+      "screen": "customers/edit.cfm",
+      "name": "customerForm"
+     },
+     "since": "M2"
+    },
+    {
+     "kind": "UIControl",
+     "natural_key": {
+      "container": "customers/edit.cfm#customerForm",
+      "name": "email"
+     },
+     "since": "M2"
+    },
+    {
+     "kind": "Endpoint",
+     "natural_key": {
+      "component_root": "",
+      "protocol": "http",
+      "method": "ANY",
+      "route": "/services/CustomerService.cfc?method=lookup"
+     },
+     "since": "M2"
+    },
+    {
+     "kind": "Endpoint",
+     "natural_key": {
+      "component_root": "",
+      "protocol": "http",
+      "method": "ANY",
+      "route": "/services/CustomerService.cfc?method=save"
+     },
+     "since": "M2"
+    },
+    {
+     "kind": "Symbol",
+     "natural_key": {
+      "platform": "cfml",
+      "program": "services.customerservice",
+      "name": "lookup"
+     },
+     "since": "M2"
+    }
+   ],
+   "removed_entities": []
+  },
+  {
+   "dir": "02-auditor-role",
+   "expect": "A remote function restricted to a new role",
+   "added_entities": [
+    {
+     "kind": "Role",
+     "natural_key": {
+      "realm": "cfml",
+      "name": "auditor"
+     },
+     "since": "M2"
+    },
+    {
+     "kind": "Endpoint",
+     "natural_key": {
+      "component_root": "",
+      "protocol": "http",
+      "method": "ANY",
+      "route": "/services/OrderService.cfc?method=auditTrail"
+     },
+     "since": "M2"
+    },
+    {
+     "kind": "Symbol",
+     "natural_key": {
+      "platform": "cfml",
+      "program": "services.orderservice",
+      "name": "audittrail"
+     },
+     "since": "M2"
+    }
+   ],
+   "removed_entities": []
+  },
+  {
+   "dir": "03-retire-nightly-job",
+   "expect": "The nightly job page and the page that scheduled it are gone, with its task, its group and the table only it wrote",
+   "added_entities": [],
+   "removed_entities": [
+    {
+     "kind": "Program",
+     "natural_key": {
+      "platform": "cfml",
+      "name": "jobs/nightly.cfm"
+     },
+     "since": "M2"
+    },
+    {
+     "kind": "Program",
+     "natural_key": {
+      "platform": "cfml",
+      "name": "admin/schedule.cfm"
+     },
+     "since": "M2"
+    },
+    {
+     "kind": "Task",
+     "natural_key": {
+      "framework": "cfschedule",
+      "job": "default",
+      "name": "nightly-cleanup"
+     },
+     "since": "M2"
+    },
+    {
+     "kind": "Job",
+     "natural_key": {
+      "framework": "cfschedule",
+      "name": "default"
+     },
+     "since": "M2"
+    },
+    {
+     "kind": "Table",
+     "natural_key": {
+      "datastore": "default",
+      "name": "order_drafts"
+     },
+     "since": "M2"
+    }
+   ]
+  }
+ ],
+ "decision_cases": [],
+ "granularity": {
+  "label": null,
+  "why": "ColdFusion pages and components with no deployment a repository shows",
+  "source": "fixture design"
+ }
+}

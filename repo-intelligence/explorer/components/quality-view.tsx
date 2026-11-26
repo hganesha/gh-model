@@ -3,7 +3,8 @@
 import { useMemo, useState } from "react";
 import { snapshotPath, useApi } from "@/lib/api";
 import { displayValue, kindLabel, measured, percent, percentLabel, plural, shortId } from "@/lib/format";
-import { domainLabel } from "@/lib/planes";
+import { domainLabel, QUALITY_EYEBROW } from "@/lib/planes";
+import { platformCoverageRow } from "@/lib/platforms";
 import { CONFLICT_TYPES, type CoverageRow, type EntityRef, type QueryResponse, type Ratio, type Summary } from "@/lib/types";
 import { Badge, Bar, ErrorNote, Loading } from "./ui";
 
@@ -115,6 +116,75 @@ function ImportBreakdown({ rows }: { rows: CoverageRow[] }) {
   );
 }
 
+/**
+ * Every construct of each platform the compiler met: how often it was seen and modelled, and
+ * the constructs its pack looks for that never appeared. "Not seen" means looked for and not
+ * found. The engine writes a row only for a platform with at least one occurrence.
+ */
+function PlatformConstructs({ rows }: { rows: CoverageRow[] }) {
+  if (rows.length === 0) return null;
+  const platforms = rows.map(platformCoverageRow);
+  return (
+    <section className="panel">
+      <h3>Platform constructs</h3>
+      <p className="group-note">An occurrence is modelled when it became an entity, a relationship, an attribute or a behaviour node. One seen but not modelled is counted rather than dropped.</p>
+      {platforms.map((p) => (
+        <details key={p.platform} className="expander" open={platforms.length === 1}>
+          <summary>
+            <span>
+              <code>{p.platform}</code> · {plural(p.constructs.length, "construct")} seen
+            </span>
+            <span className="expander-meta">
+              <Badge tone={p.seen > 0 && p.modelled === p.seen ? "verified" : "candidate"}>
+                {p.modelled.toLocaleString("en-US")} of {p.seen.toLocaleString("en-US")} modelled
+              </Badge>
+            </span>
+          </summary>
+          <div className="table-scroll">
+            <table className="data-table coverage-table">
+              <thead>
+                <tr>
+                  <th scope="col">Construct</th>
+                  <th scope="col" className="num">
+                    Seen
+                  </th>
+                  <th scope="col" className="num">
+                    Modelled
+                  </th>
+                  <th scope="col">
+                    <span className="sr-only">Bar</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {p.constructs.map((c) => (
+                  <tr key={c.id} className="scope-row">
+                    <td>
+                      <code>{c.id}</code>
+                    </td>
+                    <td className="num">{c.seen.toLocaleString("en-US")}</td>
+                    <td className="num">{c.modelled.toLocaleString("en-US")}</td>
+                    <td className="bar-cell">
+                      <Bar ratio={c.seen > 0 ? { numerator: c.modelled, denominator: c.seen } : null} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {p.notSeen.length > 0 ? (
+            <p className="group-note">
+              Looked for, not seen ({p.notSeen.length}): {p.notSeen.join(", ")}
+            </p>
+          ) : (
+            <p className="group-note">Every construct this platform&apos;s pack looks for was seen at least once.</p>
+          )}
+        </details>
+      ))}
+    </section>
+  );
+}
+
 export function QualityView({ hash, summary, onOpenEntity }: { hash: string; summary: Summary; onOpenEntity: (id: string) => void }) {
   const totals = Object.entries(summary.coverage_totals ?? {});
   const ranked = totals.filter(([, r]) => measured(r)).sort((a, b) => percent(a[1]) - percent(b[1]) || b[1].denominator - a[1].denominator);
@@ -144,7 +214,7 @@ export function QualityView({ hash, summary, onOpenEntity }: { hash: string; sum
   return (
     <section className="quality-view" aria-label="Quality">
       <header className="lead">
-        <span className="eyebrow">07 · QUALITY</span>
+        <span className="eyebrow">{QUALITY_EYEBROW}</span>
         <h2>
           {weakest
             ? `Weakest coverage: ${domainLabel(weakest[0]).toLowerCase()} — ${weakest[1].numerator.toLocaleString("en-US")} of ${weakest[1].denominator.toLocaleString("en-US")} (${percentLabel(weakest[1])}).`
@@ -213,6 +283,8 @@ export function QualityView({ hash, summary, onOpenEntity }: { hash: string; sum
       </section>
 
       <ImportBreakdown rows={summary.coverage.filter((c) => c.domain === "import_resolution")} />
+
+      <PlatformConstructs rows={summary.coverage.filter((c) => c.domain === "platform_constructs")} />
 
       <Exclusions hash={hash} />
 

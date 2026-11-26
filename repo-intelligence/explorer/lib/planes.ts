@@ -67,7 +67,34 @@ export const PLANES: PlaneMeta[] = [
     kinds: ["BuildTarget", "Pipeline", "DeploymentUnit", "Environment", "InfrastructureResource", "ConfigKey"],
     coverage: ["deployment_refs"],
   },
+  {
+    id: "experience",
+    eyebrow: "08 · EXPERIENCE",
+    title: "Experience",
+    blurb: "What a person sees: screens, the forms and controls on them, the reports they read, and the style tokens that dress them.",
+    kinds: ["Screen", "Form", "UIControl", "StyleToken", "Report"],
+    coverage: [],
+  },
+  {
+    id: "business",
+    eyebrow: "09 · BUSINESS",
+    title: "Business",
+    blurb: "Business rules, workflows and reference code lists, and the requirements and features they serve.",
+    kinds: ["BusinessRule", "Workflow", "CodeList", "Requirement", "Feature"],
+    coverage: [],
+  },
+  {
+    id: "security",
+    eyebrow: "10 · SECURITY",
+    title: "Security",
+    blurb: "Roles and permissions, and which screens, endpoints, reports and data require them.",
+    kinds: ["Role", "Permission"],
+    coverage: [],
+  },
 ];
+
+/** Eyebrow number for the Quality card and view, which follow the last plane. */
+export const QUALITY_EYEBROW = `${String(PLANES.length + 1).padStart(2, "0")} · QUALITY`;
 
 export const PLANE_BY_ID: Record<string, PlaneMeta> = Object.fromEntries(PLANES.map((p) => [p.id, p]));
 
@@ -78,6 +105,10 @@ export function planeOfKind(kind: string): PlaneId | "files" {
   return KIND_TO_PLANE[kind] ?? "files";
 }
 
+/**
+ * A label for every coverage domain the engine writes to coverage.jsonl. A test
+ * (tests/test_cli_verify_diff.py) fails when the engine gains a domain this does not name.
+ */
 export const DOMAIN_LABEL: Record<string, string> = {
   parse: "Files parsed",
   inventory: "Files inventoried",
@@ -85,11 +116,17 @@ export const DOMAIN_LABEL: Record<string, string> = {
   dependency_capability: "Dependencies classified",
   event_topics: "Event topics resolved",
   route_to_handler: "Routes linked to a handler",
+  call_graph: "Calls resolved to a function",
   data_access: "Data access resolved to a table",
   data_lineage: "Data reads and writes named",
   contract_match: "Contracts matched",
   deployment_refs: "Deployment references resolved",
+  config_supply: "Config keys supplied by a deployment",
+  build_provenance: "Deployment units with a build",
+  decisions: "Decisions made without abstaining",
   architecture_patterns: "Catalogue patterns looked for",
+  platform_constructs: "Platform constructs modelled",
+  behavior: "Behaviour units stored",
 };
 
 export function domainLabel(domain: string): string {
@@ -119,6 +156,15 @@ export const PREDICATES = [
   "PRODUCES",
   "SERVES",
   "ALIAS_OF",
+  "RENDERS",
+  "SUBMITS_TO",
+  "NAVIGATES_TO",
+  "BINDS_TO",
+  "STYLED_BY",
+  "ENFORCES",
+  "APPLIES_TO",
+  "REQUIRES_ROLE",
+  "GRANTS",
 ] as const;
 
 /** Structural predicates that swamp a neighbourhood graph; hidden by default. */

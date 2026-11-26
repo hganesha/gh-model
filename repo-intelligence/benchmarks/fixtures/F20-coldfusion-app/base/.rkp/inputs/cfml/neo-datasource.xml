@@ -1,0 +1,18 @@
+<wddxPacket version='1.0'><header/><data><array length='2'><struct type='coldfusion.server.ConfigMap'>
+<var name='orderdb'><struct type='coldfusion.server.ConfigMap'>
+  <var name='name'><string>orderdb</string></var>
+  <var name='driver'><string>MSSQLServer</string></var>
+  <var name='class'><string>macromedia.jdbc.MacromediaDriver</string></var>
+  <var name='url'><string>jdbc:macromedia:sqlserver://fixture-db-host:1433;databaseName=orderdesk</string></var>
+  <var name='username'><string>fixture_app_user</string></var>
+  <var name='password'><string>FIXTURE-NOT-A-SECRET-1</string></var>
+  <var name='timeout'><number>20.0</number></var>
+</struct></var>
+<var name='reportdb'><struct type='coldfusion.server.ConfigMap'>
+  <var name='name'><string>reportdb</string></var>
+  <var name='driver'><string>PostgreSQL</string></var>
+  <var name='url'><string>jdbc:postgresql://fixture-report-host:5432/reporting</string></var>
+  <var name='username'><string>fixture_report_user</string></var>
+  <var name='password'><string>FIXTURE-NOT-A-SECRET-2</string></var>
+</struct></var>
+</struct><struct type='coldfusion.server.ConfigMap'></struct></array></data></wddxPacket>

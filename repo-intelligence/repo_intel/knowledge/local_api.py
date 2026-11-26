@@ -14,6 +14,12 @@ higher digest wins, as `ORDER BY shard_digest DESC` does).
 What a single bundle cannot answer says so with 404 or 501 and a message: history
 across commits (lineage), the cross-repository business map, and compiling. Owner
 overrides are read from and written to `.rkp/overrides.json`.
+
+`snapshots/<hash>/behavior/<entity id>` returns the behaviour units an entity owns, as
+stored (each with its `kind` when the pack gave one), with the facts
+`repo_intel.knowledge.behavior_store` derives from them. Behaviour is detail: on
+a clone that has only the architecture tier it answers 404 `detail_not_committed`, never
+an empty list.
 """
 
 from __future__ import annotations
@@ -32,7 +38,7 @@ from repo_intel.compile.contracts import Manifest
 from repo_intel.compile.pipeline import render_evidence
 from repo_intel.decisions.overrides import OverrideDocument, Overrides, SaveOverrides
 from repo_intel.ingest import secrets
-from repo_intel.knowledge import bundle
+from repo_intel.knowledge import behavior_store, bundle
 from repo_intel.storage.store import ObjectStore
 from repo_intel.workspace import business_graph
 
@@ -45,6 +51,9 @@ PLANES = {
     "ai": ["AIComponent", "ModelEndpoint", "PromptArtifact", "MLModel"],
     "tests": ["Test"],
     "deployment": ["BuildTarget", "Pipeline", "DeploymentUnit", "Environment", "InfrastructureResource", "ConfigKey"],
+    "experience": ["Screen", "Form", "UIControl", "StyleToken", "Report"],
+    "business": ["BusinessRule", "Workflow", "CodeList", "Requirement", "Feature"],
+    "security": ["Role", "Permission"],
 }
 
 
@@ -61,18 +70,23 @@ def _not_found() -> HttpError:
 class Snapshot:
     """One published snapshot, indexed for the Explorer's queries."""
 
-    def __init__(self, store: ObjectStore, manifest: Manifest):
-        self.store, self.manifest = store, manifest
+    def __init__(self, store: ObjectStore, manifest: Manifest, rank: dict[str, str] | None = None, detail: str = "complete"):
+        """`rank` orders an entity's rows by unit as the projection would; it maps each unit to
+        its full shard digest when `manifest` names an architecture tier's reduced shards."""
+        self.store, self.manifest, self.detail = store, manifest, detail
         self.row = manifest.row()
         # entity_id -> [(shard_digest, row)], highest digest first
         self.entity_rows: dict[str, list[tuple[str, dict[str, Any]]]] = defaultdict(list)
         self.assertions: dict[str, dict[str, Any]] = {}
         self.touching: dict[str, set[str]] = defaultdict(set)
         self.evidence: dict[str, dict[str, Any]] = {}
+        shards = []
         for ref in manifest.shards:
             shard = store.get_json(ref.digest)
+            shards.append(shard)
+            key = (rank or {}).get(ref.unit, ref.digest)
             for row in shard["entities"]:
-                self.entity_rows[row["id"]].append((ref.digest, row))
+                self.entity_rows[row["id"]].append((key, row))
             for row in shard["assertions"]:
                 self.assertions.setdefault(row["id"], row)
                 self.touching[row["subject"]].add(row["id"])
@@ -81,6 +95,8 @@ class Snapshot:
                 self.evidence.setdefault(row["id"], row)
         for rows in self.entity_rows.values():
             rows.sort(key=lambda pair: pair[0], reverse=True)
+        # owner entity id -> behaviour units; empty when the snapshot holds no detail
+        self.behaviors = behavior_store.index(shards)
 
     def first(self, entity_id: str) -> dict[str, Any] | None:
         rows = self.entity_rows.get(entity_id)
@@ -179,9 +195,14 @@ class LocalApi:
             assert document is not None
             manifest = Manifest.model_validate(document["snapshot"])
             store = bundle.store_for(self.repo)
-            if not all(store.has(ref.digest) for ref in manifest.shards) or not store.has(manifest.unknowns_ref):
-                store, manifest = bundle.hydrate(self.repo, store)
-            self._snapshot, self._key = Snapshot(store, manifest), key
+            if bundle.has_snapshot(store, manifest):  # compiled on this machine: detail included
+                self._snapshot = Snapshot(store, manifest)
+            else:
+                store, loaded = bundle.hydrate(self.repo, store)
+                rank = {ref.unit: ref.digest for ref in manifest.shards}
+                detail = "architecture" if document.get("tier") == "architecture" else "complete"
+                self._snapshot = Snapshot(store, loaded, rank, detail)
+            self._key = key
         return self._snapshot
 
     def _at(self, rkp_hash: str) -> Snapshot:
@@ -215,6 +236,8 @@ class LocalApi:
                 return self.entities(self._at(h), query)
             case "GET", ["snapshots", h, "entities", entity_id]:
                 return self.entity(self._at(h), entity_id)
+            case "GET", ["snapshots", h, "behavior", entity_id]:
+                return self.behavior(self._at(h), entity_id)
             case "GET", ["snapshots", h, "dependencies"]:
                 snap = self._at(h)
                 return business_graph.dependency_groups(snap.store, snap.manifest)
@@ -249,6 +272,7 @@ class LocalApi:
         return {
             "repository": str(self.repo), "repository_id": snap.manifest.repository_id, "rkp_hash": snap.manifest.rkp_hash,
             "commit_sha": snap.manifest.commit_sha, "working_tree": document.get("working_tree", False), "status": snap.manifest.status,
+            "tier": document.get("tier", "full"), "detail": snap.detail,
         }
 
     def summary(self, snap: Snapshot) -> dict[str, Any]:
@@ -288,6 +312,21 @@ class LocalApi:
         detail["unknowns"] = [u for u in snap.store.get_json(snap.manifest.unknowns_ref) if u["subject"] == entity_id]
         detail["conflicts"] = [c for c in snap.store.get_json(snap.manifest.conflicts_ref) if entity_id in c["subject_ids"]]
         return detail
+
+    def behavior(self, snap: Snapshot, entity_id: str) -> dict[str, Any]:
+        """The behaviour units an entity owns and what they state (repo_intel.knowledge.behavior_store)."""
+        if snap.detail == "architecture":
+            raise HttpError(404, "Behaviour is function-level detail, and this bundle commits only the architecture tier. Run Analyze Repository to compile it on this machine.", "detail_not_committed")
+        units = snap.behaviors.get(entity_id)
+        entity = snap.first(entity_id)
+        if entity is None:
+            raise _not_found()
+        if not units:
+            raise HttpError(404, f"No behaviour was recorded for {entity['kind']} {entity['name']}.", "no_behavior")
+        return {
+            "entity": {"id": entity_id, "kind": entity["kind"], "name": entity["name"]},
+            "units": units, "summary": behavior_store.summarize(units),
+        }
 
     def exclusions(self, snap: Snapshot, limit: int) -> dict[str, Any]:
         d = snap.store.index_get("path_manifests", snap.manifest.source_tree_hash)
