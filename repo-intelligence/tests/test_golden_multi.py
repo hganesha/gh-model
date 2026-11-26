@@ -188,3 +188,26 @@ def test_the_multi_repository_golden_is_well_formed():
         assert check_relation(edge["predicate"], EntityKind(edge["subject"]["kind"]), EntityKind(edge["object"]["kind"])) is None
     for item in g["unmatched"] + [u for c in commit_specs for u in c.get("added_unmatched", []) + c.get("removed_unmatched", [])]:
         assert item["member"] in members and item["reason"]
+
+
+# ------------------------------------------------------------------ coverage per Explorer plane (8.4)
+
+
+def test_the_explorer_lists_every_pack_with_experience_terms():
+    """The experience plane shows `platform_constructs` for the packs listed in
+    explorer/lib/plane-coverage.ts; a pack with a term for an experience kind must be there."""
+    import re
+    from pathlib import Path
+
+    from repo_intel import platforms
+
+    explorer = Path(__file__).resolve().parents[1] / "explorer" / "lib"
+    source = (explorer / "plane-coverage.ts").read_text()
+    listed = set(re.findall(r'"([a-z0-9_-]+)"', source[source.index("export const UI_PLATFORMS"):].split(";", 1)[0]))
+    planes = (explorer / "planes.ts").read_text()
+    experience = planes[planes.index('id: "experience"'):]
+    kinds = set(re.findall(r'"([A-Za-z]+)"', experience[experience.index("kinds:"):experience.index("]")]))
+    assert kinds == {"Screen", "Form", "UIControl", "StyleToken", "Report"}
+    with_ui = {pack.id for pack in platforms.packs().values() if any(t.core.value in kinds for t in pack.terms)}
+    assert with_ui and with_ui <= listed, f"add {sorted(with_ui - listed)} to UI_PLATFORMS"
+    assert "catalog" not in listed

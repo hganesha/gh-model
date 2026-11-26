@@ -8,6 +8,7 @@ import { snapshotPath, useApi } from "@/lib/api";
 import { entityContext, kindLabel, plural } from "@/lib/format";
 import { domainLabel, kindsForPlane, PLANE_BY_ID } from "@/lib/planes";
 import type { EntitiesResponse, Entity, Summary } from "@/lib/types";
+import { PlaneMeasures, PlaneReview } from "./plane-coverage";
 import { Coverage, ErrorNote, Loading, PlaneIcon } from "./ui";
 
 const GROUP_LIMIT = 60;
@@ -160,10 +161,12 @@ export function PlaneView({
           <p>{meta ? meta.blurb : "Every file the compiler inventoried for this commit."}</p>
         </div>
         <div className="plane-view-coverage">
-          {meta?.coverage.map((d) => <Coverage key={d} label={domainLabel(d)} ratio={summary.coverage_totals?.[d]} />)}
+          {meta && <PlaneMeasures summary={summary} plane={meta} />}
           {isFiles && <Coverage label={domainLabel("parse")} ratio={summary.coverage_totals?.parse} />}
         </div>
       </header>
+
+      {meta && <PlaneReview hash={hash} summary={summary} plane={meta} />}
 
       {total === 0 ? (
         <div className="empty-plane">
