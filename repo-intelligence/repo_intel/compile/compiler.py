@@ -347,6 +347,8 @@ def _unit_compile(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, An
                     continue
                 feature = shard.entity(Entity.make(repo, EntityKind.FEATURE, {"component": unit_root, "statement": digest(h["statement"])}, h["statement"][:80], attributes={"statement": h["statement"], "trust_label": "untrusted_generated", "decision_ref": behavior["decision_id"]}, evidence_ids=evs))
                 shard.assertion(Assertion.make(comp, Predicate.IMPLEMENTS, feature, qualifiers={"basis": "behavior_candidate"}, assertion_kind=AssertionKind.HYPOTHESIS, epistemic_status=EpistemicStatus.INFERRED, evidence_class=EvidenceClass.E5, evidence_ids=evs, resolution="candidate", decision_ref=behavior["decision_id"]))
+
+    _captured_screens(shard, repo, unit_root, inputs["decisions"].get("captured", []))
     return shard.rows()
 
 
@@ -386,6 +388,18 @@ def _symbol_relations(shard: _Shard, summaries: list[dict[str, Any]], symbol_end
                 continue
             shard.cite(o["evidence"])
             shard.assertion(Assertion.make(subject, Predicate(p["predicate"]), obj, qualifiers=qualifiers, assertion_kind=AssertionKind.OBSERVED_FACT, epistemic_status=_status(o["evidence_class"]), evidence_class=o["evidence_class"], evidence_ids=[ev]))
+
+
+def _captured_screens(shard: _Shard, repo: str, unit_root: str, records: list[dict[str, Any]]) -> None:
+    """9. Captured screens (contract 8.2, decisions.screens): the regions of an owner-captured
+    DOM, set on the Screen it shows as `attributes.captured`, with the capture's evidence (E5)."""
+    for rec in records:
+        key = _bind_unit(rec["screen"]["natural_key"], unit_root)
+        sid = entity_id(repo, EntityKind.SCREEN, key)
+        if sid not in shard.entities:
+            continue
+        evs = [shard.cite(ev) for ev in rec["evidence"]]
+        shard.entity(Entity.make(repo, EntityKind.SCREEN, key, shard.entities[sid]["name"], attributes={"captured": rec["captured"]}, evidence_ids=evs))
 
 
 BEHAVIOR_OWNER = "behavior_owner"  # the unknown's predicate when a behaviour unit's owner is not declared
@@ -903,6 +917,9 @@ def _repo_compile(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, An
         row = Unknown.make(repo_id, "component_boundary", "unknown", f"{loose} source files belong to no package; no component is derived for them", "decisions:@repo").row()
         g.unknowns[row["id"]] = row
 
+    if "lifted" in inputs.names():  # contract 8.2, only when the compile settings turned it on
+        _lifted_knowledge(repo, g, inputs["lifted"])
+
     # Conflicts: single-valued predicates with two objects, and decisions that disagree.
     every = [a for s in shards.values() for a in s["assertions"]] + list(g.assertions.values())
     for (predicate, subject), rows in functional_violations(every).items():
@@ -995,6 +1012,75 @@ def _architecture(repo: str, repo_id: str, shards: dict[str, dict[str, Any]], g:
         "antipatterns": len(catalogue.antipatterns), "antipatterns_looked_for": sum(1 for a in catalogue.antipatterns if a.detectors),
         "exhibited": sorted(x for x in exhibited if x.startswith("arch-")), "antipatterns_exhibited": sorted(x for x in exhibited if x.startswith("anti-")),
     }).row()
+
+
+def _lifted_knowledge(repo: str, g: _Shard, lifted: Mapping[str, Any]) -> None:
+    """Contract 8.2 results, in the global shard: business rules (decisions.rules), workflows
+    (decisions.workflows), and what became of each screen capture (decisions.screens).
+
+    A rule is model-written: its edges are hypotheses (`E5`, `inferred`) until an owner
+    confirms it, then `supported` on the owner's word. A workflow's states and transitions are
+    facts read from code (`E3`); it stays `inferred` until confirmed. A rejected rule or
+    workflow is left out; its conflict comes from the confirmation decision.
+
+    Lifting is counted in the `decisions` coverage of each unit. What could not be read is an
+    unknown in a domain the snapshot already reports: a state assigned a value that is not a
+    literal in its unit's `behavior` coverage, and a capture that shows no Screen in
+    `decisions` (its labelling abstained).
+    """
+    rules = lifted.get("rules")
+    if rules is not None:
+        for r in rules["rules"]:
+            if r["status"] == "rejected":
+                continue
+            confirmed = r["status"] == "confirmed"
+            evs = [g.cite(ev) for ev in r["evidence"]]
+            attributes = {
+                "statement": r["statement"], "rule_kind": r["rule_kind"], "status": r["status"], "candidates": r["candidates"],
+                "trust_label": "untrusted_generated", "decision_ref": r["decision_ref"],
+                **({"confirmation_ref": r["confirmation_ref"]} if confirmed else {}),
+            }
+            rid = g.entity(Entity.make(repo, EntityKind.BUSINESS_RULE, r["natural_key"], r["natural_key"]["name"], attributes=attributes, evidence_ids=evs))
+            how = dict(
+                assertion_kind=AssertionKind.INFERRED_RELATION if confirmed else AssertionKind.HYPOTHESIS,
+                epistemic_status=EpistemicStatus.SUPPORTED if confirmed else EpistemicStatus.INFERRED,
+                evidence_class=EvidenceClass.E5, evidence_ids=evs, resolution="exact" if confirmed else "candidate",
+                decision_ref=r["confirmation_ref"] if confirmed else r["decision_ref"],
+                verification_ref="owner_override" if confirmed else None,
+            )
+            g.assertion(Assertion.make(r["owner"], Predicate.ENFORCES, rid, qualifiers={"basis": "rule_lifting"}, **how))
+            for target in r["applies_to"]:
+                g.assertion(Assertion.make(rid, Predicate.APPLIES_TO, target, qualifiers={"basis": "rule_lifting"}, **how))
+
+    workflows = lifted.get("workflows")
+    if workflows is not None:
+        for w in workflows["workflows"]:
+            if w["status"] == "rejected":
+                continue
+            confirmed = w["status"] == "confirmed"
+            evs = [g.cite(ev) for ev in w["evidence"]]
+            attributes = {
+                "states": w["states"], "transitions": w["transitions"], "status": w["status"],
+                "decision_ref": w["naming"]["decision_ref"],
+                **({"label": w["label"], "trust_label": "untrusted_generated"} if w["label"] else {"naming": f"decision abstained: {w['naming']['abstain_reason']}"}),
+                **({"state_labels": w["state_labels"]} if w["state_labels"] else {}),
+                **({"omitted_transitions": w["omitted_transitions"]} if w["omitted_transitions"] else {}),
+                **({"confirmation_ref": w["confirmation_ref"]} if confirmed else {}),
+            }
+            key = w["natural_key"]
+            wid = g.entity(Entity.make(repo, EntityKind.WORKFLOW, key, f"{key['scope']}.{key['name']}", attributes=attributes, evidence_ids=evs))
+            if w["applies_to"]:
+                g.assertion(Assertion.make(wid, Predicate.APPLIES_TO, w["applies_to"], qualifiers={"basis": "state_assignments"}, assertion_kind=AssertionKind.DERIVED_RELATION, epistemic_status=EpistemicStatus.SUPPORTED if confirmed else EpistemicStatus.INFERRED, evidence_class=EvidenceClass.E3, evidence_ids=evs, decision_ref=w["confirmation_ref"] if confirmed else None))
+        for d in workflows["dynamic"]:  # an assignment whose value is not a literal: dynamic, never guessed
+            row = Unknown.make(d["artifact"], "workflow_state", "unknown", f"{d['table']}.{d['column']} is assigned a value that is not a literal at bytes {d['at'][0]}-{d['at'][1]} of {d['path']}", f"behavior:{d['unit']}").row()
+            g.unknowns[row["id"]] = row
+
+    captures = lifted.get("captures")
+    if captures is not None:
+        artifact = Entity.make(repo, EntityKind.ARTIFACT, {"path": captures["artifact"]}, posixpath.basename(captures["artifact"])).id
+        for problem in captures["problems"]:
+            row = Unknown.make(artifact, "captured_screen", "unknown", problem, "decisions:@repo").row()
+            g.unknowns[row["id"]] = row
 
 
 def _preference(overrides: Mapping[str, Any], predicate: str, subject: str) -> str | None:
