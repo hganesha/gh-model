@@ -84,13 +84,10 @@ def verify_citations(f: Mapping[str, Any], label: str) -> str:
 
 
 def enabled(policy: Any, flag: str = "business_rules") -> bool:
-    """Whether the compile settings turn lifting on. `CompileSettings` has no switch of its
-    own for it yet, so until one is added (`business_rules`, `captured_screens`) the DM08
-    switch, `behavior_candidates`, turns on all model-written knowledge."""
-    if policy is None:
-        return False
-    own = getattr(policy, flag, None)
-    return bool(getattr(policy, "behavior_candidates", False) if own is None else own)
+    """Whether the compile settings turn one 8.2 feature on: `business_rules` (rules and
+    workflows) or `captured_screens`. Each has its own switch; DM08's `behavior_candidates`
+    turns on neither."""
+    return policy is not None and bool(getattr(policy, flag, False))
 
 
 # ------------------------------------------------------------------ rendering the behavioural IR
@@ -370,15 +367,21 @@ class _Index:
         self.fields: dict[tuple[str, str], set[str]] = {}
         self.submits: dict[str, set[str]] = {}  # submit target -> forms
         self.renders: dict[str, set[str]] = {}  # code -> screens it renders
+        self.contained_by: dict[str, set[str]] = {}  # entity -> what CONTAINS it
+        self.packages: dict[tuple[str, str], set[str]] = {}  # (unit, package name) -> Package entities
+        self.unit_of: dict[str, str] = {}  # entity -> the unit whose shard declares it
         for unit in sorted(shards):
             shard = shards[unit]
             for e in shard["entities"]:
                 self.entities[e["id"]] = e
+                self.unit_of.setdefault(e["id"], unit)
                 key = e["natural_key"]
                 if e["kind"] in (EntityKind.TABLE, EntityKind.DATASET) and isinstance(key.get("name"), str):
                     self.by_name.setdefault((e["kind"], key["name"].lower()), set()).add(e["id"])
                 elif e["kind"] == EntityKind.FIELD and isinstance(key.get("table"), str) and isinstance(key.get("name"), str):
                     self.fields.setdefault((key["table"].lower(), key["name"].lower()), set()).add(e["id"])
+                elif e["kind"] == EntityKind.PACKAGE and isinstance(key.get("name"), str):
+                    self.packages.setdefault((unit, key["name"]), set()).add(e["id"])
             for ev in shard["evidence"]:
                 self.evidence[ev["id"]] = ev
             for a in shard["assertions"]:
@@ -386,6 +389,8 @@ class _Index:
                     self.submits.setdefault(a["object"], set()).add(a["subject"])
                 elif a["predicate"] == "RENDERS":
                     self.renders.setdefault(a["subject"], set()).add(a["object"])
+                elif a["predicate"] == "CONTAINS":
+                    self.contained_by.setdefault(a["object"], set()).add(a["subject"])
 
     def data(self, name: str) -> str | None:
         """The one Table or Dataset with this name, if exactly one exists."""
@@ -403,6 +408,23 @@ class _Index:
     def path_of(self, artifact: str) -> str:
         e = self.entities.get(artifact)
         return e["natural_key"].get("path", "") if e else ""
+
+    def symbol_containers(self, symbol: str) -> list[str]:
+        """The Program, Component or Package a Symbol belongs to, so a rule a function enforces
+        stays attached in the architecture tier, which leaves Symbols out.
+
+        First what CONTAINS it (a ColdFusion component's Program contains its functions). Else
+        the Package its own key names (`{package, qualified_name}`), when its unit declares
+        exactly one Package of that name. Else nothing: an Artifact cannot be the subject of
+        ENFORCES (compile.ontology), so a Symbol with neither keeps only its own edge."""
+        kinds = (EntityKind.PROGRAM, EntityKind.COMPONENT, EntityKind.PACKAGE)
+        found = sorted(c for c in self.contained_by.get(symbol, set()) if self.entities.get(c, {}).get("kind") in kinds)
+        if found:
+            return found
+        e = self.entities.get(symbol)
+        name = e["natural_key"].get("package") if e else None
+        hits = self.packages.get((self.unit_of.get(symbol, ""), name), set()) if isinstance(name, str) else set()
+        return sorted(hits) if len(hits) == 1 else []
 
 
 def _applies_to(c: Mapping[str, Any], owner: str, index: _Index) -> list[str]:
@@ -463,11 +485,12 @@ def _features(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, Any]:
                 "applies_to": _applies_to(c, oid, index),
             })
         evidence = sorted({c["evidence_id"] for c in candidates})
-        groups.append({**g, "transforms": g["transforms"][:MAX_TRANSFORMS], "candidates": candidates, "omitted": max(0, len(raw) - MAX_CANDIDATES), "evidence": [index.evidence[e] for e in evidence if e in index.evidence]})
+        containers = index.symbol_containers(oid) if g["owner_kind"] == EntityKind.SYMBOL else []
+        groups.append({**g, "transforms": g["transforms"][:MAX_TRANSFORMS], "candidates": candidates, "omitted": max(0, len(raw) - MAX_CANDIDATES), "evidence": [index.evidence[e] for e in evidence if e in index.evidence], "containers": containers})
     return {"groups": groups}
 
 
-FEATURES_BUILD = Step("features.rules", "0.1.0", _features)
+FEATURES_BUILD = Step("features.rules", "0.2.0", _features)
 
 
 def model_features(group: Mapping[str, Any]) -> dict[str, Any]:
@@ -620,7 +643,8 @@ def lifted_rules(repository_id: str, group: Mapping[str, Any], decision: Mapping
     """The rules one lift decision yields for the compiler, and the confirmation decisions made.
 
     A rule cites the candidates it names; its evidence is their units' evidence, its
-    `applies_to` the entities their conditions read.
+    `applies_to` the entities their conditions read. A rule a Symbol enforces also names the
+    Symbol's `containers` (`_Index.symbol_containers`), which enforce it through the Symbol.
     """
     by_id = {c["id"]: c for c in group["candidates"]}
     evidence_rows = {ev["id"]: ev for ev in group["evidence"]}
@@ -638,7 +662,8 @@ def lifted_rules(repository_id: str, group: Mapping[str, Any], decision: Mapping
         if confirmed is not None:
             made.append(confirmed.row())
         out.append({
-            "id": rid, "natural_key": key, "owner": group["owner"], "statement": r["statement"], "rule_kind": r["rule_kind"],
+            "id": rid, "natural_key": key, "owner": group["owner"], "containers": list(group.get("containers", [])),
+            "statement": r["statement"], "rule_kind": r["rule_kind"],
             "status": "rejected" if confirmed and confirmed.selected_label == "rejected" else "confirmed" if confirmed else "hypothesis",
             "candidates": [{"id": c["id"], "kind": c["kind"], "path": c["path"], "at": c["at"]} for c in cited],
             "applies_to": sorted({e for c in cited for e in c["applies_to"]}),

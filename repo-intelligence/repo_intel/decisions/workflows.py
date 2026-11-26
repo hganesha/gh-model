@@ -8,7 +8,8 @@ walks every stored behaviour unit for literal assignments to a column named `sta
 - SQL `INSERT INTO t (..., status) VALUES (..., 'draft')`, the state a row starts in;
 - a SAS DATA-step assignment `status = 'review';`, for each dataset the step writes.
 
-A transition's `from` state is read from the same statement (`WHERE status = 'submitted'`)
+A transition's `from` state is read from the same statement (`WHERE status = 'submitted'`,
+`status IN ('a', :b)` when every value is a literal or a bind parameter whose value is one)
 or from an enclosing condition that compares the column with a literal; its guard is the
 text of the conditions around it. An assignment whose value is not a literal (a macro
 variable, a function argument) stays dynamic: it is counted and reported, never guessed.
@@ -133,6 +134,19 @@ def _sql_value(node: Any, params: list[Any]) -> tuple[str | None, bool]:
     return None, True
 
 
+def _sql_state(node: Any, params: list[Any]) -> str | None:
+    """A WHERE operand as a literal state: a literal, or a bind parameter whose value is a
+    literal. An inline parameter is text, not a value, and a `?` names no parameter: None."""
+    from sqlglot import exp
+    if isinstance(node, exp.Literal):
+        value = str(node.this).strip()
+        return value if value and len(value) <= 60 else None
+    if isinstance(node, (exp.Placeholder, exp.Parameter)) and node.name:
+        p = next((p for p in params if isinstance(p, Mapping) and p.get("name") == node.name), None)
+        return _lit(p.get("value")) if p is not None and not p.get("inline") else None
+    return None
+
+
 def _sql_assignments(s: Mapping[str, Any]) -> list[dict[str, Any]]:
     """State assignments in one `query` node: (table, column, value or dynamic, from states, guard)."""
     from sqlglot import exp
@@ -165,10 +179,11 @@ def _sql_assignments(s: Mapping[str, Any]) -> list[dict[str, Any]]:
             value, dynamic = _sql_value(item.expression, params)
             froms, others = [], []
             for c in conj:
-                if isinstance(c, exp.EQ) and isinstance(c.this, exp.Column) and c.this.name.lower() == column and isinstance(c.expression, exp.Literal):
-                    froms.append(str(c.expression.this))
-                elif isinstance(c, exp.In) and isinstance(c.this, exp.Column) and c.this.name.lower() == column and all(isinstance(x, exp.Literal) for x in c.expressions):
-                    froms += [str(x.this) for x in c.expressions]
+                # `status = 'draft'`, `status IN ('a', :b)`: from states when every value is literal
+                if isinstance(c, exp.EQ) and isinstance(c.this, exp.Column) and c.this.name.lower() == column and _sql_state(c.expression, params) is not None:
+                    froms.append(_sql_state(c.expression, params))
+                elif isinstance(c, exp.In) and isinstance(c.this, exp.Column) and c.this.name.lower() == column and c.expressions and all(_sql_state(x, params) is not None for x in c.expressions):
+                    froms += [_sql_state(x, params) for x in c.expressions]
                 elif not (isinstance(c, exp.EQ) and all(isinstance(x, (exp.Column, exp.Placeholder, exp.Parameter)) for x in (c.this, c.expression))):
                     others.append(" ".join(c.sql().split()))
             out.append({"table": table, "column": column, "value": value, "dynamic": dynamic or inline, "from": sorted(set(froms)), "sql_guard": others, "kind": "update"})
@@ -270,7 +285,7 @@ def _features(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, Any]:
     return {"workflows": workflows, "dynamic": dynamic, "assignments": total, "literal": literal}
 
 
-FEATURES_BUILD = Step("features.workflows", "0.1.0", _features)
+FEATURES_BUILD = Step("features.workflows", "0.2.0", _features)
 
 
 # ------------------------------------------------------------------ naming and confirmation

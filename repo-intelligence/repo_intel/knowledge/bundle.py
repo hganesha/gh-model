@@ -81,6 +81,11 @@ DETAIL_KINDS = ("Symbol",)
 # rows, so a snapshot without behaviour hashes as it did before the table existed. The
 # transform shapes of those units (repo_intel.compile.transforms) are detail the same way.
 DETAIL_TABLES = ("behaviors", "transforms")
+# Entity attributes that are detail although their entity is not: the regions of an
+# owner-captured screen (contract 8.2, decisions.screens). The architecture tier keeps the
+# Screen and drops the attribute; manifest.json counts the entities it was dropped from in
+# `detail_omitted` as "<kind>.<attribute>".
+DETAIL_ATTRIBUTES: dict[str, tuple[str, ...]] = {"Screen": ("captured",)}
 TIERS = ("architecture", "full")
 DEFAULT_TIER = "architecture"
 BUNDLE = ".rkp"
@@ -239,12 +244,18 @@ def _slugs(units: list[str]) -> dict[str, str]:
 
 def _architecture_shards(shards: dict[str, dict[str, Any]], conflicts: list[dict[str, Any]], keep_evidence: frozenset[str] = frozenset()) -> dict[str, dict[str, Any]]:
     """The shards without function-level detail; rows keep the engine's order. Evidence in
-    `keep_evidence` (cited by the exports file) is kept like evidence the rows cite."""
+    `keep_evidence` (cited by the exports file) is kept like evidence the rows cite. Entities
+    keep every attribute but those DETAIL_ATTRIBUTES names for their kind."""
     detail = {e["id"] for shard in shards.values() for e in shard["entities"] if e["kind"] in DETAIL_KINDS}
     kept: dict[str, dict[str, Any]] = {}
     cited = {ev for c in conflicts for ev in c.get("evidence_ids", [])} | set(keep_evidence)
+
+    def without_detail(e: dict[str, Any]) -> dict[str, Any]:
+        names = [n for n in DETAIL_ATTRIBUTES.get(e["kind"], ()) if n in e["attributes"]]
+        return {**e, "attributes": {k: v for k, v in e["attributes"].items() if k not in names}} if names else e
+
     for unit, shard in shards.items():
-        entities = [e for e in shard["entities"] if e["id"] not in detail]
+        entities = [without_detail(e) for e in shard["entities"] if e["id"] not in detail]
         assertions = [a for a in shard["assertions"] if a["subject"] not in detail and a["object"] not in detail]
         unknowns = [u for u in shard["unknowns"] if u["subject"] not in detail]
         for row in (*entities, *assertions):
@@ -254,6 +265,14 @@ def _architecture_shards(shards: dict[str, dict[str, Any]], conflicts: list[dict
     for shard in kept.values():
         shard["evidence"] = [ev for ev in shard["evidence"] if ev["id"] in cited]
     return kept
+
+
+def _omitted_attributes(shards: dict[str, dict[str, Any]]) -> dict[str, int]:
+    """{"<kind>.<attribute>": entities it is dropped from} for `detail_omitted`; only the
+    non-zero counts, so a bundle without such attributes writes the manifest it did before."""
+    counts = {f"{kind}.{name}": sum(1 for s in shards.values() for e in s["entities"] if e["kind"] == kind and name in e["attributes"])
+              for kind, names in sorted(DETAIL_ATTRIBUTES.items()) for name in names}
+    return {k: n for k, n in counts.items() if n}
 
 
 def write_bundle(repo: Path, store: ObjectStore, manifest: Manifest, *, working_tree: bool = False, tier: str = "full") -> dict[str, Any]:
@@ -310,7 +329,7 @@ def write_bundle(repo: Path, store: ObjectStore, manifest: Manifest, *, working_
         "override_set_hash": manifest.override_set_hash, "rkp_hash": manifest.rkp_hash, "status": manifest.status,
         "row_defaults": ROW_DEFAULTS,
         "tier": tier,
-        **({"detail_kinds": list(DETAIL_KINDS), "detail_tables": list(DETAIL_TABLES), "detail_omitted": {table: sum(len(s.get(table, [])) for s in full.values()) - totals[table] for table, _ in _ALL_TABLES}} if tier == "architecture" else {}),
+        **({"detail_kinds": list(DETAIL_KINDS), "detail_tables": list(DETAIL_TABLES), "detail_omitted": {table: sum(len(s.get(table, [])) for s in full.values()) - totals[table] for table, _ in _ALL_TABLES} | _omitted_attributes(full)} if tier == "architecture" else {}),
         "units": units,
         "counts": {**totals, "coverage": len(coverage), "conflicts": len(conflicts), "repository_unknowns": len(unknowns), "decisions": len(decisions), "files": sum(1 for f in files if "blob_sha256" in f), "excluded_files": sum(1 for f in files if "excluded" in f)},
         **({"exports": exports_entry} if exports_entry else {}),

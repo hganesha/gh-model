@@ -290,7 +290,8 @@ def verify_bundle(loaded: dict[str, Any]) -> tuple[list[str], dict[str, Any]]:
     """Every way the bundle disagrees with itself or with the publish gate; and what was checked.
 
     1. The manifest agrees with the snapshot record it carries, and the snapshot's hashes re-derive.
-    2. Row defaults and the tier are what the format and the tier say.
+    2. Row defaults and the tier are what the format and the tier say; an architecture-tier
+       bundle holds no detail kind, table or attribute (bundle.DETAIL_ATTRIBUTES).
     3. Every unit the snapshot names has its file, every unit file is named, row counts match,
        and each unit's rows hash to its digest: the snapshot's in the full tier, the one
        manifest.json records in the architecture tier.
@@ -337,14 +338,22 @@ def verify_bundle(loaded: dict[str, Any]) -> tuple[list[str], dict[str, Any]]:
         if detail_kinds != list(bundle.DETAIL_KINDS):
             problems.append(f"manifest.json: detail_kinds is {detail_kinds!r}; the architecture tier leaves out {list(bundle.DETAIL_KINDS)}")
         # Bundles written before behaviour existed have no detail_tables; they cannot hold any.
-        if "detail_tables" in document and document["detail_tables"] != list(bundle.DETAIL_TABLES):
-            problems.append(f"manifest.json: detail_tables is {document['detail_tables']!r}; the architecture tier leaves out {list(bundle.DETAIL_TABLES)}")
+        # One written before a later detail table existed names fewer (['behaviors'] before
+        # transform shapes): any subset is right, and the rows check below still applies.
+        tables = document.get("detail_tables")
+        if "detail_tables" in document and not (isinstance(tables, list) and all(isinstance(t, str) for t in tables) and set(tables) <= set(bundle.DETAIL_TABLES)):
+            problems.append(f"manifest.json: detail_tables is {tables!r}; the architecture tier leaves out only tables among {list(bundle.DETAIL_TABLES)}")
         if not isinstance(document.get("detail_omitted"), dict):
             problems.append("manifest.json: an architecture-tier bundle does not say how much detail it left out")
         problems += [f"manifest.json: unit {u.get('unit')!r} has no digest; the architecture tier records one per unit" for u in units if not u.get("digest")]
         kinds = sorted({e["kind"] for s in shards.values() for e in s["entities"] if e.get("kind") in bundle.DETAIL_KINDS})
         kept = [f"{', '.join(kinds)} entities"] if kinds else []
         kept += [f"{n} {table} rows" for table in bundle.DETAIL_TABLES if (n := sum(len(s.get(table, [])) for s in shards.values()))]
+        for kind, names in sorted(bundle.DETAIL_ATTRIBUTES.items()):
+            for name in names:
+                n = sum(1 for s in shards.values() for e in s["entities"] if e.get("kind") == kind and isinstance(e.get("attributes"), dict) and name in e["attributes"])
+                if n:
+                    kept.append(f"{n} {kind} {'entity' if n == 1 else 'entities'} with attributes.{name}")
         if kept:
             problems.append(f"the architecture tier holds detail it should leave out: {'; '.join(kept)}")
     elif detail_kinds is not None or "detail_tables" in document or "detail_omitted" in document:
@@ -479,11 +488,12 @@ def _exports_problems(loaded: dict[str, Any]) -> list[str]:
 # ------------------------------------------------------------------ diff
 
 
-def _entities(loaded: dict[str, Any], leave_out: tuple[str, ...]) -> tuple[dict[str, dict[str, Any]], dict[str, str]]:
+def _entities(loaded: dict[str, Any], leave_out: tuple[str, ...], leave_out_attributes: dict[str, tuple[str, ...]] | None = None) -> tuple[dict[str, dict[str, Any]], dict[str, str]]:
     """Entities by (kind, natural key), merged across units as the engine merges them; and id -> key.
 
     Keyed by kind and natural key rather than ID, so two repositories' bundles compare too
-    (an entity ID folds in the repository ID).
+    (an entity ID folds in the repository ID). Attributes named in `leave_out_attributes`
+    for an entity's kind are dropped, as the architecture tier drops them.
     """
     out: dict[str, dict[str, Any]] = {}
     key_of: dict[str, str] = {}
@@ -491,6 +501,9 @@ def _entities(loaded: dict[str, Any], leave_out: tuple[str, ...]) -> tuple[dict[
         for e in shard["entities"]:
             if e["kind"] in leave_out:
                 continue
+            dropped = (leave_out_attributes or {}).get(e["kind"], ())
+            if any(name in e["attributes"] for name in dropped):
+                e = {**e, "attributes": {k: v for k, v in e["attributes"].items() if k not in dropped}}
             key = _canonical([e["kind"], e["natural_key"]])
             key_of[e["id"]] = key
             old = out.get(key)
@@ -530,6 +543,29 @@ def _behaviours(loaded: dict[str, Any], key_of: dict[str, str], remap: dict[str,
             unit = {k: b.get(k) for k in ("kind", "language", "params", "body")}
             out.setdefault(remap.get(key, key), []).append(_canonical(_without_spans(unit)))
     return {k: sorted(v) for k, v in out.items()}
+
+
+# How an exports row is matched across two bundles: an operation by its interface, method and
+# route; an unresolved call by its caller, method and path. The entity is compared by kind and
+# natural key, as entities are, so two repositories' exports compare too.
+EXPORT_KEYS = {"operations": ("interface", "method", "route"), "unresolved_calls": ("caller", "method", "path")}
+
+
+def _exports_by_key(loaded: dict[str, Any], key_of: dict[str, str], remap: dict[str, str]) -> dict[str, dict[tuple[str, ...], dict[str, Any]]] | None:
+    """Each exports list's rows by their match key (EXPORT_KEYS); None when the bundle has no
+    readable exports.json (written before it existed, or damaged: verify reports that)."""
+    exports = loaded.get("exports")
+    if not isinstance(exports, dict) or bundle.exports_problem(exports) is not None:
+        return None
+    out: dict[str, dict[tuple[str, ...], dict[str, Any]]] = {}
+    for group, (entity, *fields) in EXPORT_KEYS.items():
+        rows: dict[tuple[str, ...], dict[str, Any]] = {}
+        for row in exports[group]:
+            key = key_of.get(row.get(entity)) if isinstance(row.get(entity), str) else None
+            ref = remap.get(key, key) if key is not None else _canonical(row.get(entity))
+            rows[(ref, *(_canonical(row.get(f)) for f in fields))] = row
+        out[group] = rows
+    return out
 
 
 def coverage_changes(before: list[dict[str, Any]], after: list[dict[str, Any]]) -> dict[str, Any]:
@@ -579,7 +615,9 @@ def diff_bundles(a: dict[str, Any], b: dict[str, Any]) -> dict[str, Any]:
     qualifiers), with moved entities mapped onto their new keys, as the snapshot delta does.
     Behaviour is compared per owner, spans left out. When one bundle is architecture tier and
     the other full, both are compared at the architecture tier, so function-level detail
-    (Symbols and behaviour) does not show as added or removed.
+    (Symbols, behaviour and bundle.DETAIL_ATTRIBUTES) does not show as added or removed.
+    The exports (`exports.json`) are compared row by row (EXPORT_KEYS) when both bundles
+    have them: operations and unresolved calls added and removed.
 
     The snapshot delta itself (delta.knowledge_delta) is not used: it needs the toolchain and
     path manifests from the cache, which a bundle does not carry, it refuses two repositories,
@@ -589,8 +627,9 @@ def diff_bundles(a: dict[str, Any], b: dict[str, Any]) -> dict[str, Any]:
 
     tier = "architecture" if "architecture" in (a["tier"], b["tier"]) else "full"
     leave_out = tuple(bundle.DETAIL_KINDS) if tier == "architecture" else ()
-    ents_a, key_a = _entities(a, leave_out)
-    ents_b, key_b = _entities(b, leave_out)
+    leave_out_attributes = bundle.DETAIL_ATTRIBUTES if tier == "architecture" else {}
+    ents_a, key_a = _entities(a, leave_out, leave_out_attributes)
+    ents_b, key_b = _entities(b, leave_out, leave_out_attributes)
     removed = {k: e for k, e in ents_a.items() if k not in ents_b}
     added = {k: e for k, e in ents_b.items() if k not in ents_a}
     moves = match_moves(removed, added)
@@ -650,6 +689,24 @@ def diff_bundles(a: dict[str, Any], b: dict[str, Any]) -> dict[str, Any]:
             behaviours.append({"change": change, "owner": end(key), "units_before": len(before_units), "units_after": len(after_units)})
         behaviours.sort(key=lambda r: (r["owner"]["kind"], r["owner"]["name"], r["change"], r["owner"]["id"]))
 
+    # exports.json: compared only when both bundles have it, so an older bundle on one side
+    # does not show every export as added or removed.
+    exp_a, exp_b = _exports_by_key(a, key_a, remap), _exports_by_key(b, key_b, {})
+    exports: dict[str, Any] = {"compared": exp_a is not None and exp_b is not None, "summary": {"added": 0, "removed": 0}, **{group: [] for group in EXPORT_KEYS}}
+    if exp_a is not None and exp_b is not None:
+        def entity_of(entity_id: Any, ents: dict[str, dict[str, Any]], key_of: dict[str, str]) -> dict[str, Any] | None:
+            e = ents.get(key_of.get(entity_id, "")) if isinstance(entity_id, str) else None
+            return {"kind": e["kind"], "name": e["name"], "id": e["id"]} if e else None if entity_id is None else {"id": entity_id}
+
+        for group, (entity, *fields) in EXPORT_KEYS.items():
+            for change, keys, side_rows, ents, key_of in (("added", exp_b[group].keys() - exp_a[group].keys(), exp_b[group], ents_b, key_b),
+                                                          ("removed", exp_a[group].keys() - exp_b[group].keys(), exp_a[group], ents_a, key_a)):
+                for k in keys:
+                    row = side_rows[k]
+                    exports[group].append({"change": change, entity: entity_of(row.get(entity), ents, key_of), **{f: row.get(f) for f in fields}})
+                    exports["summary"][change] += 1
+            exports[group].sort(key=lambda r: (_canonical(r[fields[1]]), _canonical(r["method"]), r["change"], _canonical(r[entity])))
+
     files_a = {f["path"]: f.get("blob_sha256") for f in a["tables"]["files"] if "blob_sha256" in f and "path" in f}
     files_b = {f["path"]: f.get("blob_sha256") for f in b["tables"]["files"] if "blob_sha256" in f and "path" in f}
     count = lambda items, change: sum(1 for r in items if r["change"] == change)
@@ -667,6 +724,7 @@ def diff_bundles(a: dict[str, Any], b: dict[str, Any]) -> dict[str, Any]:
         "entities": {"summary": {c: count(rows, c) for c in ("added", "removed", "changed", "moved")} | {"evidence_only": evidence_only}, "by_kind": dict(sorted(by_kind.items())), "rows": rows},
         "relations": {"summary": {c: count(relations, c) for c in ("added", "removed", "support_changed")}, "by_predicate": dict(sorted(by_predicate.items())), "rows": relations},
         "behaviors": {"compared": tier == "full", "summary": {c: count(behaviours, c) for c in ("added", "removed", "changed")}, "rows": behaviours},
+        "exports": exports,
         "coverage": coverage_changes(a["tables"]["coverage"], b["tables"]["coverage"]),
         "counts": {k: {"before": counts_a.get(k), "after": counts_b.get(k)} for k in ("conflicts", "repository_unknowns", "decisions") if counts_a.get(k) != counts_b.get(k)},
         "files": {"added": sorted(files_b.keys() - files_a.keys()), "removed": sorted(files_a.keys() - files_b.keys()), "modified": sorted(p for p in files_a.keys() & files_b.keys() if files_a[p] != files_b[p])},
