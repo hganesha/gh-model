@@ -231,7 +231,31 @@ def load_bundle(source: Source) -> dict[str, Any]:
             side[table] = []
         else:
             side[table] = _parse_lines(data[file], file, problems)
-    return {"source": source, "document": document, "manifest": manifest, "tier": document.get("tier", "full"), "units": units, "shards": shards, "written": written, "tables": side, "problems": problems}
+    exports = _load_exports(source, document, problems)
+    return {"source": source, "document": document, "manifest": manifest, "tier": document.get("tier", "full"), "units": units, "shards": shards, "written": written, "tables": side, "exports": exports, "problems": problems}
+
+
+def _load_exports(source: Source, document: dict[str, Any], problems: list[str]) -> Any:
+    """The parsed `exports.json`, or None when the bundle does not have one (bundles written
+    before it existed). A file the manifest does not name, or one it names that is missing or
+    not JSON, is a problem; whether its content matches is checked by verify."""
+    entry = document.get("exports")
+    raw = source.read([bundle.EXPORTS_FILE])[bundle.EXPORTS_FILE]
+    if bundle.EXPORTS_FILE in source.escaped:
+        problems.append(f"{bundle.EXPORTS_FILE}: a symbolic link out of the bundle; not read")
+        return None
+    if entry is None:
+        if raw is not None:
+            problems.append(f"{bundle.EXPORTS_FILE}: not named by the manifest")
+        return None
+    if raw is None:
+        problems.append(f"{bundle.EXPORTS_FILE}: named by the manifest but missing")
+        return None
+    try:
+        return json.loads(raw)
+    except ValueError:
+        problems.append(f"{bundle.EXPORTS_FILE}: not valid JSON")
+        return None
 
 
 # ------------------------------------------------------------------ verify
@@ -273,6 +297,9 @@ def verify_bundle(loaded: dict[str, Any]) -> tuple[list[str], dict[str, Any]]:
     4. The repository-level files hash to the snapshot's references.
     5. The rows, as a reader rebuilds them, pass the publish gate (repo_intel.compile.verify),
        and every behaviour row belongs to an entity of its unit and validates.
+    6. `exports.json`, when the manifest names it, hashes to its digest, cites only entities
+       and evidence of the bundle, and passes the secret scan that needs no source. A bundle
+       written before the file existed has none, and that is not a problem.
     """
     from repo_intel.compile.ontology import functional_violations
     from repo_intel.compile.verify import content_leaves, verify_snapshot
@@ -389,13 +416,64 @@ def verify_bundle(loaded: dict[str, Any]) -> tuple[list[str], dict[str, Any]]:
     cited = {a["decision_ref"] for s in shards.values() for a in s["assertions"] if isinstance(a, dict) and a.get("decision_ref")}
     cited |= {e["attributes"][k] for s in shards.values() for e in s["entities"] if isinstance(e, dict) and isinstance(e.get("attributes"), dict) for k in DECISION_ATTRIBUTES if e["attributes"].get(k)}
     problems += [f"publish gate: decision {d} is cited but not in decisions.jsonl" for d in sorted(cited - known)]
+    problems += _exports_problems(loaded)
 
     checked = {
         "bundle_format": document["bundle_format"], "tier": tier, "repository_id": manifest.repository_id, "commit_sha": manifest.commit_sha, "rkp_hash": manifest.rkp_hash,
         "units": len(units), **totals, "files": actual["files"],
         "content_hash": "re-derived from the rows" if full else "not re-derivable: the architecture tier leaves detail out, so each unit is checked against its own digest",
+        "exports": {name: len(loaded["exports"][name]) for name in bundle.EXPORT_LISTS} if isinstance(loaded.get("exports"), dict) and bundle.exports_problem(loaded["exports"]) is None
+        else "absent: the bundle was written before exports.json existed" if (document.get("exports") is None) else "unreadable",
     }
     return problems, checked
+
+
+_METHOD = re.compile(r"^[A-Z]{3,7}$")
+
+
+def _exports_problems(loaded: dict[str, Any]) -> list[str]:
+    """`exports.json` against manifest.json and the rows: its digest and counts, its shape,
+    that every entity and evidence it cites is in the bundle (in either tier: the writer keeps
+    the evidence the exports cite), that a method is an upper-case HTTP method, and the
+    secret scan that needs no source (repo_intel.ingest.publish_secrets.export_findings)."""
+    from repo_intel.ingest.publish_secrets import export_findings
+    from repo_intel.storage.hashing import digest
+
+    entry, exports = loaded["document"].get("exports"), loaded.get("exports")
+    if entry is None or exports is None:
+        return []  # no exports (an older bundle), or the file problem load_bundle reported
+    name = bundle.EXPORTS_FILE
+    problems = []
+    if not isinstance(entry, dict) or entry.get("file") != name:
+        problems.append(f"manifest.json: exports must name {{\"file\": \"{name}\", \"digest\", {', '.join(bundle.EXPORT_LISTS)}}}")
+        entry = {}
+    shape = bundle.exports_problem(exports)
+    if shape is not None:
+        return problems + [f"{name}: {shape}"]
+    if digest(exports) != entry.get("digest"):
+        problems.append(f"{name}: does not hash to the digest in manifest.json")
+    for group in bundle.EXPORT_LISTS:
+        if entry.get(group) != len(exports[group]):
+            problems.append(f"{name}: {len(exports[group])} {group}; the manifest says {entry.get(group)}")
+    entities = {e.get("id") for s in loaded["shards"].values() for e in s["entities"] if isinstance(e, dict)}
+    evidence = {e.get("id") for s in loaded["shards"].values() for e in s["evidence"] if isinstance(e, dict)}
+    for group, fields in (("operations", ("interface", "component")), ("unresolved_calls", ("caller",))):
+        for number, row in enumerate(exports[group]):
+            where = f"{name}: {group}[{number}]"
+            for field in fields:
+                if row.get(field) is not None and row[field] not in entities:
+                    problems.append(f"{where}: {field} {row[field]} is not an entity of the bundle")
+            ids = row.get("evidence_ids")
+            if not isinstance(ids, list) or not ids:
+                problems.append(f"{where}: cites no evidence")
+            elif missing := [ev for ev in ids if ev not in evidence]:
+                problems.append(f"{where}: cites evidence the bundle does not hold ({', '.join(map(str, missing[:3]))})")
+            if "method" in row and not (isinstance(row["method"], str) and _METHOD.match(row["method"])):
+                problems.append(f"{where}: method {row['method']!r} is not an upper-case HTTP method")
+            if not isinstance(row.get("path" if group == "unresolved_calls" else "route"), str):
+                problems.append(f"{where}: has no {'path' if group == 'unresolved_calls' else 'route'}")
+    problems += [f"publish gate: {name}: {finding}" for finding in export_findings(exports)]
+    return problems
 
 
 # ------------------------------------------------------------------ diff

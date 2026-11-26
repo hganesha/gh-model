@@ -110,6 +110,44 @@ test("fills in the fields format 2 leaves out, with separate copies per row", as
   assert.deepEqual(bundle.entities.get("ent_b")!.attributes, {});
 });
 
+test("reads exports.json when the manifest names it, and tolerates a bundle without it", async () => {
+  const written = {
+    operations: [{ interface: "ent_i", component: null, method: "GET", route: "/catalog", evidence_ids: ["ev_1"] }],
+    unresolved_calls: [
+      { caller: "ent_a", path: "/api/orders", method: "POST", evidence_ids: ["ev_1"] },
+      { caller: "ent_a", path: "{}/health", evidence_ids: ["ev_1"] },
+      { caller: "ent_b", path: "/api/stock", method: "GET", evidence_ids: ["ev_1"] },
+    ],
+  };
+  const entry = { file: "exports.json", digest: "sha256:e", operations: 1, unresolved_calls: 3 };
+  const root = await writeBundle({ ...manifest, bundle_format: "rkp-bundle/2", exports: entry }, { "units/root.jsonl": unitRows });
+  await fs.writeFile(path.join(root, ".rkp", "knowledge", "exports.json"), JSON.stringify(written, null, 2));
+  const bundle = await loadBundle(root);
+  assert.ok(bundle);
+  assert.deepEqual(bundle.exports, written);
+  assert.deepEqual(bundle.unresolvedCallsOf("ent_a").map((c) => [c.method, c.path]), [["POST", "/api/orders"], [undefined, "{}/health"]]);
+  assert.deepEqual(bundle.unresolvedCallsOf("ent_missing"), []);
+
+  // A bundle written before exports.json existed: no manifest entry, no file.
+  const old = await loadBundle(await writeBundle(manifest, { "units/root.jsonl": unitRows }));
+  assert.ok(old);
+  assert.equal(old.exports, undefined);
+  assert.deepEqual(old.unresolvedCallsOf("ent_a"), []);
+  assert.equal(old.entities.size, 2);
+
+  // Named but missing still loads; a damaged or escaping file is an error.
+  const missing = await loadBundle(await writeBundle({ ...manifest, exports: entry }, { "units/root.jsonl": unitRows }));
+  assert.equal(missing?.exports, undefined);
+  const damaged = await writeBundle({ ...manifest, exports: entry }, { "units/root.jsonl": unitRows });
+  await fs.writeFile(path.join(damaged, ".rkp", "knowledge", "exports.json"), "{not json");
+  await assert.rejects(loadBundle(damaged), /exports\.json is not valid JSON/);
+  const wrongShape = await writeBundle({ ...manifest, exports: entry }, { "units/root.jsonl": unitRows });
+  await fs.writeFile(path.join(wrongShape, ".rkp", "knowledge", "exports.json"), JSON.stringify({ operations: [] }));
+  await assert.rejects(loadBundle(wrongShape), /operations and unresolved_calls/);
+  const escaping = await writeBundle({ ...manifest, exports: { ...entry, file: "../../outside.json" } }, { "units/root.jsonl": unitRows });
+  await assert.rejects(loadBundle(escaping), /outside the bundle/);
+});
+
 test("indexes behaviour rows by owner and skips tables it does not know", async () => {
   const behavior = (id: string, owner: string) => ({
     table: "behavior", id, owner, artifact: "ent_file", schema: "rkp-behavior/1", language: "cfml",

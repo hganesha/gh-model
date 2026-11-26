@@ -9,9 +9,11 @@ import {
   CoverageEntry,
   Entity,
   Evidence,
+  Exports,
   FileEntry,
   Unknown,
   UnitRow,
+  UnresolvedCall,
   RowDefaults,
 } from "./types";
 
@@ -50,6 +52,8 @@ export class Bundle {
     readonly conflicts: Conflict[],
     readonly repositoryUnknowns: Unknown[],
     readonly coverage: CoverageEntry[],
+    /** Contract operations and unresolved HTTP calls (`exports.json`); undefined for a bundle written before the file existed. */
+    readonly exports: Exports | undefined = undefined,
   ) {
     for (const row of rows) {
       const { table, ...value } = row;
@@ -114,6 +118,11 @@ export class Bundle {
       if (location) return location;
     }
     return undefined;
+  }
+
+  /** The HTTP calls an entity makes that no endpoint of this repository serves; empty when the bundle has no exports. */
+  unresolvedCallsOf(entityId: string): UnresolvedCall[] {
+    return (this.exports?.unresolved_calls ?? []).filter((call) => call.caller === entityId);
   }
 
   /** All unknowns, per unit and repository-wide. */
@@ -192,11 +201,42 @@ export async function loadBundle(repositoryRoot: string): Promise<Bundle | undef
     if (!file.startsWith(knowledge + path.sep)) throw new BundleError(`unit file ${unit.file} is outside the bundle`);
     for (const row of await readJsonl<UnitRow>(file)) rows.push(withDefaults(row, manifest.row_defaults));
   }
-  const [files, conflicts, unknowns, coverage] = await Promise.all([
+  const [files, conflicts, unknowns, coverage, exported] = await Promise.all([
     readJsonl<FileEntry>(path.join(knowledge, "files.jsonl")),
     readJsonl<Conflict>(path.join(knowledge, "conflicts.jsonl")),
     readJsonl<Unknown>(path.join(knowledge, "unknowns.jsonl")),
     readJsonl<CoverageEntry>(path.join(knowledge, "coverage.jsonl")),
+    readExports(knowledge, manifest),
   ]);
-  return new Bundle(repositoryRoot, manifest, rows, files, conflicts, unknowns, coverage);
+  return new Bundle(repositoryRoot, manifest, rows, files, conflicts, unknowns, coverage, exported);
+}
+
+/**
+ * `exports.json` when the manifest names it. Undefined for a bundle written before the file
+ * existed, and when the named file is missing: this reader does not check digests (`rkp verify`
+ * does), so it loads what is there. A file that is not an exports document is an error.
+ */
+async function readExports(knowledge: string, manifest: BundleManifest): Promise<Exports | undefined> {
+  const entry = manifest.exports;
+  if (!entry || typeof entry.file !== "string") return undefined;
+  const file = path.resolve(knowledge, entry.file);
+  if (!file.startsWith(knowledge + path.sep)) throw new BundleError(`exports file ${entry.file} is outside the bundle`);
+  let text: string;
+  try {
+    text = await fs.readFile(file, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw error;
+  }
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    throw new BundleError(`${file} is not valid JSON`);
+  }
+  const document = value as Partial<Exports> | null;
+  if (!document || !Array.isArray(document.operations) || !Array.isArray(document.unresolved_calls)) {
+    throw new BundleError(`${file} does not hold operations and unresolved_calls lists`);
+  }
+  return { operations: document.operations, unresolved_calls: document.unresolved_calls };
 }
