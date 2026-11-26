@@ -1,0 +1,1 @@
+{"message": "The scheduler now runs the loads: retire the nightly sequence", "delete": ["datastage/export/NightlyLoad.dsx"]}
