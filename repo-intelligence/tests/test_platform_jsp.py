@@ -101,6 +101,22 @@ def test_extractors_claim_their_files():
     assert not web.matches("conf/web.xml.bak") and not web.matches("pom.xml")
 
 
+def test_inventory_language_of_jsp_files():
+    from repo_intel.extractors import detect_language
+
+    for path in ("a/b.jsp", "a/b.jspx", "a/b.jspf", "WEB-INF/tags/money.tag", "META-INF/tags/x.TAGX"):
+        assert detect_language(path) == "jsp", path
+
+
+def test_tag_files_are_read_only_from_a_tag_directory():
+    src = JspSource()
+    for path in ("WEB-INF/tags/money.tag", WEBAPP + "WEB-INF/tags/forms/field.tagx", "lib/META-INF/tags/util.tag", "app/web-inf/tags/a.TAG"):
+        assert src.matches(path), path
+    # Riot.js components and other tools' .tag files are not JSP
+    for path in ("src/components/todo.tag", "tags/app.tag", "WEB-INF/money.tag", "src/WEB-INF-tags/x.tag", "WEB-INF/tagsx/y.tagx", "MY-WEB-INF/tags/z.tag"):
+        assert not src.matches(path), path
+
+
 def test_the_pack_imports_extractors_only_inside_functions():
     import ast
 

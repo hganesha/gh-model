@@ -37,6 +37,9 @@ LANGUAGES = {
     ".ipynb": "jupyter", ".scala": "scala", ".r": "r", ".cfg": "ini",
     ".cbl": "cobol", ".cob": "cobol", ".cobol": "cobol", ".cpy": "cobol", ".jcl": "jcl", ".prc": "jcl", ".proc": "jcl",
     ".sas": "sas", ".cfm": "cfml", ".cfc": "cfml", ".bteq": "bteq", ".btq": "bteq", ".tpt": "tpt",
+    # Server pages and SAS Enterprise Guide (docs/solution-ir-contract.md section 8.6).
+    ".jsp": "jsp", ".jspx": "jsp", ".jspf": "jsp", ".tag": "jsp", ".tagx": "jsp",
+    ".aspx": "aspnet", ".ascx": "aspnet", ".master": "aspnet", ".cshtml": "aspnet", ".razor": "aspnet", ".egp": "sas",
     # More languages, API contracts, and build and infrastructure files.
     ".kt": "kotlin", ".kts": "kotlin", ".cs": "csharp", ".fs": "fsharp", ".swift": "swift", ".gradle": "gradle", ".sbt": "sbt",
     ".csproj": "msbuild", ".fsproj": "msbuild", ".vbproj": "msbuild", ".gemspec": "ruby", ".rake": "ruby", ".erb": "erb",

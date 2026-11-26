@@ -1,6 +1,8 @@
 """`jsp.source`: JSP pages, JSP documents, fragments and tag files.
 
-Reads `.jsp`, `.jspx`, `.jspf`, `.tag` and `.tagx` files:
+Reads `.jsp`, `.jspx` and `.jspf` files, and `.tag` and `.tagx` files below a
+`WEB-INF/tags/` or `META-INF/tags/` directory (elsewhere that suffix is usually another
+tool's, such as a Riot.js component):
 
 - the file is a `Program` (`jsp:Page`, or `jsp:TagFile`) named by its path; a page or
   document outside `WEB-INF` and `META-INF` is reachable at its path below the web
@@ -91,11 +93,19 @@ def _java_string(raw: str) -> str:
 
 class JspSource:
     id = "jsp.source"
-    version = "1.0.0"
+    version = "1.1.0"
     SUFFIXES = (".jsp", ".jspx", ".jspf", ".tag", ".tagx")
+    TAG_SUFFIXES = (".tag", ".tagx")
+    TAG_DIRECTORIES = ("/web-inf/tags/", "/meta-inf/tags/")
 
     def matches(self, path: str) -> bool:
-        return path.lower().endswith(self.SUFFIXES)
+        """JSP pages, documents and fragments anywhere; tag files only where the JSP
+        specification puts them, below a `WEB-INF/tags/` or `META-INF/tags/` directory,
+        because other tools use the same suffix (Riot.js components are `.tag` files)."""
+        low = path.lower()
+        if low.endswith(self.TAG_SUFFIXES):
+            return any(d in "/" + low for d in self.TAG_DIRECTORIES)
+        return low.endswith(self.SUFFIXES)
 
     def extract(self, path: str, data: bytes, blob: str):
         return _Reader(self.id, path, data, blob, decode(data)).run()

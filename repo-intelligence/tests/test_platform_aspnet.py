@@ -104,6 +104,14 @@ def test_extractors_claim_their_files():
     assert not cfg.matches("app.config") and not cfg.matches("packages.config")
 
 
+def test_inventory_language_of_pages_is_aspnet():
+    from repo_intel.extractors import detect_language
+
+    for path in ("a/B.aspx", "a/B.ascx", "Site.Master", "Pages/Index.cshtml", "Pages/Counter.razor"):
+        assert detect_language(path) == "aspnet", path
+    assert detect_language("a/B.aspx.cs") == "csharp"
+
+
 def test_the_pack_imports_extractors_only_inside_functions():
     import ast
 
@@ -200,7 +208,11 @@ def test_web_forms_page_master_code_behind_and_server_controls():
     assert page["platform_kind"] == "aspx:Page" and page["inherits"] == "Desk.Orders.Edit"
     assert page["code_behind"] == "desk/Orders/Edit.aspx.cs" and page["master"] == "~/Site.Master"
     assert (prog("desk/Orders/Edit.aspx"), "CALLS", prog("desk/Site.Master")) in rels
-    assert (prog("desk/Orders/Edit.aspx"), "EXPOSES", endpoint("/desk/Orders/Edit.aspx")) in rels
+    # The route depends on the application root (another file): the linker keys the Endpoint.
+    assert not any(k[0] == "Endpoint" for k in ents)
+    routes = [o.payload for o in out.observations if o.kind == "app_relative_route"]
+    assert [(r["path"], r["root_marker"], r["subject"]["natural_key"]["name"]) for r in routes] == [("desk/Orders/Edit.aspx", "web.config", "desk/Orders/Edit.aspx")]
+    assert routes[0]["attributes"] == {"framework": "webforms", "platform": "aspnet", "platform_kind": "aspx:PageRequest"}
     form = key("Form", screen="desk/Orders/Edit.aspx", name="orderForm")
     quantity = ents[control("desk/Orders/Edit.aspx#orderForm", "Quantity")]
     assert quantity["platform_kind"] == "aspx:ServerControl" and quantity["tag"] == "asp:TextBox"
@@ -231,6 +243,62 @@ def test_redirects_role_checks_and_computed_transfer():
 def test_roles_is_user_in_role_keeps_its_callee():
     out = run('<%@ Page Language="C#" %>\n<% if (Roles.IsUserInRole("Auditor")) { } %>\n', "desk/A.aspx")
     assert (prog("desk/A.aspx"), "REQUIRES_ROLE", role("Auditor")) in relations(out)
+
+
+def _summary(path: str, data: bytes | None = None, extractor=None) -> dict:
+    """A file summary as the unit linker reads it: the file observation and what the extractor emits."""
+    from repo_intel.extractors.base import obs, whole_file
+
+    data = (F26 / path).read_bytes() if data is None else data
+    blob = hashlib.sha256(data).hexdigest()
+    rows = [obs("file", blob, whole_file(data), {"language": None, "size": len(data)}).row()]
+    if extractor is not False:
+        rows += [o.row() for o in (extractor or AspNetSource()).extract(path, data, blob).observations]
+    return {"path": path, "observations": rows}
+
+
+def _link(summaries: list[dict]):
+    from repo_intel.compile.link import _Linker
+
+    linker = _Linker({"name": ".", "paths": []}, summaries, [])
+    linker.link_app_relative_routes()
+    ents = {ref(o["payload"]): o["payload"]["attributes"] for o in linker.out if o["kind"] == "entity"}
+    rels = {(ref(o["payload"]["subject"]), o["payload"]["predicate"], ref(o["payload"]["object"])) for o in linker.out if o["kind"] == "relation"}
+    return ents, rels, linker.unknowns
+
+
+def test_web_forms_routes_are_rooted_at_the_nearest_web_config():
+    pages = ["desk/Default.aspx", "desk/Orders/Edit.aspx", "desk/Admin/Purge.aspx"]
+    ents, rels, unknowns = _link([_summary(p) for p in pages] + [_summary("desk/Web.config", extractor=AspNetConfig())])
+    assert unknowns == []
+    for page, route in zip(pages, ["/Default.aspx", "/Orders/Edit.aspx", "/Admin/Purge.aspx"]):
+        assert (prog(page), "EXPOSES", endpoint(route)) in rels
+        assert ents[endpoint(route)]["app_root"] == "desk" and ents[endpoint(route)]["platform_kind"] == "aspx:PageRequest"
+    # the route of a page is the name its <location path> rule gives the Permission
+    config = entities(fixture("desk/Web.config", AspNetConfig()))
+    assert key("Permission", realm="aspnet", name="/Orders/Edit.aspx") in config
+    assert endpoint("/desk/Orders/Edit.aspx") not in ents
+
+
+def test_web_forms_route_uses_the_deepest_web_config_and_the_repository_root():
+    page = b'<%@ Page Language="C#" %><html><body><form id="f" runat="server"></form></body></html>'
+    config = b"<configuration />"
+    summaries = [_summary("apps/a/inner/Report.aspx", page), _summary("apps/a/Home.aspx", page), _summary("Top.aspx", page),
+                 _summary("apps/a/Web.config", config, False), _summary("apps/a/inner/web.config", config, False), _summary("Web.config", config, False)]
+    ents, rels, unknowns = _link(summaries)
+    assert (prog("apps/a/inner/Report.aspx"), "EXPOSES", endpoint("/Report.aspx")) in rels
+    assert (prog("apps/a/Home.aspx"), "EXPOSES", endpoint("/Home.aspx")) in rels
+    assert (prog("Top.aspx"), "EXPOSES", endpoint("/Top.aspx")) in rels
+    assert ents[endpoint("/Top.aspx")]["app_root"] == "."
+    assert unknowns == []
+
+
+def test_web_forms_route_without_a_web_config_is_not_keyed():
+    page = b'<%@ Page Language="C#" %><html><body></body></html>'
+    ents, rels, unknowns = _link([_summary("site/Orders/Edit.aspx", page), _summary("other/Web.config", b"<configuration />", False)])
+    assert not any(k[0] == "Endpoint" for k in ents) and not rels
+    assert [(u["subject"]["natural_key"]["name"], u["predicate"]) for u in unknowns] == [("site/Orders/Edit.aspx", "EXPOSES")]
+    assert "depends on the application root: not keyed" in unknowns[0]["reason"]
 
 
 def test_master_page_and_user_control():
