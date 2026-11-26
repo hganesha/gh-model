@@ -78,14 +78,16 @@ ROW_DEFAULTS: dict[str, dict[str, Any]] = {
 DETAIL_KINDS = ("Symbol",)
 # Shard tables that are detail whole: the behaviour of functions, pages and steps
 # (repo_intel.compile.behavior), keyed by owner. A shard holds the table only when it has
-# rows, so a snapshot without behaviour hashes as it did before the table existed.
-DETAIL_TABLES = ("behaviors",)
+# rows, so a snapshot without behaviour hashes as it did before the table existed. The
+# transform shapes of those units (repo_intel.compile.transforms) are detail the same way.
+DETAIL_TABLES = ("behaviors", "transforms")
 TIERS = ("architecture", "full")
 DEFAULT_TIER = "architecture"
 BUNDLE = ".rkp"
 TENANT = "local"
 _TABLES = (("entities", "entity"), ("assertions", "assertion"), ("evidence", "evidence"), ("unknowns", "unknown"))
-_OPTIONAL_TABLES = (("behaviors", "behavior"),)  # present in a shard only when it has rows
+# Transform rows are written before behaviour rows, so behaviour rows stay the last in a unit file.
+_OPTIONAL_TABLES = (("transforms", "transform"), ("behaviors", "behavior"))  # present in a shard only when it has rows
 _ALL_TABLES = _TABLES + _OPTIONAL_TABLES
 ROW_TABLES = tuple(table for table, _ in _TABLES)  # in every shard
 OPTIONAL_TABLES = tuple(table for table, _ in _OPTIONAL_TABLES)  # in a shard only when it has rows

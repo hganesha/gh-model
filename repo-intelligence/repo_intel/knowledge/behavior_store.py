@@ -15,6 +15,9 @@ writes on each output channel. The summary is read from the code as written: a t
 held in a variable, or a table name built from text substituted into the SQL, stays
 dynamic and is counted, never guessed. Nothing here adds relations to the graph.
 
+The transform shapes of the same owners (repo_intel.compile.transforms) are read beside it,
+from the shard's `transforms` table: `{"owner", "path", "at", "language", "transforms"}`.
+
 Behaviour is function-level detail: an architecture-tier bundle does not commit it
 (repo_intel.knowledge.bundle.DETAIL_TABLES), so a fresh clone has none until it compiles.
 """
@@ -31,6 +34,7 @@ from repo_intel.compile.contracts import Manifest
 from repo_intel.storage.store import ObjectStore
 
 TABLE = "behaviors"
+TRANSFORMS = "transforms"
 
 
 # ------------------------------------------------------------------ loading
@@ -53,6 +57,31 @@ def load(store: ObjectStore, manifest: Manifest, entity_id: str) -> list[dict[st
             if row["owner"] == entity_id:
                 found.setdefault(row["id"], row)
     return [found[i] for i in sorted(found)]
+
+
+def _transform_key(row: Mapping[str, Any]) -> tuple:
+    return (row["path"], row["at"][0], row["at"][1], row["language"])
+
+
+def transform_index(shards: Iterable[Mapping[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    """Transform-shape rows by owner entity id, each owner's rows in file and source order."""
+    by_owner: dict[str, list[dict[str, Any]]] = {}
+    for shard in shards:
+        for row in shard.get(TRANSFORMS, []):
+            rows = by_owner.setdefault(row["owner"], [])
+            if row not in rows:
+                rows.append(row)
+    return {owner: sorted(rows, key=_transform_key) for owner, rows in sorted(by_owner.items())}
+
+
+def load_transforms(store: ObjectStore, manifest: Manifest, entity_id: str) -> list[dict[str, Any]]:
+    """The transform-shape rows the snapshot holds for `entity_id`; empty when it holds none."""
+    found: list[dict[str, Any]] = []
+    for ref in manifest.shards:
+        for row in store.get_json(ref.digest).get(TRANSFORMS, []):
+            if row["owner"] == entity_id and row not in found:
+                found.append(row)
+    return sorted(found, key=_transform_key)
 
 
 # ------------------------------------------------------------------ SQL tables
@@ -445,8 +474,10 @@ def summarize(units: list[Mapping[str, Any]]) -> dict[str, Any]:
 
 
 def behavior_of(store: ObjectStore, manifest: Manifest, entity_id: str) -> dict[str, Any] | None:
-    """The units and summary for `entity_id`, or None when the snapshot holds no behaviour for it."""
+    """The units, summary and transform shapes for `entity_id`, or None when the snapshot holds
+    neither behaviour nor transform shapes for it (a PySpark notebook has shapes only)."""
     units = load(store, manifest, entity_id)
-    if not units:
+    transforms = load_transforms(store, manifest, entity_id)
+    if not units and not transforms:
         return None
-    return {"entity_id": entity_id, "units": units, "summary": summarize(units)}
+    return {"entity_id": entity_id, "units": units, "summary": summarize(units), "transforms": transforms}
