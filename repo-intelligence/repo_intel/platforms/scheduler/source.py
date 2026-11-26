@@ -63,7 +63,7 @@ def detect(path: str, text: str) -> str | None:
 
 class SchedulerExports:
     id = "scheduler.exports"
-    version = "1.0.0"
+    version = "1.1.0"
 
     def matches(self, path: str) -> bool:
         return path.lower().startswith(INPUT_DIR) and not posixpath.basename(path).startswith(".")

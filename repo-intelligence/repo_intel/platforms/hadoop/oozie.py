@@ -6,7 +6,9 @@ Recognised by the root element, whatever the file is called:
       <action name=...>           a Task (`hdp:OozieAction`) the Job CONTAINS; its type in attributes
         <hive|pig> <script>         RUNS the script's Program when the path is in the application
         <sqoop> <command>|<arg>     the Task READS_FROM and WRITES_TO the table and path it moves
-        <shell> <exec>, <spark>     RUNS the file (an Artifact) when its path is in the application
+        <shell> <exec>, <spark>     RUNS the file (an Artifact) when its path is in the application;
+                                    a shell exec (.sh .ksh .bash .bat .cmd .ps1) also RUNS the
+                                    Program {shell, path} the shell pack declares
         <distcp> <arg>              READS_FROM its sources and WRITES_TO its target
         <sub-workflow> <app-path>   RUNS that workflow's Job when the path is literal
         <ok to=> <error to=>        transitions: the next action DEPENDS_ON this one
@@ -49,12 +51,13 @@ _UNSAFE = re.compile(rb"<!(?:DOCTYPE|ENTITY)", re.I)
 _APP_PATH = re.compile(r"^\$\{\s*wf:appPath\(\)\s*\}/?")
 _CONTROL = ("start", "decision", "fork", "join", "kill", "end")
 _FREQ = re.compile(r"^\$\{\s*coord:(minutes|hours|days|months|endOfDays|endOfMonths)\(\s*(\d+)\s*\)\s*\}$")
+SHELL_SUFFIXES = (".sh", ".ksh", ".bash", ".bat", ".cmd", ".ps1")  # scripts the shell pack declares as Programs
 _UNITS = {"minutes": "minute", "hours": "hour", "days": "day", "months": "month", "endOfDays": "day", "endOfMonths": "month"}
 
 
 class OozieDefinitions:
     id = EXTRACTOR
-    version = "1.0.0"
+    version = "1.1.0"
 
     def matches(self, path: str) -> bool:
         return path.lower().endswith(".xml")
@@ -366,7 +369,13 @@ class _Workflow(_Definition):
         if target is None:
             self.unstated(body, "the shell script")
             return
-        self.out.relation(self.at(body), task, P.RUNS, self.out.base.ref(K.ARTIFACT, {"path": target}, posixpath.basename(target), declare=False))
+        at = self.at(body)
+        self.out.relation(at, task, P.RUNS, self.out.base.ref(K.ARTIFACT, {"path": target}, posixpath.basename(target), declare=False))
+        if posixpath.splitext(target)[1].lower() in SHELL_SUFFIXES:
+            # The shell pack declares the script as Program {shell, path}; the reference links
+            # only when the repository has that script.
+            ref = program("shell", target)
+            self.out.relation(at, task, P.RUNS, self.out.base.ref(ref["kind"], ref["natural_key"], ref["name"], declare=False))
         self.out.resolved += 1
 
     def spark(self, body: Node, task: dict[str, Any]) -> None:
@@ -611,6 +620,9 @@ class _Coordinator(_Definition):
             out.construct(at, "hdp:oozie_coord_action", True)
             out.relation(at, self.me, P.RUNS, out.base.ref(K.JOB, {"framework": FRAMEWORK, "name": target}, target, declare=False), {"resolved": "same_directory"}, EvidenceClass.E4)
             out.resolved += 1
+            prefix = re.match(r"\s*\$\{\s*([^{}]*?)\s*\}", raw or "")
+            what = f"starts with ${{{prefix.group(1)}}}, which is set at run time" if prefix else "is not a path in the repository"
+            out.note("info", f"the coordinator's workflow app-path {what}: RUNS is resolved to {target}, the workflow in the same directory, at E4")
             return
         out.construct(at, "hdp:oozie_coord_action", False)
         self.unstated(wf, "the workflow")

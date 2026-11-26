@@ -29,7 +29,7 @@
             <prepare>
                 <delete path="${nameNode}/data/raw/orders/${runDate}"/>
             </prepare>
-            <command>import --connect jdbc:mysql://etl:fixture-not-a-real-password-0002@db.example.internal:3306/sales --table orders --columns order_id,customer_id,order_date,amount,status --where "status != 'TEST'" --target-dir ${nameNode}/data/raw/orders/${runDate} -m 4</command>
+            <command>import --connect jdbc:mysql://etl:fixture-not-a-real-password-0004@db.example.internal:3306/sales --table orders --columns order_id,customer_id,order_date,amount,status --where "status != 'TEST'" --target-dir ${nameNode}/data/raw/orders/${runDate} -m 4</command>
         </sqoop>
         <ok to="prepare-orders"/>
         <error to="notify-failure"/>
