@@ -73,6 +73,13 @@ can prove the compiler handles it safely.
 | Prompt-injection text addressed to AI tools | `F01` and `F06` READMEs, `F08` `prompts/system.md`, a file name in `F10` | Must be treated as data and change nothing |
 | Symlinks pointing outside the repository | `F01` and `F10` (created when the fixture is materialized) | Must be recorded and never followed |
 | A submodule entry with a dummy commit ID | `F10` | Must be recorded and never fetched |
+| A DataFrame passed in as a parameter and a table named from an f-string (`silver.orders_{region}`) | `F24-transform-shapes/base/jobs/archive_orders.py` | Must stay `{placeholder}` names in a transform marked dynamic, never become a `Dataset` or `Table` (the golden's `absent_entities` and `expected_unknowns`) |
+| Made-up password (`fixture-not-a-real-password`) as the value of the context parameter `mail.password` | `F25-jsp-app/.../WEB-INF/web.xml`, in the base and every commit | The value must never appear in compiler output; only the parameter is counted (`tests/test_platform_jsp.py`) |
+| An include target read from a request parameter (`${param.extra}`) and a link to another host with a query string | `F25-jsp-app/base/src/main/webapp/reports/sales.jsp` and `index.jsp` | The include stays unresolved with a diagnostic; the link keeps scheme and host only |
+| Made-up password (`fixture-not-a-real-password`) in a connection string | `F26-aspnet-app/base/desk/Web.config` and `commits/02-auditor-role/desk/Web.config` | Connection string, app setting and host values must never appear in compiler output (`tests/test_platform_aspnet.py`) |
+| A `Server.Transfer` to a value read from the query string | `F26-aspnet-app/base/desk/Orders/Edit.aspx` | The target stays unresolved with a diagnostic |
+| Made-up database password (`fixture-not-a-real-password-0001`) in an embedded code task's `LIBNAME` | `F27-sas-eg-project/eg/sales_reporting.egp` in the base and every commit (a zip archive), written by `F27-sas-eg-project/make_egp.py`; repeated in its `golden.json` under `secret_probes` | Must be detected at admission and never appear in compiler output (`tests/test_secrets.py`, `tests/test_platform_sas_egp.py`) |
+| A code task that runs a file on an analyst's machine (`C:\Users\analyst\reports\monthly.sas`) | `F27-sas-eg-project` | The file is not in the repository: it must not be invented, and a diagnostic says so |
 
 These paths are excluded from GitHub secret scanning in
 `.github/secret_scanning.yml`. If another scanner flags them, they are safe to

@@ -3,7 +3,7 @@
 F23 is a solution: its base holds `.rkp/solution.json`, two member repositories and the
 orders database's catalogue. `golden_check` compiles each member on its own, loads the
 solution and checks member-qualified entities and edges, identity links, unmatched
-references and the solution's coverage, commit by commit. These tests show the check
+references and the solution's coverage, at the base and after each commit. These tests show the check
 passes on F23 and fails when the golden is wrong in each of those ways.
 """
 
@@ -114,11 +114,29 @@ def test_a_wrong_attribute_or_edge_fails(golden, commits):
 
 def test_unmatched_references_and_coverage_are_checked(golden, commits):
     golden["unmatched"].append({"member": "web", "kind": "http_call", "reference": "/api/orders", "reason": "no_endpoint", "since": "M2"})
-    golden["solution_coverage"].append({"domain": "solution_http_calls", "scope": "web", "numerator": 4, "denominator": 4, "since": "M2"})
+    [calls] = [c for c in golden["solution_coverage"] if c["domain"] == "solution_http_calls"]
+    calls["numerator"] = 4
+    golden["solution_coverage"].append({"domain": "solution_http_calls", "scope": "orders", "numerator": 0, "denominator": 0, "since": "M2"})
     assert _problems(golden, commits) == [
         "missing unmatched reference web: http_call /api/orders (no_endpoint)",
         "coverage solution_http_calls web: (2, 4), want (4, 4)",
+        "coverage solution_http_calls orders: absent, want (0, 0)",
     ]
+
+
+def test_a_call_that_states_its_method_links_exactly(golden, commits):
+    """The front end's POST to /api/orders links to POST /api/orders by method and path; the
+    listing call to the same path, method unstated, stays a candidate for both endpoints."""
+    by_rule = {}
+    for record in commits[0]["resolution"]["links"] + commits[0]["resolution"]["candidates"]:
+        if record["qualifiers"].get("path") == "/api/orders":
+            by_rule.setdefault(record["rule"], []).append((record["to_name"], record["resolution"], record["qualifiers"]["method"]))
+    assert {rule: sorted(found) for rule, found in by_rule.items()} == {
+        "endpoint_method_path": [("POST /api/orders", "exact", "POST")],
+        "endpoint_method_unstated": [("GET /api/orders", "candidate", "unstated"), ("POST /api/orders", "candidate", "unstated")],
+    }
+    pinned = [x["link"] for x in golden["links"] if x["link"]["rule"] == "endpoint_method_path"]
+    assert [link["to"]["natural_key"]["method"] for link in pinned] == ["POST"]
 
 
 def test_commit_expectations_are_checked(golden, commits):
@@ -127,11 +145,23 @@ def test_commit_expectations_are_checked(golden, commits):
     third["removed_links"] = []
     third["added_unmatched"] = [{"member": "web", "kind": "http_call", "reference": "/api/customers", "reason": "no_endpoint", "since": "M2"}]
     third["removed_entities"].append({"member": "orders", "kind": "ConfigKey", "natural_key": LOG_LEVEL, "since": "M2"})
+    [calls] = [c for c in first["solution_coverage"] if c["domain"] == "solution_http_calls"]
+    calls["numerator"] = 2  # the base's figure: the commit links /api/customers
     assert _problems(golden, commits) == [
         '01-service-serves-customers: should add link same_table orders:Table {"datastore": "default", "name": "orders"} -> inputs:Table {"datastore": "default", "name": "orders"}',
+        "01-service-serves-customers: coverage solution_http_calls web: (3, 4), want (2, 4)",
         '03-web-drops-log-level: should remove orders:ConfigKey {"name": "LOG_LEVEL"}',
         "03-web-drops-log-level: should add unmatched reference web: http_call /api/customers (no_endpoint)",
     ]
+
+
+def test_coverage_is_pinned_at_every_commit(golden, commits):
+    """The golden gives the solution's coverage at the base and after each commit."""
+    pinned = [golden["solution_coverage"]] + [spec["solution_coverage"] for spec in golden["commits"]]
+    assert len(pinned) == len(commits)
+    for want, commit in zip(pinned, commits, strict=True):
+        got = {(c["domain"], c["scope"]): (c["numerator"], c["denominator"]) for c in commit["resolution"]["coverage"]}
+        assert {(c["domain"], c["scope"]): (c["numerator"], c["denominator"]) for c in want} == got
 
 
 def test_forbidden_kinds_and_load_problems_are_reported(golden, commits):
@@ -188,6 +218,9 @@ def test_the_multi_repository_golden_is_well_formed():
         assert check_relation(edge["predicate"], EntityKind(edge["subject"]["kind"]), EntityKind(edge["object"]["kind"])) is None
     for item in g["unmatched"] + [u for c in commit_specs for u in c.get("added_unmatched", []) + c.get("removed_unmatched", [])]:
         assert item["member"] in members and item["reason"]
+    for item in g["solution_coverage"] + [x for c in commit_specs for x in c.get("solution_coverage", [])]:
+        assert item["domain"] in {"solution_data_refs", "solution_http_calls"} and item["scope"] in members
+        assert 0 <= item["numerator"] <= item["denominator"] and "since" in item
 
 
 # ------------------------------------------------------------------ coverage per Explorer plane (8.4)

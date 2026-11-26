@@ -66,8 +66,9 @@ def compile_fixture(name: str, root: Path) -> list[dict[str, Any]]:
 def check(name: str, commits: list[dict[str, Any]], milestone: str, kinds: set[str] | None = None) -> list[str]:
     if is_solution(name):
         if not commits or "members" not in commits[0]:
-            # The caller compiled the fixture's tree as one repository (tests/test_fixtures.py
-            # does that for every fixture); a multi-repository golden is about its members.
+            # The caller compiled the fixture's tree as one repository; a multi-repository
+            # golden is about its members, so compile those. Callers that already have
+            # `compile_solution`'s output (tests/test_fixtures.py) pass it to avoid this.
             with tempfile.TemporaryDirectory() as tmp:
                 commits = compile_solution(name, Path(tmp))
         return check_solution(load_golden(name), commits, milestone, kinds)
@@ -246,6 +247,16 @@ def _has_unmatched(commit: dict[str, Any], item: dict[str, Any]) -> bool:
     return any(all(u.get(f) == item[f] for f in fields) for u in commit["resolution"]["unmatched"])
 
 
+def _coverage_problems(commit: dict[str, Any], items: list[dict[str, Any]]) -> list[str]:
+    """Each wanted coverage entry must match exactly one resolution entry for its domain and scope."""
+    problems = []
+    for item in items:
+        got = [(c["numerator"], c["denominator"]) for c in commit["resolution"]["coverage"] if c["domain"] == item["domain"] and c["scope"] == item["scope"]]
+        if got != [(item["numerator"], item["denominator"])]:
+            problems.append(f"coverage {item['domain']} {item['scope']}: {got[0] if got else 'absent'}, want {(item['numerator'], item['denominator'])}")
+    return problems
+
+
 def _link_label(link: dict[str, Any]) -> str:
     return f"{link['rule']} {_end_label(link['from'])} -> {_end_label(link['to'])}"
 
@@ -259,9 +270,10 @@ def check_solution(g: dict[str, Any], commits: list[dict[str, Any]], milestone: 
 
     An entity, edge or link end that names a member must be in that member; one that does
     not may be in any member. Links match on rule and both ends in either the exact links
-    or the candidates (a rule's name says which it is). With `kinds`, only entities, edges
-    and links touching those kinds are checked, and unmatched references and coverage not
-    at all.
+    or the candidates (a rule's name says which it is). `solution_coverage` at the top level
+    is checked against the base, and a commit entry's own `solution_coverage` against that
+    commit. With `kinds`, only entities, edges and links touching those kinds are checked,
+    and unmatched references and coverage not at all.
     """
     on = lambda item: due(item, milestone)
     kind_ok = lambda *ks: kinds is None or any(k in kinds for k in ks)
@@ -301,10 +313,7 @@ def check_solution(g: dict[str, Any], commits: list[dict[str, Any]], milestone: 
     for item in filter(other_wanted, g.get("unmatched", [])):
         if not _has_unmatched(base, item):
             problems.append(f"missing unmatched reference {_unmatched_label(item)}")
-    for item in filter(other_wanted, g.get("solution_coverage", [])):
-        got = [(c["numerator"], c["denominator"]) for c in base["resolution"]["coverage"] if c["domain"] == item["domain"] and c["scope"] == item["scope"]]
-        if got != [(item["numerator"], item["denominator"])]:
-            problems.append(f"coverage {item['domain']} {item['scope']}: {got[0] if got else 'absent'}, want {(item['numerator'], item['denominator'])}")
+    problems += _coverage_problems(base, list(filter(other_wanted, g.get("solution_coverage", []))))
     forbidden = set(g["forbidden_kinds"])
     for i, c in enumerate(commits):
         bad = sorted({e["kind"] for m in c["members"].values() for e in m["entities"].values()} & forbidden)
@@ -330,6 +339,7 @@ def check_solution(g: dict[str, Any], commits: list[dict[str, Any]], milestone: 
         for item in filter(other_wanted, spec.get("removed_unmatched", [])):
             if not _has_unmatched(before, item) or _has_unmatched(after, item):
                 problems.append(f"{spec['dir']}: should remove unmatched reference {_unmatched_label(item)}")
+        problems += [f"{spec['dir']}: {p}" for p in _coverage_problems(after, list(filter(other_wanted, spec.get("solution_coverage", []))))]
     return problems
 
 
