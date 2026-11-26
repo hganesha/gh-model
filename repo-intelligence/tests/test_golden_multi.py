@@ -117,7 +117,7 @@ def test_unmatched_references_and_coverage_are_checked(golden, commits):
     golden["solution_coverage"].append({"domain": "solution_http_calls", "scope": "web", "numerator": 4, "denominator": 4, "since": "M2"})
     assert _problems(golden, commits) == [
         "missing unmatched reference web: http_call /api/orders (no_endpoint)",
-        "coverage solution_http_calls web: (1, 4), want (4, 4)",
+        "coverage solution_http_calls web: (2, 4), want (4, 4)",
     ]
 
 

@@ -184,7 +184,7 @@ Wave 2 builds on the integrated wave 1 (`claude/solution-ir`). Sections 1 to 7 s
 
 A transform shape says what a unit does to the rows it reads. It is derived from what the engine already parses and never needs a model. The vocabulary comes from pipeline-builder (sourceform), which uses it to generate pipelines; here it is used to recognise them.
 
-`repo_intel/compile/transforms.py` (new, owned by W1) defines schema `rkp-transform/1`, `validate_shape`, and `transform_observation(blob, at, owner, language, transforms)`, which validates and returns an observation of kind `transform`. One observation describes one unit: a SQL statement, a DATA step, a PROC step or a PySpark chain.
+`repo_intel/compile/transforms.py` (new, owned by W1) defines schema `rkp-transform/1`, `validate_shape`, and `transform_observation(blob, at, owner, language, transforms)`, which validates and returns an observation of kind `transform`. One observation describes one unit: a stand-alone SQL procedure or script (all its statements, so the SCD2 pass can see an UPDATE and its INSERT together; each transform's `at` keeps the statement span), a DATA step, a PROC step, a behaviour unit such as a `cfquery`, or a PySpark chain.
 
 ```json
 {"owner": {"kind": "Program", "natural_key": {...}, "name": "..."},
@@ -223,7 +223,7 @@ Where shapes come from:
 - **Behaviour units** (CFML `cfquery`, SAS DATA steps, PROC SQL and other PROC steps): derived in the compiler from the stored behaviour, after step 4b, so no pack has to emit them. A `query` node that is `remote` or whose table names are dynamic gives `op: platform` with `dynamic: true`. The SAS pack may add detail to its own `platform` nodes (PROC options such as `nodupkey` and `out=`, KEEP, DROP and RENAME lists) so the derivation has what it needs.
 - **Stand-alone SQL** (`sql_lineage.SqlScripts`) and **PySpark** (`data_python`): those extractors emit `transform` observations themselves, using the shared SQL recognizer in `transforms.py` (sqlglot trees, never run).
 
-Storage: the compiler writes one row per observation to the shard's `transforms` table (`{"owner": <entity id>, "path", "at", "language", "transforms"}`), sorted, present only when it has rows. It is detail: `bundle.DETAIL_TABLES` and `_OPTIONAL_TABLES` list it. The owner entity gets `attributes.transforms = {"primitives": [...sorted names], "purpose": <category>}` in every tier; `purpose` is the category with the most primitives in the owner's units, ties broken by the order above, absent when there are none. `behavior_store` returns the owner's transforms beside its behaviour, and the local API's behaviour answer includes them. Coverage domain `transform_shapes`: units with at least one non-`platform` transform over units that move data.
+Storage: the compiler writes one row per observation to the shard's `transforms` table (`{"owner": <entity id>, "path", "at", "language", "transforms"}`), sorted, present only when it has rows. It is detail: `bundle.DETAIL_TABLES` and `_OPTIONAL_TABLES` list it. The owner entity gets `attributes.transforms = {"primitives": [...sorted names], "purpose": <category>}` in every tier; `purpose` is the category with the most primitives in the owner's units, ties broken by the order above, absent when there are none. `behavior_store` returns the owner's transforms beside its behaviour, and the local API's behaviour answer includes them. Coverage domain `transform_shapes`: units with at least one non-`platform` transform over units that move data; `detail.statements` gives `{recognised, total}` statement counts so a script with one recognised statement out of ten is visible.
 
 ### 8.2 Rules, workflows and captured screens from models (W2)
 
@@ -245,7 +245,7 @@ Model output follows the DM08 pattern (`repo_intel/decisions/behavior.py`): a de
 
 ### 8.4 Multi-repository goldens and coverage per plane (W4)
 
-- A fixture may be multi-repository: `base/` holds `solution.json` (the `.rkp/solution.json` format) and one directory per member. `golden_check` compiles each member, loads the solution and checks a `golden.json` whose entries may name a member (`"member": "web"`) and may list identity links (`{"link": {"rule", "from", "to"}}`) and unmatched references. Single-repository fixtures are unchanged.
+- A fixture may be multi-repository: `base/` is the solution root, holding `.rkp/solution.json` and one directory per member. `golden_check` compiles each member, loads the solution and checks a `golden.json` whose entries may name a member (`"member": "web"`) and may list identity links (`{"link": {"rule", "from", "to"}}`) and unmatched references. Single-repository fixtures are unchanged.
 - F23 moves from `tests/fixtures/solution/F23-multi-repo-solution/` to `benchmarks/fixtures/F23-solution-multi-repo/` and becomes a golden; `tests/test_solution.py` reads it from there.
 - Coverage per Explorer plane: each plane shows the coverage domains that bear on it (experience: `platform_constructs` of packs with UI terms; business: `transform_shapes` and rule counts by status; security: roles and permissions found), and entity counts per kind with the share confirmed where a kind has a status.
 

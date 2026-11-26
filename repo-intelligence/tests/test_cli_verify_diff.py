@@ -509,7 +509,7 @@ def test_the_architecture_tier_must_leave_behaviour_out(demo, tmp_path, capsys):
     problems = result["problems"]
     assert code == 1
     assert "the architecture tier holds detail it should leave out: 3 behaviors rows" in problems
-    assert "manifest.json: detail_tables is []; the architecture tier leaves out ['behaviors']" in problems
+    assert "manifest.json: detail_tables is []; the architecture tier leaves out ['behaviors', 'transforms']" in problems
     assert f"{unit['file']}: rows do not hash to the unit's digest in manifest.json" in problems
 
 
