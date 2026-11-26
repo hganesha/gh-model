@@ -1,0 +1,36 @@
+<coordinator-app name="daily-orders-coord" frequency="${coord:days(1)}" start="${startTime}" end="${endTime}" timezone="UTC" xmlns="uri:oozie:coordinator:0.4">
+    <controls>
+        <timeout>180</timeout>
+        <concurrency>1</concurrency>
+    </controls>
+    <datasets>
+        <dataset name="landing_orders" frequency="${coord:days(1)}" initial-instance="2024-01-01T02:00Z" timezone="UTC">
+            <uri-template>${nameNode}/data/landing/orders/${YEAR}${MONTH}${DAY}</uri-template>
+            <done-flag>_SUCCESS</done-flag>
+        </dataset>
+        <dataset name="daily_summary" frequency="${coord:days(1)}" initial-instance="2024-01-01T02:00Z" timezone="UTC">
+            <uri-template>${nameNode}/data/mart/daily_summary/dt=${YEAR}-${MONTH}-${DAY}</uri-template>
+        </dataset>
+    </datasets>
+    <input-events>
+        <data-in name="input" dataset="landing_orders">
+            <instance>${coord:current(0)}</instance>
+        </data-in>
+    </input-events>
+    <output-events>
+        <data-out name="output" dataset="daily_summary">
+            <instance>${coord:current(0)}</instance>
+        </data-out>
+    </output-events>
+    <action>
+        <workflow>
+            <app-path>${appBaseDir}/daily_orders</app-path>
+            <configuration>
+                <property>
+                    <name>runDate</name>
+                    <value>${coord:formatTime(coord:nominalTime(), 'yyyy-MM-dd')}</value>
+                </property>
+            </configuration>
+        </workflow>
+    </action>
+</coordinator-app>

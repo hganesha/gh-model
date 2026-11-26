@@ -1,0 +1,7 @@
+<coordinator-app name="weekly-orders-coord" frequency="${coord:days(7)}" start="${startTime}" end="${endTime}" timezone="Europe/London" xmlns="uri:oozie:coordinator:0.4">
+    <action>
+        <workflow>
+            <app-path>${appBaseDir}/daily_orders</app-path>
+        </workflow>
+    </action>
+</coordinator-app>

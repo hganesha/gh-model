@@ -1,0 +1,118 @@
+<workflow-app name="daily-orders-${env}" xmlns="uri:oozie:workflow:0.5" xmlns:sla="uri:oozie:sla:0.2">
+    <parameters>
+        <property>
+            <name>runDate</name>
+        </property>
+        <property>
+            <name>env</name>
+            <value>prod</value>
+        </property>
+    </parameters>
+    <global>
+        <job-tracker>${jobTracker}</job-tracker>
+        <name-node>${nameNode}</name-node>
+    </global>
+    <credentials>
+        <credential name="hcat" type="hcat">
+            <property>
+                <name>hcat.metastore.uri</name>
+                <value>thrift://metastore.example.internal:9083</value>
+            </property>
+        </credential>
+    </credentials>
+
+    <start to="import-orders"/>
+
+    <!-- Pull the day's orders from the sales database. -->
+    <action name="import-orders">
+        <sqoop xmlns="uri:oozie:sqoop-action:0.4">
+            <prepare>
+                <delete path="${nameNode}/data/raw/orders/${runDate}"/>
+            </prepare>
+            <command>import --connect jdbc:mysql://etl:fixture-not-a-real-password-0002@db.example.internal:3306/sales --table orders --columns order_id,customer_id,order_date,amount,status --where "status != 'TEST'" --target-dir ${nameNode}/data/raw/orders/${runDate} -m 4</command>
+        </sqoop>
+        <ok to="prepare-orders"/>
+        <error to="notify-failure"/>
+    </action>
+
+    <action name="prepare-orders" cred="hcat">
+        <hive xmlns="uri:oozie:hive-action:0.5">
+            <script>hive/load_orders.hql</script>
+            <param>run_date=${runDate}</param>
+            <param>mart_db=mart</param>
+        </hive>
+        <ok to="daily-summary"/>
+        <error to="notify-failure"/>
+    </action>
+
+    <action name="daily-summary">
+        <hive2 xmlns="uri:oozie:hive2-action:0.2">
+            <jdbc-url>jdbc:hive2://hs2.example.internal:10000/default</jdbc-url>
+            <script>hive/daily_summary.q</script>
+            <param>run_date=${runDate}</param>
+        </hive2>
+        <ok to="check-volume"/>
+        <error to="notify-failure"/>
+        <sla:info>
+            <sla:nominal-time>${nominalTime}</sla:nominal-time>
+            <sla:should-end>${2 * HOURS}</sla:should-end>
+        </sla:info>
+    </action>
+
+    <decision name="check-volume">
+        <switch>
+            <case to="export-summary">${fs:fileSize(wf:conf('summaryPath')) gt 0}</case>
+            <default to="end"/>
+        </switch>
+    </decision>
+
+    <!-- Send the summary to the reporting database. -->
+    <action name="export-summary">
+        <sqoop xmlns="uri:oozie:sqoop-action:0.4">
+            <arg>export</arg>
+            <arg>--connect</arg>
+            <arg>${reportingJdbcUrl}</arg>
+            <arg>--username</arg>
+            <arg>${reportingUser}</arg>
+            <arg>--password-file</arg>
+            <arg>/user/etl/reporting.password</arg>
+            <arg>--table</arg>
+            <arg>DAILY_SUMMARY</arg>
+            <arg>--hcatalog-database</arg>
+            <arg>mart</arg>
+            <arg>--hcatalog-table</arg>
+            <arg>daily_summary</arg>
+            <arg>--update-key</arg>
+            <arg>order_date,region</arg>
+            <arg>--update-mode</arg>
+            <arg>allowinsert</arg>
+        </sqoop>
+        <ok to="publish-marker"/>
+        <error to="notify-failure"/>
+    </action>
+
+    <action name="publish-marker">
+        <shell xmlns="uri:oozie:shell-action:0.3">
+            <exec>publish_marker.sh</exec>
+            <argument>${runDate}</argument>
+            <file>scripts/publish_marker.sh#publish_marker.sh</file>
+        </shell>
+        <ok to="end"/>
+        <error to="notify-failure"/>
+    </action>
+
+    <action name="notify-failure">
+        <email xmlns="uri:oozie:email-action:0.2">
+            <to>data-oncall@example.com</to>
+            <subject>daily orders failed</subject>
+            <body>${wf:errorMessage(wf:lastErrorNode())}</body>
+        </email>
+        <ok to="fail"/>
+        <error to="fail"/>
+    </action>
+
+    <kill name="fail">
+        <message>Daily orders failed at ${wf:lastErrorNode()}</message>
+    </kill>
+    <end name="end"/>
+</workflow-app>
