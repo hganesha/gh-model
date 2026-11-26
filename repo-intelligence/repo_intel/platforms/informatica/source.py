@@ -20,7 +20,7 @@ _ROOT = re.compile(r"<POWERMART[\s>]")
 
 class InformaticaExport:
     id = "informatica.export"
-    version = "1.0.0"
+    version = "1.1.0"
 
     def matches(self, path: str) -> bool:
         return path.lower().endswith(".xml")
@@ -43,7 +43,7 @@ class InformaticaExport:
 
 class InformaticaParameters:
     id = "informatica.params"
-    version = "1.0.0"
+    version = "1.1.0"
 
     def matches(self, path: str) -> bool:
         return path.lower().endswith((".par", ".prm", ".parm"))

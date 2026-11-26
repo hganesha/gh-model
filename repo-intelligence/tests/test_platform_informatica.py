@@ -190,7 +190,9 @@ def test_workflow_sessions_and_links():
     assert on[(task("dec_any_rows")[1], task("s_m_load_sales")[1])] == "success"
     assert on[(task("s_m_summarise")[1], task("dec_any_rows")[1])] == "expression"
     assert (task("s_m_load_sales"), "REFERENCES_CONFIG", cfg("connection:ORA_SRC")) in rels
-    assert rels[(task("s_m_load_sales"), "REFERENCES_CONFIG", cfg("parameter:$DBConnection_DW"))]["resolved_by"] == "parameter_file"
+    assert rels[(task("s_m_load_sales"), "REFERENCES_CONFIG", cfg(f"parameter:{W}#$DBConnection_DW"))]["resolved_by"] == "parameter_file"
+    assert rels[(task("s_m_load_sales"), "REFERENCES_CONFIG", cfg(f"parameter:{W}#$$LOAD_DATE"))] == {"via": "mapping_parameter", "resolved_by": "parameter_file"}
+    assert cfg(f"parameter:{W}#$$LOAD_DATE") not in ents, "the workflow's value of a mapping parameter is declared by a parameter file, not by the export"
     assert cfg("connection:ORA_DW") not in ents and cfg("connection:$Target") not in ents
     check_contract(out, admitted(layer_bytes(SALES)))
 
@@ -200,6 +202,10 @@ def test_definitions_and_mapping_lineage():
     ents, rels = entities(out), relations(out)
     m = ents[prog("SALES/m_load_sales")]
     assert m["platform_kind"] == "infa:Mapping" and m["parameters"] == ["$$LOAD_DATE"] and m["variables"] == ["$$ROWS_LOADED"]
+    for mapping in ("SALES/m_load_sales", "SALES/m_summarise"):
+        assert ents[cfg(f"parameter:{mapping}#$$LOAD_DATE")]["kind"] == "mapping_parameter"
+        assert rels[(prog(mapping), "REFERENCES_CONFIG", cfg(f"parameter:{mapping}#$$LOAD_DATE"))] == {"via": "mapping_parameter"}
+    assert cfg("parameter:$$LOAD_DATE") not in ents, "two mappings declaring $$LOAD_DATE keep separate keys"
     for t in ("src.orders", "src.customers"):
         assert (prog("SALES/m_load_sales"), "READS_FROM", table(t)) in rels
     for t in ("dw_sales", "dw_high_value"):
@@ -294,12 +300,13 @@ def test_parameter_file_names_without_values():
     out = parameters()
     assert out.parsed
     ents, rels = entities(out), relations(out)
-    assert ents[cfg("parameter:$$LOAD_DATE")]["kind"] == "mapping_parameter"
-    assert ents[cfg("parameter:$DBConnection_DW")]["kind"] == "session_parameter"
-    assert cfg("parameter:$PMSessionLogCount") not in ents and cfg("parameter:$PMSessionLogFile") not in ents
+    assert ents[cfg(f"parameter:{W}#$$LOAD_DATE")]["kind"] == "mapping_parameter"
+    assert ents[cfg(f"parameter:{W}#$DBConnection_DW")]["kind"] == "session_parameter"
+    assert not any("$PMSession" in k[1] for k in ents)
+    assert not any(k[0] == "ConfigKey" and "#" not in k[1] for k in ents), "every parameter is keyed by the workflow its section names"
     assert constructs(out)[("infa:parameter_builtin", False)] == 2
-    assert rels[(job(), "REFERENCES_CONFIG", cfg("parameter:$$REGION_FILTER"))] == {"via": "parameter_file"}
-    assert (task("s_m_summarise"), "REFERENCES_CONFIG", cfg("parameter:$DBConnection_DW")) in rels
+    assert rels[(job(), "REFERENCES_CONFIG", cfg(f"parameter:{W}#$$REGION_FILTER"))] == {"via": "parameter_file"}
+    assert (task("s_m_summarise"), "REFERENCES_CONFIG", cfg(f"parameter:{W}#$DBConnection_DW")) in rels
     for o in out.observations:
         if o.kind == "relation":
             assert o.payload["subject"].get("declare") is False
@@ -314,6 +321,21 @@ def test_other_par_files_and_odd_sections():
     assert any("names a session without its workflow" in m for m in messages(out))
     assert any("names no folder" in m for m in messages(out))
     assert not any(o.kind == "relation" for o in out.observations)
+    assert not any(o.kind == "entity" for o in out.observations), "a parameter of a section that is not read has no workflow to be keyed by"
+    assert constructs(out)[("infa:parameter_entry", False)] == 2
+
+
+def test_parameter_keys_follow_the_section_header():
+    out = parameters(b"[Global]\n$$EVERYWHERE=1\n"
+                     b"[SALES.WF:wf_a]\n$$LOAD_DATE=1\n"
+                     b"[SALES.WF:wf_b]\n$$LOAD_DATE=2\n"
+                     b"[SALES.WF:wf_a.WT:wl_q.ST:s_check]\n$DBConnection_Q=X\n")
+    ents, rels = entities(out), relations(out)
+    assert {k for k in ents if k[0] == "ConfigKey"} == {cfg("parameter:SALES/wf_a#$$LOAD_DATE"), cfg("parameter:SALES/wf_b#$$LOAD_DATE"), cfg("parameter:SALES/wl_q#$DBConnection_Q")}
+    assert (job("SALES/wf_a"), "REFERENCES_CONFIG", cfg("parameter:SALES/wf_a#$$LOAD_DATE")) in rels
+    assert (job("SALES/wf_b"), "REFERENCES_CONFIG", cfg("parameter:SALES/wf_b#$$LOAD_DATE")) in rels
+    assert (task("s_check", "SALES/wl_q"), "REFERENCES_CONFIG", cfg("parameter:SALES/wl_q#$DBConnection_Q")) in rels
+    assert any("1 parameter(s) in section [Global] belong to no workflow or worklet" in m for m in messages(out))
 
 
 # ---------------------------------------------------------------------- refusals and small cases

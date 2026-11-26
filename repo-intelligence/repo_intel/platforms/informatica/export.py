@@ -10,13 +10,20 @@ What one export gives, folder by folder:
   READS_FROM its sources and lookup tables and WRITES_TO its targets, with transform shapes
   (language `informatica`, evidence E1) built from its instances and connectors, and a
   `flow` behaviour unit when it has expressions, filters or router groups. Mapping
-  parameters become `ConfigKey parameter:$$NAME`; their default values are never read.
+  parameters become `ConfigKey parameter:<folder>/<mapping>#$$NAME`, scoped to their
+  mapping as SSIS scopes a package parameter to its package, so two mappings that both
+  declare `$$LOAD_DATE` keep separate keys; their default values are never read.
 - Each workflow and worklet as `Job {framework: "informatica", name: "<folder>/<name>"}`
   that CONTAINS its task instances as `Task {framework, job, name: <instance name>}`, with
   DEPENDS_ON from workflow links. A session RUNS its mapping and REFERENCES_CONFIG the
   connections its readers, writers and lookups use, by name (`connection:<name>`), or the
-  session parameter that names one (`parameter:$DBConnection_...`). The Start task becomes
-  the Job's `entry` attribute; the scheduler its `schedule` attribute.
+  session parameter that names one (`parameter:<folder>/<workflow>#$DBConnection_...`,
+  scoped to the workflow or worklet that holds the session; a lookup's is scoped to its
+  mapping). A session also REFERENCES_CONFIG `parameter:<folder>/<workflow>#$$NAME` for
+  each parameter its mapping declares, without declaring it: that is the key a parameter
+  file section for the workflow declares, so the link exists only when such a file sets the
+  parameter. The Start task becomes the Job's `entry` attribute; the scheduler its
+  `schedule` attribute.
 
 Never read: connect strings, user names and passwords (an export holds none, but session
 attributes and command tasks may), the commands of command tasks, mail addresses, file
@@ -126,6 +133,11 @@ class Export:
         self.tasks = {attr(t, "NAME"): t for t in children(f, "TASK") if attr(t, "NAME")}
         self.worklets = {attr(w, "NAME") for w in children(f, "WORKLET") if attr(w, "NAME")}
         self.mappings = {attr(m, "NAME") for m in children(f, "MAPPING") if attr(m, "NAME")}
+        self.mapping_parameters = {
+            attr(m, "NAME"): sorted({attr(v, "NAME") for v in children(m, "MAPPINGVARIABLE")
+                                     if (attr(v, "ISPARAM") or "").upper() == "YES" and re.fullmatch(r"\$\$[A-Za-z_]\w*", attr(v, "NAME") or "")})
+            for m in children(f, "MAPPING") if attr(m, "NAME")
+        }
         for el in children(f, "SOURCE"):
             d = self.definition(el, "source")
             if d:
@@ -184,8 +196,11 @@ class Export:
 
         return Definition("table", tname, ref, DIALECT.get(dialect_key) if dialect_key else None)
 
-    def connection(self, at, subject, value: str | None, via: dict[str, Any] | None = None) -> None:
-        """A connection named in a session or lookup: by name, by session parameter, or built in."""
+    def connection(self, at, subject, value: str | None, scope: str, via: dict[str, Any] | None = None) -> None:
+        """A connection named in a session or lookup: by name, by session parameter, or built in.
+
+        `scope` is the `<folder>/<name>` a session parameter belongs to: the workflow or
+        worklet holding the session, or the mapping holding the lookup."""
         out = self.out
         value = (value or "").strip()
         if not value:
@@ -199,7 +214,7 @@ class Export:
             if not re.fullmatch(r"\$[A-Za-z_]\w*", value):
                 return
             out.construct(at, "infa:connection_variable", True)
-            key = f"parameter:{value}"
+            key = f"parameter:{scope}#{value}"
             ref = out.entity(at, "infa:Parameter", {"name": key}, key, {"kind": "session_parameter"})
             out.relation(at, subject, P.REFERENCES_CONFIG, ref, {**(via or {}), "resolved_by": "parameter_file"})
             return
@@ -265,7 +280,7 @@ class Mapping:
         for v, vname in params:
             vat = exp.at(v)
             out.construct(vat, "infa:mapping_parameter", True)
-            key = f"parameter:{vname}"
+            key = f"parameter:{self.name}#{vname}"
             ref = out.entity(vat, "infa:Parameter", {"name": key}, key, {"kind": "mapping_parameter", "data_type": attr(v, "DATATYPE")})
             out.relation(vat, decl, P.REFERENCES_CONFIG, ref, {"via": "mapping_parameter"})
 
@@ -598,7 +613,7 @@ class Mapping:
         ups = self.upstream(name)
         raw = attrs.get("Lookup table name", "").strip()
         query = attrs.get("Lookup Sql Override", "").strip()
-        exp.connection(at, self.decl, attrs.get("Connection Information"), {"via": "lookup", "instance": name})
+        exp.connection(at, self.decl, attrs.get("Connection Information"), self.name, {"via": "lookup", "instance": name})
         right: str | None = None
         before = len(b.items)
         if query:
@@ -832,12 +847,15 @@ class Flow:
         if ok_name(mapping):
             program = {"kind": "Program", "natural_key": {"platform": PLATFORM, "name": f"{exp.fname}/{mapping}"}, "name": mapping}
             out.relation(at, ref, P.RUNS, program if mapping in exp.mappings else {**program, "declare": False}, {"via": "session"})
+            for pname in exp.mapping_parameters.get(mapping, []):
+                key = f"parameter:{self.name}#{pname}"
+                out.relation(at, ref, P.REFERENCES_CONFIG, config_ref(key, declare=False), {"via": "mapping_parameter", "resolved_by": "parameter_file"})
         for ext in children(session, "SESSIONEXTENSION"):
             for cref in children(ext, "CONNECTIONREFERENCE"):
                 via = {"via": (attr(ext, "TYPE") or "").lower() or None, "instance": attr(ext, "SINSTANCENAME")}
                 name = (attr(cref, "CONNECTIONNAME") or "").strip()
                 variable = (attr(cref, "VARIABLE") or "").strip()
-                exp.connection(exp.at(cref), ref, name or variable, via)
+                exp.connection(exp.at(cref), ref, name or variable, self.name, via)
         for sti in children(session, "SESSTRANSFORMATIONINST"):
             attrs = table_attrs(sti)
             for key in _OVERRIDES:
