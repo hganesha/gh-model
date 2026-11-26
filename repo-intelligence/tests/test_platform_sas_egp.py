@@ -122,6 +122,12 @@ def test_registered_in_the_sas_pack():
     assert EgpProject().matches("a/b.EGP") and not EgpProject().matches("a/b.sas")
 
 
+def test_inventory_language_of_a_project_is_sas():
+    from repo_intel.extractors import detect_language
+
+    assert detect_language("eg/sales_reporting.egp") == "sas" and detect_language("eg/Old.EGP") == "sas"
+
+
 def test_every_construct_the_reader_names_is_listed():
     import re
 

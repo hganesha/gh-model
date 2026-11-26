@@ -104,6 +104,14 @@ def test_extractors_claim_their_files():
     assert not cfg.matches("app.config") and not cfg.matches("packages.config")
 
 
+def test_inventory_language_of_pages_is_aspnet():
+    from repo_intel.extractors import detect_language
+
+    for path in ("a/B.aspx", "a/B.ascx", "Site.Master", "Pages/Index.cshtml", "Pages/Counter.razor"):
+        assert detect_language(path) == "aspnet", path
+    assert detect_language("a/B.aspx.cs") == "csharp"
+
+
 def test_the_pack_imports_extractors_only_inside_functions():
     import ast
 

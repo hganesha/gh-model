@@ -101,6 +101,13 @@ def test_extractors_claim_their_files():
     assert not web.matches("conf/web.xml.bak") and not web.matches("pom.xml")
 
 
+def test_inventory_language_of_jsp_files():
+    from repo_intel.extractors import detect_language
+
+    for path in ("a/b.jsp", "a/b.jspx", "a/b.jspf", "WEB-INF/tags/money.tag", "META-INF/tags/x.TAGX"):
+        assert detect_language(path) == "jsp", path
+
+
 def test_tag_files_are_read_only_from_a_tag_directory():
     src = JspSource()
     for path in ("WEB-INF/tags/money.tag", WEBAPP + "WEB-INF/tags/forms/field.tagx", "lib/META-INF/tags/util.tag", "app/web-inf/tags/a.TAG"):
