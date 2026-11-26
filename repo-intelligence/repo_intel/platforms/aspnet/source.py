@@ -7,7 +7,13 @@ For each file:
   or `aspx:RazorComponent`. The code-behind file a Web Forms directive names is the
   Artifact the Program DEPENDS_ON, and its base class (`Inherits`) an attribute; the
   master page, layout and registered user controls are Programs it CALLS;
-- an `.aspx` page EXPOSES an Endpoint at its path; a Razor Page (`@page`) one at the
+- an `.aspx` page EXPOSES an Endpoint at its path below the application root, the
+  nearest ancestor directory holding a `Web.config`, so `desk/Orders/Edit.aspx` under
+  `desk/Web.config` answers `/Orders/Edit.aspx`, the path `<location>` rules name.
+  Finding that file needs the unit's other files: this extractor records the page in
+  an `app_relative_route` observation and the unit linker keys the Endpoint. With no
+  `Web.config` above the page in the unit, no Endpoint is keyed and an Unknown says so;
+- a Razor Page (`@page`) EXPOSES an Endpoint at the
   route ASP.NET Core gives it: its path below `Pages/` (`Index` dropped) with the
   `@page` template appended, or the template alone when it starts with `/`;
 - a page that renders is a `Screen` (`aspx:WebForm`, `aspx:RazorView`), named by its
@@ -42,7 +48,7 @@ import re
 from typing import Any
 
 from repo_intel.platforms.aspnet.razor import matching, razor_regions, webforms_regions
-from repo_intel.platforms.aspnet.vocabulary import BLAZOR_INPUTS, HTML_HELPER_CONTROLS, MARKUP, OTHER_CONTROLS, SERVER_CONTROLS, VALIDATORS
+from repo_intel.platforms.aspnet.vocabulary import BLAZOR_INPUTS, HTML_HELPER_CONTROLS, MARKUP, OTHER_CONTROLS, SERVER_CONTROLS, TERMS, VALIDATORS
 from repo_intel.platforms.jsp.pages import (
     HOLE, K, P, Page, Region, UiControl, UiForm, attr_map, button_label, candidates, decode, emit_ui, endpoint_refs, is_external, literal, markup, mask,
     orig_value, relative,
@@ -112,7 +118,7 @@ def _string_args(text: str, open_paren: int) -> tuple[list[str | None], int]:
 
 class AspNetSource:
     id = "aspnet.source"
-    version = "1.0.0"
+    version = "1.1.0"
     SUFFIXES = (".aspx", ".ascx", ".master", ".cshtml", ".razor")
 
     def matches(self, path: str) -> bool:
@@ -790,6 +796,25 @@ class _Reader:
             base = base.rstrip("/") + "/" + template
         return base
 
+    def app_relative_route(self, prog: dict[str, Any]) -> None:
+        """A Web Forms page is served at its path below the application root, the nearest
+        ancestor directory holding a Web.config. That is another file, so this file only
+        records what the unit linker needs (an `app_relative_route` observation): the page
+        path, the file that marks the root, the Endpoint's attributes and the roles an
+        `[Authorize]` in the page requires. The linker keys the Endpoint and relates it
+        (repo_intel.compile.link, `link_app_relative_routes`)."""
+        term = next(t for t in TERMS if t.name == "aspx:PageRequest")
+        attributes: dict[str, Any] = {"framework": "webforms", "platform": PLATFORM, "platform_kind": term.name}
+        if term.fidelity != "exact":
+            attributes["fidelity"] = term.fidelity
+        roles = sorted({role for role, _, _, via in self.roles if via == "Authorize"})
+        payload = {
+            "subject": prog, "path": self.path, "root_marker": "web.config", "method": "ANY", "attributes": attributes,
+            "requires_roles": [{"kind": "Role", "natural_key": {"realm": REALM, "name": r}, "name": r, "declare": False} for r in roles],
+            "unkeyed_reason": "Web Forms route depends on the application root: not keyed (no Web.config above the page in this unit)",
+        }
+        self.page.items.append(self.page.base.obs("app_relative_route", self.page.blob, self.page.whole(), payload))
+
     def run(self):
         page = self.page
         regions = razor_regions(self.text) if self.razor else webforms_regions(self.text)
@@ -815,13 +840,15 @@ class _Reader:
 
         # The URL it answers.
         endpoints = []
-        route = "/" + self.path if self.ext == ".aspx" else self.route()
+        route = None if self.ext == ".aspx" else self.route()
         if self.ext == ".razor":  # a routable component: each @page template is its whole route
             served = [r for r in self.routes if r.startswith("/")]
             if len(served) < len(self.routes):
                 self.page.note("a component route that does not start with '/': not served")
         else:
             served = [route] if route else []
+        if self.ext == ".aspx":
+            self.app_relative_route(prog)
         framework = {".aspx": "webforms", ".cshtml": "razor_pages", ".razor": "blazor"}.get(self.ext, "razor")
         for r in served:
             key = {"component_root": page.base.UNIT, "protocol": "http", "method": "ANY", "route": r}

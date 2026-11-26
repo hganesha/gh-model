@@ -705,6 +705,42 @@ class _Linker:
                         out.setdefault(path, {})[name] = {**self.symbol_ref(path, name), "declare": False} if found else None
         return out
 
+    # -- routes below an application root (ASP.NET Web Forms, docs/solution-ir-contract.md section 8.6)
+
+    def link_app_relative_routes(self) -> None:
+        """Endpoints for pages served at their path below an application root.
+
+        A Web Forms page answers at its path below the application root, the nearest
+        ancestor directory holding a Web.config, not at its repository path. One file
+        cannot see that, so the extractor emits an `app_relative_route` observation
+        ({subject, path, root_marker, method, attributes, requires_roles, unkeyed_reason})
+        and this pass looks for the marker file among the unit's files, deepest directory
+        first. The Endpoint is keyed by "/" + the page path relative to that directory,
+        with the page and the marker file as evidence (E3). With no marker above the page
+        in this unit, no Endpoint is keyed: the root is not guessed, and an Unknown on the
+        page records why.
+        """
+        markers: dict[str, dict[str, str]] = {}  # lower-cased basename -> {directory: marker path}
+        for path in sorted(self.files):
+            markers.setdefault(posixpath.basename(path).lower(), {}).setdefault(posixpath.dirname(path), path)
+        for path in sorted(self.files):
+            for o in _of(self.files[path], "app_relative_route"):
+                p = o["payload"]
+                found = markers.get(str(p["root_marker"]).lower(), {})
+                parts = posixpath.dirname(p["path"]).split("/") if posixpath.dirname(p["path"]) else []
+                root = next((d for d in ("/".join(parts[:i]) for i in range(len(parts), -1, -1)) if d in found), None)
+                if root is None:
+                    self.unknowns.append({"path": path, "subject": p["subject"], "predicate": str(Predicate.EXPOSES), "status": "unknown", "reason": p["unkeyed_reason"], "coverage_ref": f"app_routes:{self.unit}"})
+                    continue
+                route = "/" + (p["path"][len(root) + 1:] if root else p["path"])
+                marker = self.files[found[root]]
+                evidence = [o["evidence"], *(m["evidence"] for m in _of(marker, "file"))]
+                endpoint = ref(EntityKind.ENDPOINT, {"component_root": "@unit", "protocol": "http", "method": p["method"], "route": route}, f"{p['method']} {route}")
+                self.emit("entity", path, {**endpoint, "attributes": {**p["attributes"], "app_root": root or "."}}, evidence, EvidenceClass.E3)
+                self.relate(path, p["subject"], Predicate.EXPOSES, endpoint, evidence, {"app_root": root or "."})
+                for role in p.get("requires_roles", []):
+                    self.relate(path, endpoint, Predicate.REQUIRES_ROLE, role, evidence, {"via": "Authorize"})
+
     # -- exports for repo-level linking
 
     def exports(self) -> dict[str, Any]:
@@ -737,6 +773,7 @@ def _unit_link(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, Any]:
     linker.link_resolved()
     linker.link_migrations()
     linker.link_model_aliases()
+    linker.link_app_relative_routes()
 
     imp = linker.imports
     total_imports = sum(imp.values())

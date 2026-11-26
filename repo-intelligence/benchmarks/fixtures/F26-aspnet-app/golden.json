@@ -17,11 +17,11 @@
   {"kind": "Program", "natural_key": {"platform": "aspnet", "name": "portal/Pages/_ViewStart.cshtml"}, "since": "M2", "attributes": {"kind": "view_start", "layout": "_Layout"}},
   {"kind": "Program", "natural_key": {"platform": "aspnet", "name": "portal/Views/Home/Contact.cshtml"}, "since": "M2", "attributes": {"kind": "view"}},
   {"kind": "Program", "natural_key": {"platform": "aspnet", "name": "portal/Components/Pages/Tracking.razor"}, "since": "M2", "attributes": {"kind": "component", "platform_kind": "aspx:RazorComponent", "injects": ["NavigationManager"]}},
-  {"kind": "Endpoint", "natural_key": {"component_root": "", "protocol": "http", "method": "ANY", "route": "/desk/Default.aspx"}, "since": "M2", "attributes": {"framework": "webforms", "platform_kind": "aspx:PageRequest"}},
-  {"kind": "Endpoint", "natural_key": {"component_root": "", "protocol": "http", "method": "ANY", "route": "/desk/Orders/Edit.aspx"}, "since": "M2"},
-  {"kind": "Endpoint", "natural_key": {"component_root": "", "protocol": "http", "method": "ANY", "route": "/desk/Orders/Review.aspx"}, "since": "M2"},
-  {"kind": "Endpoint", "natural_key": {"component_root": "", "protocol": "http", "method": "ANY", "route": "/desk/Admin/Purge.aspx"}, "since": "M2"},
-  {"kind": "Endpoint", "natural_key": {"component_root": "", "protocol": "http", "method": "ANY", "route": "/desk/Login.aspx"}, "since": "M2"},
+  {"kind": "Endpoint", "natural_key": {"component_root": "", "protocol": "http", "method": "ANY", "route": "/Default.aspx"}, "since": "M2", "attributes": {"framework": "webforms", "platform_kind": "aspx:PageRequest", "app_root": "desk"}},
+  {"kind": "Endpoint", "natural_key": {"component_root": "", "protocol": "http", "method": "ANY", "route": "/Orders/Edit.aspx"}, "since": "M2"},
+  {"kind": "Endpoint", "natural_key": {"component_root": "", "protocol": "http", "method": "ANY", "route": "/Orders/Review.aspx"}, "since": "M2"},
+  {"kind": "Endpoint", "natural_key": {"component_root": "", "protocol": "http", "method": "ANY", "route": "/Admin/Purge.aspx"}, "since": "M2"},
+  {"kind": "Endpoint", "natural_key": {"component_root": "", "protocol": "http", "method": "ANY", "route": "/Login.aspx"}, "since": "M2"},
   {"kind": "Endpoint", "natural_key": {"component_root": "", "protocol": "http", "method": "ANY", "route": "/"}, "since": "M2", "attributes": {"framework": "razor_pages"}},
   {"kind": "Endpoint", "natural_key": {"component_root": "", "protocol": "http", "method": "ANY", "route": "/Orders"}, "since": "M2"},
   {"kind": "Endpoint", "natural_key": {"component_root": "", "protocol": "http", "method": "ANY", "route": "/Orders/Edit/{id:int}"}, "since": "M2"},
@@ -60,7 +60,7 @@
   {"kind": "Table", "natural_key": {"datastore": "default", "name": "dbo.products"}, "since": "M2"}
  ],
  "edges": [
-  {"subject": {"kind": "Program", "natural_key": {"platform": "aspnet", "name": "desk/Default.aspx"}}, "predicate": "EXPOSES", "object": {"kind": "Endpoint", "natural_key": {"component_root": "", "protocol": "http", "method": "ANY", "route": "/desk/Default.aspx"}}, "since": "M2"},
+  {"subject": {"kind": "Program", "natural_key": {"platform": "aspnet", "name": "desk/Default.aspx"}}, "predicate": "EXPOSES", "object": {"kind": "Endpoint", "natural_key": {"component_root": "", "protocol": "http", "method": "ANY", "route": "/Default.aspx"}}, "since": "M2"},
   {"subject": {"kind": "Program", "natural_key": {"platform": "aspnet", "name": "portal/Pages/Index.cshtml"}}, "predicate": "EXPOSES", "object": {"kind": "Endpoint", "natural_key": {"component_root": "", "protocol": "http", "method": "ANY", "route": "/"}}, "since": "M2"},
   {"subject": {"kind": "Program", "natural_key": {"platform": "aspnet", "name": "portal/Pages/Orders/Edit.cshtml"}}, "predicate": "EXPOSES", "object": {"kind": "Endpoint", "natural_key": {"component_root": "", "protocol": "http", "method": "ANY", "route": "/Orders/Edit/{id:int}"}}, "since": "M2"},
   {"subject": {"kind": "Program", "natural_key": {"platform": "aspnet", "name": "portal/Components/Pages/Tracking.razor"}}, "predicate": "EXPOSES", "object": {"kind": "Endpoint", "natural_key": {"component_root": "", "protocol": "http", "method": "ANY", "route": "/tracking/{OrderNumber}"}}, "since": "M2"},
@@ -96,8 +96,9 @@
  "absent_entities": [
   {"kind": "Endpoint", "natural_key": {"component_root": "", "protocol": "http", "method": "ANY", "route": "/Home/Contact"}, "why": "an MVC view's route comes from controller routing configured in C#, which is not read"},
   {"kind": "Endpoint", "natural_key": {"component_root": "", "protocol": "http", "method": "ANY", "route": "/Shared/_Layout"}, "why": "a layout is not routable"},
-  {"kind": "Endpoint", "natural_key": {"component_root": "", "protocol": "http", "method": "ANY", "route": "/desk/Site.Master"}, "why": "a master page is not served by URL"},
-  {"kind": "Endpoint", "natural_key": {"component_root": "", "protocol": "http", "method": "ANY", "route": "/desk/Controls/Header.ascx"}, "why": "a user control is not served by URL"},
+  {"kind": "Endpoint", "natural_key": {"component_root": "", "protocol": "http", "method": "ANY", "route": "/Site.Master"}, "why": "a master page is not served by URL"},
+  {"kind": "Endpoint", "natural_key": {"component_root": "", "protocol": "http", "method": "ANY", "route": "/Controls/Header.ascx"}, "why": "a user control is not served by URL"},
+  {"kind": "Endpoint", "natural_key": {"component_root": "", "protocol": "http", "method": "ANY", "route": "/desk/Orders/Edit.aspx"}, "why": "a Web Forms page is served at its path below the application root (desk/, which holds Web.config), the path its <location> rule names, not at its repository path"},
   {"kind": "Screen", "natural_key": {"platform": "aspnet", "name": "portal/Pages/_ViewStart.cshtml"}, "why": "_ViewStart only sets the layout: it renders nothing"},
   {"kind": "UIControl", "natural_key": {"container": "desk/Default.aspx", "name": "link:https://help.example.com/desk?topic=start"}, "why": "a link to another host is named by its scheme and host only: its path and query are not kept"},
   {"kind": "Role", "natural_key": {"realm": "aspnet", "name": "*"}, "why": "'*' in an allow or deny rule means every user, not a role"},
@@ -122,7 +123,7 @@
    {"kind": "Program", "natural_key": {"platform": "aspnet", "name": "desk/Audit.aspx"}, "since": "M2"},
    {"kind": "Screen", "natural_key": {"platform": "aspnet", "name": "desk/Audit.aspx"}, "since": "M2"},
    {"kind": "Form", "natural_key": {"screen": "desk/Audit.aspx", "name": "auditForm"}, "since": "M2"},
-   {"kind": "Endpoint", "natural_key": {"component_root": "", "protocol": "http", "method": "ANY", "route": "/desk/Audit.aspx"}, "since": "M2"},
+   {"kind": "Endpoint", "natural_key": {"component_root": "", "protocol": "http", "method": "ANY", "route": "/Audit.aspx"}, "since": "M2"},
    {"kind": "Role", "natural_key": {"realm": "aspnet", "name": "Auditor"}, "since": "M2"},
    {"kind": "Permission", "natural_key": {"realm": "aspnet", "name": "/Audit.aspx"}, "since": "M2"},
    {"kind": "Table", "natural_key": {"datastore": "default", "name": "dbo.orderhistory"}, "since": "M2"}
@@ -131,7 +132,7 @@
    {"kind": "Program", "natural_key": {"platform": "aspnet", "name": "desk/Orders/Review.aspx"}, "since": "M2"},
    {"kind": "Screen", "natural_key": {"platform": "aspnet", "name": "desk/Orders/Review.aspx"}, "since": "M2"},
    {"kind": "Form", "natural_key": {"screen": "desk/Orders/Review.aspx", "name": "reviewForm"}, "since": "M2"},
-   {"kind": "Endpoint", "natural_key": {"component_root": "", "protocol": "http", "method": "ANY", "route": "/desk/Orders/Review.aspx"}, "since": "M2"},
+   {"kind": "Endpoint", "natural_key": {"component_root": "", "protocol": "http", "method": "ANY", "route": "/Orders/Review.aspx"}, "since": "M2"},
    {"kind": "UIControl", "natural_key": {"container": "desk/Orders/Review.aspx#reviewForm", "name": "Confirm"}, "since": "M2"}
   ]}
  ],

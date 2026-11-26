@@ -91,7 +91,7 @@ def _java_string(raw: str) -> str:
 
 class JspSource:
     id = "jsp.source"
-    version = "1.0.0"
+    version = "1.1.0"
     SUFFIXES = (".jsp", ".jspx", ".jspf", ".tag", ".tagx")
 
     def matches(self, path: str) -> bool:
