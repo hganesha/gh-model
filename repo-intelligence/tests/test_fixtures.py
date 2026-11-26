@@ -5,6 +5,7 @@ import functools
 import pytest
 
 from conftest import REPO_ID
+from repo_intel.compile import golden_check
 from repo_intel.compile.capabilities import CLASSIFIED_ECOSYSTEMS
 from repo_intel.compile.contracts import entity_id
 from repo_intel.compile.fixtures import FIXTURES_DIR, list_fixtures, load_golden, materialize
@@ -45,6 +46,16 @@ def compiled(tmp_path_factory):
     return run
 
 
+@pytest.fixture(scope="session")
+def solution_compiled(tmp_path_factory):
+    """A multi-repository fixture compiled member by member, once per session
+    (`golden_check.compile_solution`)."""
+    @functools.cache
+    def run(name):
+        return golden_check.compile_solution(name, tmp_path_factory.mktemp(f"{name}-solution"))
+    return run
+
+
 def test_fixtures_are_numbered_contiguously():
     assert len(FIXTURES) >= 22 and [f[:3] for f in FIXTURES] == [f"F{i:02d}" for i in range(1, len(FIXTURES) + 1)]
 
@@ -68,7 +79,9 @@ def test_golden_is_well_formed(name):
         assert check_relation(edge["predicate"], EntityKind(edge["subject"]["kind"]), EntityKind(edge["object"]["kind"])) is None
     for kind in g["forbidden_kinds"]:
         EntityKind(kind)
-    ids = [_eid(i) for i in g["entities"]]
+    # In a multi-repository golden the same kind and natural key may be listed in two
+    # members (a table in the service and in the catalogue); within a member it is unique.
+    ids = [(i.get("member"), _eid(i)) if golden_check.is_solution(name) else _eid(i) for i in g["entities"]]
     assert len(ids) == len(set(ids)), "duplicate golden entity"
 
 
@@ -140,10 +153,12 @@ def test_adversarial_file_name_is_inert_data(compiled):
 
 
 @pytest.mark.parametrize("name", FIXTURES)
-def test_goldens_due_by_the_compiler_milestone(name, compiled):
+def test_goldens_due_by_the_compiler_milestone(name, compiled, solution_compiled):
     """Everything the goldens expect by the compiler's current milestone, on every commit."""
-    from repo_intel.compile.golden_check import COMPILER_MILESTONE, check
-    assert check(name, compiled(name), COMPILER_MILESTONE) == []
+    # A multi-repository golden is about its members: hand `check` the member-by-member
+    # compile so it does not compile the solution again from the whole-tree compile.
+    commits = solution_compiled(name) if golden_check.is_solution(name) else compiled(name)
+    assert golden_check.check(name, commits, golden_check.COMPILER_MILESTONE) == []
 
 
 def test_dependency_capability_coverage_on_fixture_bases(compiled):
@@ -175,7 +190,10 @@ def test_configuration_values_never_enter_the_graph(compiled):
 def test_deployment_granularity_rules_never_contradict_the_label(name, compiled):
     """DM11's rules on each fixture against the label its design implies (golden `granularity`).
     A resolved rule must give the label; an ambiguous one must offer it to the decision model;
-    a fixture with no deployed application must be left undecided."""
+    a fixture with no deployed application must be left undecided. A multi-repository
+    fixture is several deployables compiled one by one, so its whole tree has no label to check."""
+    if golden_check.is_solution(name):
+        pytest.skip("multi-repository fixture: granularity is decided per member, not for the whole tree")
     want = load_golden(name)["granularity"]["label"]
     rows = [e for e in compiled(name)[0]["ledger"] if e["spec"].split("@")[0] == "dm.deployment-granularity"]
     assert len(rows) == 1

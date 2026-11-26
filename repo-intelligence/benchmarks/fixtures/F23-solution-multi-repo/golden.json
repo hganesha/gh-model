@@ -1,6 +1,6 @@
 {
   "fixture": "F23-solution-multi-repo",
-  "description": "A multi-repository solution: a TypeScript front end (member web) calling a FastAPI orders service (member orders) that reads the orders table through SQLAlchemy, and the orders database's catalogue dump as the solution's inputs. golden_check compiles each member in its own repository, loads .rkp/solution.json and checks the identity links across members: the one call path a single endpoint serves links exactly, a call whose method is unstated stays a candidate, the service's tables and columns link to the catalogue's, a configuration key both members read is only a lead, and a path no member serves is unmatched. The commits make the service serve that path, map a second table, and drop the front end's configuration read.",
+  "description": "A multi-repository solution: a TypeScript front end (member web) calling a FastAPI orders service (member orders) that reads the orders table through SQLAlchemy, and the orders database's catalogue dump as the solution's inputs. golden_check compiles each member in its own repository, loads .rkp/solution.json and checks the identity links across members: a call that states its method links exactly to the endpoint with that method and path, the one call path a single endpoint serves links exactly, a call whose method is unstated stays a candidate, the service's tables and columns link to the catalogue's, a configuration key both members read is only a lead, and a path no member serves is unmatched. The commits make the service serve that path, map a second table, and drop the front end's configuration read.",
   "entities": [
     {
       "member": "web",
@@ -472,6 +472,29 @@
   "links": [
     {
       "link": {
+        "rule": "endpoint_method_path",
+        "from": {
+          "member": "web",
+          "kind": "Component",
+          "natural_key": {
+            "root": ""
+          }
+        },
+        "to": {
+          "member": "orders",
+          "kind": "Endpoint",
+          "natural_key": {
+            "component_root": "",
+            "method": "POST",
+            "protocol": "http",
+            "route": "/api/orders"
+          }
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "link": {
         "rule": "endpoint_path_unique",
         "from": {
           "member": "web",
@@ -713,6 +736,29 @@
         }
       },
       "why": "two endpoints serve /api/orders and the listing call does not state its method"
+    },
+    {
+      "link": {
+        "rule": "endpoint_method_path",
+        "from": {
+          "member": "web",
+          "kind": "Component",
+          "natural_key": {
+            "root": ""
+          }
+        },
+        "to": {
+          "member": "orders",
+          "kind": "Endpoint",
+          "natural_key": {
+            "component_root": "",
+            "method": "GET",
+            "protocol": "http",
+            "route": "/api/orders"
+          }
+        }
+      },
+      "why": "the only call that states a method at /api/orders is the POST; the GET endpoint is reached only by the listing call, whose method is unstated"
     }
   ],
   "unmatched": [
@@ -730,6 +776,13 @@
       "scope": "orders",
       "numerator": 1,
       "denominator": 1,
+      "since": "M2"
+    },
+    {
+      "domain": "solution_http_calls",
+      "scope": "web",
+      "numerator": 2,
+      "denominator": 4,
       "since": "M2"
     }
   ],
@@ -811,6 +864,22 @@
           "reason": "no_endpoint",
           "since": "M2"
         }
+      ],
+      "solution_coverage": [
+        {
+          "domain": "solution_data_refs",
+          "scope": "orders",
+          "numerator": 1,
+          "denominator": 1,
+          "since": "M2"
+        },
+        {
+          "domain": "solution_http_calls",
+          "scope": "web",
+          "numerator": 3,
+          "denominator": 4,
+          "since": "M2"
+        }
       ]
     },
     {
@@ -877,6 +946,22 @@
           },
           "since": "M2"
         }
+      ],
+      "solution_coverage": [
+        {
+          "domain": "solution_data_refs",
+          "scope": "orders",
+          "numerator": 2,
+          "denominator": 2,
+          "since": "M2"
+        },
+        {
+          "domain": "solution_http_calls",
+          "scope": "web",
+          "numerator": 3,
+          "denominator": 4,
+          "since": "M2"
+        }
       ]
     },
     {
@@ -914,12 +999,28 @@
           },
           "since": "M2"
         }
+      ],
+      "solution_coverage": [
+        {
+          "domain": "solution_data_refs",
+          "scope": "orders",
+          "numerator": 2,
+          "denominator": 2,
+          "since": "M2"
+        },
+        {
+          "domain": "solution_http_calls",
+          "scope": "web",
+          "numerator": 3,
+          "denominator": 4,
+          "since": "M2"
+        }
       ]
     }
   ],
   "granularity": {
     "label": "monolithic",
-    "why": "compiled as one tree (tests/test_fixtures.py does that for every fixture), the only deployable backend is the orders service; the front end is its client",
+    "why": "the only deployable backend is the orders service; the front end is its client. Informational: tests/test_fixtures.py does not check granularity for a multi-repository fixture",
     "source": "fixture design"
   }
 }

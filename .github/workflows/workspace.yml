@@ -48,6 +48,7 @@ jobs:
         run: |
           npm ci
           npm run typecheck
+          npm test
           npx playwright install --with-deps chromium
           npm run test:e2e
       - name: Freeze the engine for the extension and check its sandbox
