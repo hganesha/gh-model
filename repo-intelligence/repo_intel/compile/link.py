@@ -693,7 +693,9 @@ class _Linker:
                     i = interfaces[0]["payload"]
                     operations.append({"path": path, "method": o["payload"]["method"], "route": o["payload"]["route"], "interface": ref(EntityKind.INTERFACE, i["natural_key"], i["name"]), "evidence": o["evidence"]})
             for o in _of(self.files[path], "http_call"):
-                calls.append({"path": path, "call_path": o["payload"]["path"], "evidence": o["evidence"]})
+                # `method` only when the source states it (typescript_source); absent otherwise.
+                method = o["payload"].get("method")
+                calls.append({"path": path, "call_path": o["payload"]["path"], **({"method": method} if method else {}), "evidence": o["evidence"]})
         return {"contract_operations": operations, "http_calls": calls, "has_package": self.has_package}
 
 

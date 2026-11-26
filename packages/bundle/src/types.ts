@@ -122,6 +122,41 @@ export interface UnitRef {
   behaviors?: number;
 }
 
+/** A contract operation the repository declares (an OpenAPI path and method), with the Interface entity declaring it. */
+export interface ExportedOperation {
+  interface: string;
+  /** The one Component that implements it, or null when none or several do. */
+  component: string | null;
+  method: string;
+  route: string;
+  evidence_ids: string[];
+}
+
+/** An HTTP call no endpoint of the repository serves: another repository may. */
+export interface UnresolvedCall {
+  /** The calling Component, or its Package when no Component holds it. */
+  caller: string;
+  /** Static path of the URL: no query values, fragment or user information; computed parts are `{}`. */
+  path: string;
+  /** Upper-case HTTP method, only when the source states it. */
+  method?: string;
+  evidence_ids: string[];
+}
+
+/** `exports.json`: what links this repository to others, committed in every tier. */
+export interface Exports {
+  operations: ExportedOperation[];
+  unresolved_calls: UnresolvedCall[];
+}
+
+/** The manifest's entry naming `exports.json`, with its digest and the length of each list. */
+export interface ExportsEntry {
+  file: string;
+  digest: string;
+  operations: number;
+  unresolved_calls: number;
+}
+
 export interface BundleManifest {
   bundle_format: string;
   engine: { name: string; version: string };
@@ -144,6 +179,8 @@ export interface BundleManifest {
   detail_tables?: string[];
   /** Architecture tier: how many rows of each table were left out. */
   detail_omitted?: Record<"entities" | "assertions" | "evidence" | "unknowns", number> & { behaviors?: number };
+  /** The exports file; absent in bundles written before it existed. */
+  exports?: ExportsEntry;
 }
 
 /** One row of a unit file: a contract row tagged with its table. */

@@ -1,12 +1,13 @@
 """Load a solution: each member's `.rkp/` bundle, and the solution's own inputs.
 
 Nothing is compiled. A member compiled on this machine is read from its own cache, with
-function-level detail and its repository exports (the HTTP calls no endpoint of its own
-serves). Otherwise its committed bundle is hydrated, as the editor's local API does,
-into the solution's cache (`.rkp/cache/solution/<member id>/`), so loading never writes
-into a member's directory. A hydrated bundle is checked against its digests and refused
-whole when it does not match; its HTTP calls are not available until the member is
-compiled on this machine, and the loader says so.
+function-level detail and its repository exports (the contract operations it declares and
+the HTTP calls no endpoint of its own serves). Otherwise its committed bundle is hydrated,
+as the editor's local API does, into the solution's cache (`.rkp/cache/solution/<member
+id>/`), so loading never writes into a member's directory. A hydrated bundle is checked
+against its digests, its `exports.json` included, and refused whole when it does not match.
+The exports are committed in every tier, so HTTP calls link exactly from committed bundles
+alone; only a bundle written before `exports.json` existed lacks them, and the loader says so.
 
 The solution's inputs (`inputs` in the manifest, files under `.rkp/inputs/`) are read by
 the platform packs whose `inputs` patterns match them, one file at a time, exactly as a
@@ -62,18 +63,20 @@ def _open_member(root: Path, member: Member, cache: Path) -> MemberData:
     if document is None:
         raise SolutionError(f"no bundle has been written at {member.source}; run `rkp compile` there")
     manifest = Manifest.model_validate(document["snapshot"])
-    exports = None
     own = directory / bundle.BUNDLE / "cache" / bundle.TENANT
     store = bundle.store_for(directory) if own.is_dir() else None
     if store is not None and bundle.has_snapshot(store, manifest):  # compiled on this machine
         snapshot = Snapshot(store, manifest)
-        ref = store.index_get("workspace_exports", manifest.rkp_hash)
-        exports = store.get_json(ref) if ref and store.has(ref) else None
+        # The compile's own exports; the committed file when this cache no longer holds them.
+        exports = bundle.compiled_exports(store, manifest)
+        if exports is None:
+            exports = bundle.read_exports(directory)
     else:
         target = ObjectStore(cache / member.id, bundle.TENANT)
-        target, loaded = bundle.hydrate(directory, target)
+        target, loaded = bundle.hydrate(directory, target)  # checks exports.json against its digest
         rank = {ref.unit: ref.digest for ref in manifest.shards}
         snapshot = Snapshot(target, loaded, rank, "architecture" if document.get("tier") == "architecture" else "complete")
+        exports = bundle.compiled_exports(target, manifest)  # None for a bundle written before exports.json
     entities = {entity_id: _pooled(rows) for entity_id, rows in snapshot.entity_rows.items()}
     store = snapshot.store
     return MemberData(
@@ -276,6 +279,7 @@ def load_solution(root: str | Path, cache: str | Path | None = None) -> Solution
             problems.append(f"member {member.id}: {error}")
             continue
         if data.exports is None:
+            # Only a bundle written before exports.json existed: compiling again writes it.
             warnings.append(f"member {member.id}: its HTTP calls are not in the committed bundle; compile it on this machine (`rkp compile {member.source}`) to link them")
         members.append(data)
     files: list[str] = []
