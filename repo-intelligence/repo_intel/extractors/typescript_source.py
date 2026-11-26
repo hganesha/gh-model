@@ -371,7 +371,7 @@ def _join_base(base: str, path: str) -> str:
 
 class TypeScriptSource:
     id = "typescript.source"
-    version = "1.5.0"
+    version = "1.6.0"  # 1.6.0: symbols carry `exported`, default exports of a local name carry `local`
 
     def matches(self, path: str) -> bool:
         return path.lower().endswith(EXTENSIONS)
@@ -704,9 +704,52 @@ class TypeScriptSource:
                             yield _text(name), "const", s, name
 
     def _symbols(self, root, blob, at, out):
+        """One `symbol` observation per top-level export, with `exported: true` (every symbol
+        this extractor reports is an export). A default export of a name this file declares at
+        top level (`const X = ...; export default X`, `export { X as default }`) also carries
+        `local: X`, so the linker can find the default-exported Symbol by its local name."""
+        declared = None
         for name, kind, st, name_node in self._exports(root):
             end = name_node if name_node.type in ("identifier", "type_identifier") else st
-            out.observations.append(obs("symbol", blob, at(st, end), {"name": name, "symbol_kind": kind}, ast_node_kind=st.type))
+            payload = {"name": name, "symbol_kind": kind, "exported": True}
+            local = self._default_local(st) if name == "default" else None
+            if local is not None:
+                declared = self._top_declared(root) if declared is None else declared
+                if local in declared:
+                    payload["local"] = local
+            out.observations.append(obs("symbol", blob, at(st, end), payload, ast_node_kind=st.type))
+
+    @staticmethod
+    def _default_local(st) -> str | None:
+        """The local name a default export names: `X` in `export default X` and in
+        `export { X as default }`. None for any other default export."""
+        if st.type == "export_statement":
+            value = st.child_by_field_name("value")
+            return _text(value) if value is not None and value.type == "identifier" else None
+        if st.type == "export_specifier" and st.child_by_field_name("alias") is not None:
+            name = st.child_by_field_name("name")
+            return _text(name) if name is not None and name.type == "identifier" else None
+        return None
+
+    @staticmethod
+    def _top_declared(root) -> set[str]:
+        """Names declared at the top level of the file (functions, classes, variables and
+        type declarations, exported or not). Imported names are not declarations."""
+        names: set[str] = set()
+        for st in root.children:
+            decl = st.child_by_field_name("declaration") if st.type == "export_statement" else st
+            if decl is None or decl.type not in _DECLARATIONS:
+                continue
+            if decl.type in ("lexical_declaration", "variable_declaration"):
+                for d in decl.named_children:
+                    name = d.child_by_field_name("name") if d.type == "variable_declarator" else None
+                    if name is not None and name.type == "identifier":
+                        names.add(_text(name))
+            else:
+                name = decl.child_by_field_name("name")
+                if name is not None:
+                    names.add(_text(name))
+        return names
 
     # -- configuration keys (names only) -----------------------------------
 

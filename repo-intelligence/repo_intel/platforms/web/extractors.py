@@ -4,12 +4,15 @@ and stylesheets (CSS, SCSS, LESS). Each reads one file's bytes and nothing else.
 What a file contributes:
 
 - A router file: one Screen (`web:Route`) per routed path, named by the full path
-  (`/orders/:id`), with `app` in the key only when the file declares several routers;
+  (`/orders/:id`), with `router` (`<path>#<label>`) when the file shows the router it
+  is declared under; the compiler adds `app` to the keys of a unit holding several
+  routers (`compiler._screen_apps`);
   its component RENDERS it (a "@symbol:<name>" end the linker resolves to the Symbol
   this file exports, else the unit's package with qualifier `component`); it
   REQUIRES_ROLE each literal role its guards name; it CONTAINS the View its component
   module is, when that module is a relative import and declares a View.
-- A Next.js app/ or pages/ file, a Nuxt page: a `web:Route` Screen named by the file route.
+- A Next.js app/ or pages/ file, a Nuxt page: a `web:Route` Screen named by the file route,
+  with `router` `<app dir>#nextjs` or `<app dir>#nuxt` (one app, one router).
 - A static HTML document: a `web:Page` Screen named by its path.
 - Any other component module or template with a form or a link to a screen: a
   `web:View` Screen named by its path, RENDERED by the symbol it exports by default.
@@ -22,7 +25,8 @@ What a file contributes:
   pairs, and Artifact DEPENDS_ON Artifact for each stylesheet `@import`, `@use` or
   `@forward`.
 
-Test files, stories and type declarations are not read.
+Test files, stories, type declarations and anything under `.rkp/` (owner inputs such as
+saved DOMs) are not read.
 
 Nothing here imports `repo_intel.extractors` at module level (see `experience.py`):
 `extract` returns the `repo_intel.extractors.base.Extraction` that `Out` builds.
@@ -39,7 +43,8 @@ from repo_intel.platforms.web.experience import (FILE, Out, Owner, artifact_ref,
                                                  link_targets, renders, screen_ref, token_ref)
 
 P = Predicate
-_SKIP = re.compile(r"(^|/)(node_modules|dist|build|coverage|\.next|\.nuxt|out|vendor|__tests__|__mocks__|e2e|cypress)/|\.(test|spec|stories|story|d)\.[a-z]+$|\.min\.(js|css)$", re.I)
+# `.rkp/` holds owner inputs (saved DOMs of captured screens, say): never a page of the application.
+_SKIP = re.compile(r"(^|/)(node_modules|dist|build|coverage|\.next|\.nuxt|out|vendor|__tests__|__mocks__|e2e|cypress|\.rkp)/|\.(test|spec|stories|story|d)\.[a-z]+$|\.min\.(js|css)$", re.I)
 _DOCUMENT = re.compile(r"<!doctype\s+html|<html[\s>]|<body[\s>]", re.I)
 _TEMPLATE_I18N = re.compile(r"\$t\(\s*['\"]|\|\s*translate\b")
 _THEME_IMPORT = re.compile(r"(^|[./_-])(theme|tokens?|design-tokens)$", re.I)
@@ -80,11 +85,24 @@ def _nuxt_route(path: str) -> str | None:
     return "/" + "/".join(rest)
 
 
+def _app_dir(path: str, segment: str) -> str:
+    """The directory of the app a file route belongs to: the directory holding its `app/`
+    or `pages/` directory (`src/` is a Next.js and Nuxt source folder, not the app), "."
+    for the repository root."""
+    parts = path.split("/")
+    last = len(parts) - 2 - parts[-2::-1].index(segment)
+    root = parts[:last]
+    if root[-1:] == ["src"]:
+        root = root[:-1]
+    return "/".join(root) or "."
+
+
 def _route_screens(out: Out, s: script.Script) -> None:
     for r in s.routes():
-        # With several routers in the file, the key gains `app` (contract section 8.5); with one it stays {platform, name}.
-        key = {"platform": "web", "name": r.name, **({"app": r.app} if r.app else {})}
-        screen = out.entity("web:Route", key, r.name, r.start, r.end, {**r.attrs, "app": r.app})
+        # The key stays {platform, name}; `router` (<path>#<label>) lets the compiler add `app`
+        # to the keys of a unit that holds more than one router (contract section 8.5).
+        key = {"platform": "web", "name": r.name}
+        screen = out.entity("web:Route", key, r.name, r.start, r.end, {**r.attrs, "router": f"{out.path}#{r.router}" if r.router else None})
         out.construct(r.construct, r.start, r.end, True)
         renders(out, screen, r.start, r.end, r.component or r.module)
         emit_roles(out, screen, r.roles)
@@ -272,7 +290,7 @@ class WebScript:
     """JavaScript and TypeScript modules: routers, file routes, views, theme objects."""
 
     id = "web.script"
-    version = "1.1.0"
+    version = "1.2.0"
 
     def matches(self, path: str) -> bool:
         return path.lower().endswith(script.SCRIPT_EXTS) and not _skipped(path)
@@ -294,7 +312,9 @@ class WebScript:
         component = s.default_export_name()
         if route is not None:
             name, cid = route
-            ref = out.entity("web:Route", {"platform": "web", "name": name}, name, 0, len(data), {"framework": "nextjs", "router": "app" if cid == "web:nextjs-app-page" else "pages", "component": component, "stylesheets": sheets.attribute(), "guards": guards, "accessibility": accessibility.screen(elements)})
+            directory = "app" if cid == "web:nextjs-app-page" else "pages"
+            # One Next.js app is one router, whose label is its directory: `<app dir>#nextjs`.
+            ref = out.entity("web:Route", {"platform": "web", "name": name}, name, 0, len(data), {"framework": "nextjs", "route_dir": directory, "router": f"{_app_dir(path, directory)}#nextjs", "component": component, "stylesheets": sheets.attribute(), "guards": guards, "accessibility": accessibility.screen(elements)})
             out.construct(cid, 0, len(data), True)
             owner = Owner(name, ref)
         elif has_ui(elements, path):
@@ -350,7 +370,7 @@ class WebMarkup:
     """HTML documents and fragments, and Vue single-file components."""
 
     id = "web.markup"
-    version = "1.1.0"
+    version = "1.2.0"
 
     def matches(self, path: str) -> bool:
         return path.lower().endswith((".html", ".htm", ".vue")) and not _skipped(path)
@@ -431,7 +451,7 @@ class WebMarkup:
             args = call.child_by_field_name("arguments")
             p = script.pairs(args.named_children[0]) if args is not None and args.named_children else {}
             guards, roles, auth = s._object_guards(p)
-            ref = out.entity("web:Route", {"platform": "web", "name": route}, route, *s.at(call), {"framework": "nuxt", "guards": guards or None, "requires_auth": auth or None, "stylesheets": sheets.attribute(), "accessibility": accessibility.screen(elements)})
+            ref = out.entity("web:Route", {"platform": "web", "name": route}, route, *s.at(call), {"framework": "nuxt", "router": f"{_app_dir(path, 'pages')}#nuxt", "guards": guards or None, "requires_auth": auth or None, "stylesheets": sheets.attribute(), "accessibility": accessibility.screen(elements)})
             out.construct("web:nuxt-page", *s.at(call), True)
             owner = Owner(route, ref)
             emit_roles(out, ref, roles)
@@ -496,7 +516,7 @@ class WebStyles:
     """Stylesheets: design tokens, the stylesheets they import and the at-rules they use."""
 
     id = "web.styles"
-    version = "1.1.0"
+    version = "1.2.0"
 
     def matches(self, path: str) -> bool:
         return path.lower().endswith(script.STYLE_EXTS) and not _skipped(path)

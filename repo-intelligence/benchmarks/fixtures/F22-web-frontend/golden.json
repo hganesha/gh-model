@@ -1,6 +1,6 @@
 {
   "fixture": "F22-web-frontend",
-  "description": "Three web front ends in one package: a React storefront (React Router, react-hook-form, Formik, a theme object, CSS custom properties and SCSS), a Vue checkout (Vue Router, v-model, vee-validate style controls) and an Angular back office (Routes with guards and role data, reactive and template-driven forms), plus static HTML pages and a small Express mock API. The web pack must find the screens, forms, controls, design tokens and guarded roles, link forms to the mock API's endpoints, and leave redirects and dynamic targets alone. Wave 2 adds: views RENDERED by the exported component Symbol of their file, form controls BOUND_TO the fields of a declared form model, stylesheets that DEPEND_ON the stylesheets they import, style tokens that are ALIAS_OF other tokens, and accessibility facts on controls and screens.",
+  "description": "Three web front ends in one package: a React storefront (React Router, react-hook-form, Formik, a theme object, CSS custom properties and SCSS), a Vue checkout (Vue Router, v-model, vee-validate style controls) and an Angular back office (Routes with guards and role data, reactive and template-driven forms), plus static HTML pages and a small Express mock API. The web pack must find the screens, forms, controls, design tokens and guarded roles, link forms to the mock API's endpoints, and leave redirects and dynamic targets alone. Wave 2 adds: views RENDERED by the exported component Symbol of their file, form controls BOUND_TO the fields of a declared form model, stylesheets that DEPEND_ON the stylesheets they import, style tokens that are ALIAS_OF other tokens, accessibility facts on controls and screens, and an `app` key part on the Screens of the Vue and Angular routers: the package holds two routers that share the label `routes`, so each `app` is its router file's directory (`checkout/src/router`, `backoffice/src/app`). The React routes in src/App.tsx sit under no router that file shows (main.tsx mounts it), so their keys stay {platform, name}.",
   "entities": [
     {
       "kind": "Screen",
@@ -83,7 +83,8 @@
       "kind": "Screen",
       "natural_key": {
         "platform": "web",
-        "name": "/cart"
+        "name": "/cart",
+        "app": "checkout/src/router"
       },
       "attributes": {
         "platform_kind": "web:Route"
@@ -94,7 +95,8 @@
       "kind": "Screen",
       "natural_key": {
         "platform": "web",
-        "name": "/checkout"
+        "name": "/checkout",
+        "app": "checkout/src/router"
       },
       "attributes": {
         "platform_kind": "web:Route"
@@ -105,7 +107,8 @@
       "kind": "Screen",
       "natural_key": {
         "platform": "web",
-        "name": "/thanks"
+        "name": "/thanks",
+        "app": "checkout/src/router"
       },
       "attributes": {
         "platform_kind": "web:Route"
@@ -116,7 +119,8 @@
       "kind": "Screen",
       "natural_key": {
         "platform": "web",
-        "name": "/backoffice"
+        "name": "/backoffice",
+        "app": "backoffice/src/app"
       },
       "attributes": {
         "platform_kind": "web:Route"
@@ -127,7 +131,8 @@
       "kind": "Screen",
       "natural_key": {
         "platform": "web",
-        "name": "/backoffice/users"
+        "name": "/backoffice/users",
+        "app": "backoffice/src/app"
       },
       "attributes": {
         "platform_kind": "web:Route"
@@ -138,7 +143,8 @@
       "kind": "Screen",
       "natural_key": {
         "platform": "web",
-        "name": "/backoffice/users/new"
+        "name": "/backoffice/users/new",
+        "app": "backoffice/src/app"
       },
       "attributes": {
         "platform_kind": "web:Route"
@@ -149,7 +155,8 @@
       "kind": "Screen",
       "natural_key": {
         "platform": "web",
-        "name": "/backoffice/reports"
+        "name": "/backoffice/reports",
+        "app": "backoffice/src/app"
       },
       "attributes": {
         "platform_kind": "web:Route"
@@ -1024,7 +1031,8 @@
         "kind": "Screen",
         "natural_key": {
           "platform": "web",
-          "name": "/checkout"
+          "name": "/checkout",
+          "app": "checkout/src/router"
         }
       },
       "since": "M2"
@@ -1043,7 +1051,8 @@
         "kind": "Screen",
         "natural_key": {
           "platform": "web",
-          "name": "/backoffice/users/new"
+          "name": "/backoffice/users/new",
+          "app": "backoffice/src/app"
         }
       },
       "since": "M2"
@@ -1108,7 +1117,8 @@
         "kind": "Screen",
         "natural_key": {
           "platform": "web",
-          "name": "/checkout"
+          "name": "/checkout",
+          "app": "checkout/src/router"
         }
       },
       "predicate": "CONTAINS",
@@ -1126,7 +1136,8 @@
         "kind": "Screen",
         "natural_key": {
           "platform": "web",
-          "name": "/backoffice/users/new"
+          "name": "/backoffice/users/new",
+          "app": "backoffice/src/app"
         }
       },
       "predicate": "CONTAINS",
@@ -1300,7 +1311,8 @@
         "kind": "Screen",
         "natural_key": {
           "platform": "web",
-          "name": "/checkout"
+          "name": "/checkout",
+          "app": "checkout/src/router"
         }
       },
       "since": "M2"
@@ -1336,7 +1348,8 @@
         "kind": "Screen",
         "natural_key": {
           "platform": "web",
-          "name": "/backoffice/users/new"
+          "name": "/backoffice/users/new",
+          "app": "backoffice/src/app"
         }
       },
       "since": "M2"
@@ -1372,7 +1385,8 @@
         "kind": "Screen",
         "natural_key": {
           "platform": "web",
-          "name": "/thanks"
+          "name": "/thanks",
+          "app": "checkout/src/router"
         }
       },
       "since": "M2"
@@ -1490,7 +1504,8 @@
         "kind": "Screen",
         "natural_key": {
           "platform": "web",
-          "name": "/checkout"
+          "name": "/checkout",
+          "app": "checkout/src/router"
         }
       },
       "predicate": "REQUIRES_ROLE",
@@ -1508,7 +1523,8 @@
         "kind": "Screen",
         "natural_key": {
           "platform": "web",
-          "name": "/backoffice"
+          "name": "/backoffice",
+          "app": "backoffice/src/app"
         }
       },
       "predicate": "REQUIRES_ROLE",
@@ -1526,7 +1542,8 @@
         "kind": "Screen",
         "natural_key": {
           "platform": "web",
-          "name": "/backoffice/users"
+          "name": "/backoffice/users",
+          "app": "backoffice/src/app"
         }
       },
       "predicate": "REQUIRES_ROLE",
@@ -1816,7 +1833,8 @@
       "kind": "Screen",
       "natural_key": {
         "platform": "web",
-        "name": "/backoffice/**"
+        "name": "/backoffice/**",
+        "app": "backoffice/src/app"
       },
       "why": "the wildcard route only redirects"
     },
@@ -1824,9 +1842,26 @@
       "kind": "Screen",
       "natural_key": {
         "platform": "web",
-        "name": "/backoffice/users/:id"
+        "name": "/backoffice/users/:id",
+        "app": "backoffice/src/app"
       },
       "why": "no such route is declared"
+    },
+    {
+      "kind": "Screen",
+      "natural_key": {
+        "platform": "web",
+        "name": "/checkout"
+      },
+      "why": "the package holds two routers (the Vue checkout's and the Angular back office's), so their Screens carry app; the unqualified key is gone"
+    },
+    {
+      "kind": "Screen",
+      "natural_key": {
+        "platform": "web",
+        "name": "/backoffice/users"
+      },
+      "why": "the back office router's Screens carry app: backoffice/src/app"
     },
     {
       "kind": "Screen",

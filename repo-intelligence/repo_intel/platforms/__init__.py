@@ -34,7 +34,7 @@ import importlib
 import pkgutil
 import re
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import Any, Callable, Literal
 
 from repo_intel.compile.contracts import Observation, Span
 from repo_intel.compile.ontology import EntityKind, EvidenceClass
@@ -73,6 +73,10 @@ class PlatformPack:
     extractors: tuple[Any, ...] = ()
     supersedes: tuple[str, ...] = ()  # extractor ids this pack replaces
     inputs: tuple[str, ...] = field(default=())  # out-of-repository inputs it reads, by file pattern (native extraction)
+    # Coverage rows the pack computes from compiled shards (unit name -> shard rows), beyond
+    # `platform_constructs`: the web pack's `accessibility`, say. `repo.compile` calls it for
+    # every pack that sets it, in pack id order.
+    coverage: Callable[[dict[str, dict]], list[dict]] | None = None
 
     def term(self, name: str) -> Term:
         for t in self.terms:

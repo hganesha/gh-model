@@ -694,15 +694,23 @@ class _Linker:
         that uses such an end to {name: the Symbol ref, as `symbol_ref` builds it, or None
         when the file exports no symbol of that name}. `unit.compile` then relates the
         Symbol, or falls back to "@package" with qualifier `component: <name>`.
+
+        Only symbols the extractor marks `exported` count (a Python method symbol, say, is
+        not an export). A name the file declares and exports only as its default
+        (`const X = ...; export default X`, `export { X as default }`) resolves to the
+        `default` Symbol, through the `local` name that symbol records.
         """
         out: dict[str, dict[str, dict[str, Any] | None]] = {}
         for path in sorted(self.files):
+            exported = {n for n, o in self.symbols[path].items() if o["payload"].get("exported") is True}
+            default = self.symbols[path].get("default", {}).get("payload", {})
+            local_default = default.get("local") if "default" in exported else None
             for o in _of(self.files[path], "relation"):
                 for end in (o["payload"].get("subject"), o["payload"].get("object")):
                     if isinstance(end, str) and end.startswith(SYMBOL_END):
                         name = end[len(SYMBOL_END):]
-                        found = name in self.symbols[path]
-                        out.setdefault(path, {})[name] = {**self.symbol_ref(path, name), "declare": False} if found else None
+                        target = name if name in exported else "default" if name == local_default else None
+                        out.setdefault(path, {})[name] = {**self.symbol_ref(path, target), "declare": False} if target else None
         return out
 
     # -- exports for repo-level linking
