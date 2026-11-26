@@ -1019,7 +1019,8 @@ def _lifted_knowledge(repo: str, g: _Shard, lifted: Mapping[str, Any]) -> None:
     (decisions.workflows), and what became of each screen capture (decisions.screens).
 
     A rule is model-written: its edges are hypotheses (`E5`, `inferred`) until an owner
-    confirms it, then `supported` on the owner's word. A workflow's states and transitions are
+    confirms it, then `supported` on the owner's word. A rule whose owner is a Symbol is also
+    enforced by the Symbol's container (qualifier `via: symbol`). A workflow's states and transitions are
     facts read from code (`E3`); it stays `inferred` until confirmed. A rejected rule or
     workflow is left out; its conflict comes from the confirmation decision.
 
@@ -1049,6 +1050,10 @@ def _lifted_knowledge(repo: str, g: _Shard, lifted: Mapping[str, Any]) -> None:
                 verification_ref="owner_override" if confirmed else None,
             )
             g.assertion(Assertion.make(r["owner"], Predicate.ENFORCES, rid, qualifiers={"basis": "rule_lifting"}, **how))
+            # A Symbol's Program, Component or Package enforces the rule through it: the
+            # architecture tier leaves Symbols out and would otherwise leave the rule unowned.
+            for container in r.get("containers", []):
+                g.assertion(Assertion.make(container, Predicate.ENFORCES, rid, qualifiers={"basis": "rule_lifting", "via": "symbol"}, **how))
             for target in r["applies_to"]:
                 g.assertion(Assertion.make(rid, Predicate.APPLIES_TO, target, qualifiers={"basis": "rule_lifting"}, **how))
 

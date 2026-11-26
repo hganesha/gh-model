@@ -24,7 +24,7 @@ from repo_intel.knowledge.bundle import _architecture_shards
 from repo_intel.storage.store import ObjectStore
 from repo_intel.workspace.settings import CompileSettings
 
-ON = CompileSettings(behavior_candidates=True)
+ON = CompileSettings(business_rules=True, captured_screens=True)
 
 CFML = {
     "orders/approve.cfm": (
@@ -235,6 +235,40 @@ def test_state_assignments_are_literal_or_dynamic():
     assert found[0]["guard"] == 'q.status == "submitted"'
 
 
+def test_sql_update_reads_from_states_in_where_in_and_bind_parameters():
+    url_id = {"e": "var", "scope": "url", "name": "id"}
+    body = [
+        # A bind parameter with a literal value is a state; WHERE IN gives every from state.
+        {"op": "query", "at": [0, 90], "sql": "UPDATE orders SET status = :next WHERE order_id = :id AND status IN ('submitted', 'held')",
+         "params": [{"name": "next", "value": _lit("approved")}, {"name": "id", "value": url_id}]},
+        # A bind parameter in the IN list counts when its value is a literal.
+        {"op": "query", "at": [100, 190], "sql": "UPDATE orders SET status = 'closed' WHERE order_id = :id AND status IN ('approved', :was)",
+         "params": [{"name": "was", "value": _lit("shipped")}, {"name": "id", "value": url_id}]},
+        # `?` names no parameter: the new state is dynamic; the literal IN still gives the from state.
+        {"op": "query", "at": [200, 290], "sql": "UPDATE orders SET status = ? WHERE order_id = ? AND status IN ('approved')", "params": []},
+        # One value of the IN list is not literal (no such parameter): no from state is guessed;
+        # the condition is kept as the transition's guard with the other non-key conditions.
+        {"op": "query", "at": [300, 390], "sql": "UPDATE orders SET status = 'cancelled' WHERE order_id = :id AND status IN (:a, :b) AND amount > 100",
+         "params": [{"name": "a", "value": _lit("draft")}]},
+        # `status = :prior` with a literal value, a schema-qualified table and an upper-case column.
+        {"op": "query", "at": [400, 490], "sql": "UPDATE sales.orders SET Status = :s, qty = 1 WHERE order_id = :id AND status = :prior",
+         "params": [{"name": "s", "value": _lit("shipped")}, {"name": "prior", "value": _lit("approved")}]},
+        # An inline parameter is text substituted into the SQL: never a state.
+        {"op": "query", "at": [500, 590], "sql": "UPDATE orders SET status = :s WHERE order_id = 1", "params": [{"name": "s", "value": _var("s", "form"), "inline": True}]},
+        {"op": "query", "at": [600, 690], "sql": "UPDATE orders SET status = 'x' WHERE status IN (:t)", "params": [{"name": "t", "value": _lit("y"), "inline": True}]},
+    ]
+    found = dm_workflows.unit_assignments(body)
+    assert [(a["at"][0], a["table"], a["value"], a["dynamic"], a["from"], a["guard"]) for a in found] == [
+        (0, "orders", "approved", False, ["held", "submitted"], None),
+        (100, "orders", "closed", False, ["approved", "shipped"], None),
+        (200, "orders", None, True, ["approved"], None),
+        (300, "orders", "cancelled", False, [], "(status IN (:a, :b)) and (amount > 100)"),
+        (400, "sales.orders", "shipped", False, ["approved"], None),
+        (500, "orders", None, True, [], "order_id = 1"),
+        (600, "orders", "x", True, [], "status IN (:t)"),
+    ]
+
+
 # ---------------------------------------------------------------- the model, held to its form
 
 
@@ -261,6 +295,69 @@ def test_rules_are_kept_only_with_valid_names_kinds_and_citations(tmp_path, stor
     bad, _ = _gateway(lambda data: {"rules": [{**good, "candidate_ids": ["c9"]}]})
     d = dm_rules.lift(_group(), ledger=Ledger(ObjectStore(tmp_path / "other", "t")), gateway=bad, budget=None)
     assert d.abstained and d.abstain_reason == "invalid_answer" and d.attempts == dm_rules.SPEC.max_attempts
+
+
+def test_slugs_are_the_contract_form_or_nothing():
+    assert dm_rules.slug("Quantity At Least One") == "quantity-at-least-one"
+    assert dm_rules.slug("  over 1,000: review!  ") == "over-1-000-review"
+    assert dm_rules.slug("a" * 60) == "a" * 60
+    for bad in (None, 7, ["a"], "", "   ", "---", "!!!", "a" * 61, "ab-" * 20 + "c"):
+        assert dm_rules.slug(bad) is None, bad
+
+
+def test_each_failure_mode_of_a_rule_is_rejected_alone():
+    by_id = {"c1": {}, "c2": {}, "c10": {}}
+    good = {"name": "positive-quantity", "statement": "Quantity must be positive.", "rule_kind": "validation", "candidate_ids": ["c1"]}
+    bad = {
+        "name not a string": {"name": 12},
+        "name empty once slugged": {"name": "***"},
+        "name too long": {"name": "n" * 61},
+        "kind unknown": {"rule_kind": "policy"},
+        "kind missing": {"rule_kind": None},
+        "statement too long": {"statement": "s" * 281},
+        "statement blank": {"statement": "   "},
+        "statement not a string": {"statement": ["Quantity must be positive."]},
+        "citations not a list": {"candidate_ids": "c1"},
+        "citations empty": {"candidate_ids": []},
+        "citation unknown": {"candidate_ids": ["c9"]},
+        "citation not a string": {"candidate_ids": [1]},
+        "one citation unknown among good ones": {"candidate_ids": ["c1", "c9"]},
+    }
+    for why, change in bad.items():
+        assert dm_rules._answered_rules({"rules": [{**good, **change}]}, by_id) == [], why
+    assert dm_rules._answered_rules({"rules": "none"}, by_id) == [] and dm_rules._answered_rules(["x"], by_id) == []
+    assert dm_rules._answered_rules({"rules": ["not an object", good]}, by_id) == [("validation", "positive-quantity", "Quantity must be positive.", ["c1"])]
+
+    # The first rule of a name wins; citations are deduplicated and kept in candidate order;
+    # the statement's whitespace is folded; rules come back sorted by name.
+    answer = {"rules": [
+        {**good, "name": "Zeta Rule", "statement": "Second\n  rule.", "candidate_ids": ["c10", "c2", "c10"]},
+        good, {**good, "statement": "A later duplicate.", "candidate_ids": ["c2"]},
+    ]}
+    assert dm_rules._answered_rules(answer, by_id) == [
+        ("validation", "positive-quantity", "Quantity must be positive.", ["c1"]),
+        ("validation", "zeta-rule", "Second rule.", ["c2", "c10"]),
+    ]
+
+
+def test_an_owner_with_many_candidates_sends_the_first_and_counts_the_rest():
+    from repo_intel.compile.buildgraph import StepInputs
+
+    n = dm_rules.MAX_CANDIDATES + 7
+    guards = [{"op": "if", "at": [i * 100, i * 100 + 50], "cond": {"e": "binop", "op": "<", "left": _var(f"v{i}", "form"), "right": _lit(1, "number")},
+               "then": [{"op": "throw", "at": [i * 100 + 10, i * 100 + 40], "value": _lit(f"v{i} is required")}]} for i in range(n)]
+    owner = {"id": "ent_owner", "kind": "Program", "name": "big.cfm", "natural_key": {"platform": "cfml", "name": "big.cfm"}, "attributes": {}, "evidence_ids": ["ev_1"]}
+    artifact = {"id": "ent_file", "kind": "Artifact", "name": "big.cfm", "natural_key": {"path": "big.cfm"}, "attributes": {}, "evidence_ids": []}
+    shard = {"unit": "@root", "entities": [owner, artifact], "assertions": [], "unknowns": [], "evidence": [{"id": "ev_1"}],
+             "behaviors": [{"id": "b1", "owner": "ent_owner", "artifact": "ent_file", "kind": "page", "evidence_ids": ["ev_1"], "body": list(reversed(guards))}]}
+    [group] = dm_rules._features(StepInputs(lambda ref: None, {"shards": {"@root": shard}}), {})["groups"]
+    assert len(group["candidates"]) == dm_rules.MAX_CANDIDATES and group["omitted"] == 7
+    assert [c["id"] for c in group["candidates"]] == [f"c{i}" for i in range(1, dm_rules.MAX_CANDIDATES + 1)]
+    assert [c["at"][0] for c in group["candidates"]] == [i * 100 for i in range(dm_rules.MAX_CANDIDATES)], "the first in span order are kept"
+    assert group["containers"] == [], "a Program owner has no container to add"
+    sent = dm_rules.model_features(group)
+    assert sent["omitted_candidates"] == 7 and len(sent["candidates"]) == dm_rules.MAX_CANDIDATES
+    assert "evidence_id" not in sent["candidates"][0] and "applies_to" not in sent["candidates"][0], "internal references are not sent"
 
 
 def test_lifting_abstains_on_denied_egress_and_on_model_failure(tmp_path, store):
@@ -297,6 +394,32 @@ def test_off_unless_the_settings_turn_it_on(tmp_path):
     assert not any(u["predicate"] in ("workflow_state", "captured_screen") for s in shards.values() for u in s["unknowns"])
     ledger = [store.get_json(e["digest"])["spec"] for e in store.get_json(result.manifest.ledger_entries_ref)]
     assert not any(s.split("@")[0] in (dm_rules.SPEC.id, dm_workflows.SPEC.id, dm_screens.SPEC.id) for s in ledger)
+
+
+def test_each_feature_has_its_own_switch(tmp_path):
+    files = {**CFML, **CAPTURE}
+    assert not dm_rules.enabled(CompileSettings(behavior_candidates=True)), "DM08's switch is not the rules switch"
+    assert not dm_rules.enabled(CompileSettings(behavior_candidates=True), "captured_screens")
+    assert not dm_rules.enabled(None) and not dm_rules.enabled(None, "captured_screens")
+
+    # DM08 alone: no rule, workflow or capture, and no 8.2 decision in the ledger.
+    model = FakeModel()
+    gw, _ = _gateway(model)
+    store, result, shards = _compile(tmp_path, files, gateway=gw, policy=CompileSettings(behavior_candidates=True), name="dm08")
+    assert not _entities(shards, "BusinessRule") and not _entities(shards, "Workflow")
+    assert not any("captured" in e["attributes"] for e in _entities(shards, "Screen"))
+    specs = {store.get_json(e["digest"])["spec"].split("@")[0] for e in store.get_json(result.manifest.ledger_entries_ref)}
+    assert not specs & {dm_rules.SPEC.id, dm_workflows.SPEC.id, dm_screens.SPEC.id}
+
+    # Rules alone lift rules and workflows, and capture nothing.
+    _, _, shards = _compile(tmp_path, files, gateway=gw, policy=CompileSettings(business_rules=True), name="rules")
+    assert _entities(shards, "BusinessRule") and _entities(shards, "Workflow")
+    assert not any("captured" in e["attributes"] for e in _entities(shards, "Screen"))
+
+    # Captures alone attach regions and lift nothing.
+    _, _, shards = _compile(tmp_path, files, gateway=gw, policy=CompileSettings(captured_screens=True), name="screens")
+    assert not _entities(shards, "BusinessRule") and not _entities(shards, "Workflow")
+    assert any("captured" in e["attributes"] for e in _entities(shards, "Screen"))
 
 
 # ---------------------------------------------------------------- compiled rules and workflows
@@ -410,6 +533,88 @@ def test_owner_confirms_and_rejects_through_decision_overrides(tmp_path):
     ledger = {e["decision_id"]: store.get_json(e["digest"]) for e in store.get_json(second.manifest.ledger_entries_ref)}
     owner_words = sorted(d["selected_label"] for d in ledger.values() if d["decision_method"] == "owner_override")
     assert owner_words == ["confirmed", "confirmed", "rejected"], "each confirmation is its own ledger decision"
+
+
+def test_a_rejected_workflow_leaves_a_conflict_record(tmp_path):
+    gw, _ = _gateway(FakeModel())
+    store, _, shards = _compile(tmp_path, CFML, gateway=gw)
+    [wf] = _entities(shards, "Workflow")
+    overrides = Overrides.of(OverrideDocument(decisions=[DecisionOverride(spec="dm.workflows", scope_entity=wf["id"], label="rejected", reason="Status is a display field here.")]))
+    _, second, shards = _compile(tmp_path, CFML, gateway=gw, overrides=overrides, store=store)
+    assert _entities(shards, "Workflow") == [], "a rejected workflow leaves the snapshot"
+    assert not [a for s in shards.values() for a in s["assertions"] if wf["id"] in (a["subject"], a["object"])], "and so do its edges"
+    [conflict] = [c for c in store.get_json(second.manifest.conflicts_ref) if c["subject_ids"] == [wf["id"]]]
+    assert conflict["conflict_type"] == "label_disagreement" and conflict["preferred"] == "owner_override:rejected"
+    ledger = [store.get_json(e["digest"]) for e in store.get_json(second.manifest.ledger_entries_ref)]
+    [word] = [d for d in ledger if d["decision_method"] == "owner_override"]
+    assert (word["spec"].split("@")[0], word["scope_entity"], word["selected_label"]) == (dm_workflows.SPEC.id, wf["id"], "rejected")
+    assert [(d["method"], d["label"]) for d in word["disagreements"]] == [("llm", "hypothesis")], "the compiler's word, overruled"
+    assert set(conflict["evidence_ids"]) == set(word["evidence_ids"]) == set(wf["evidence_ids"])
+
+
+def test_a_cold_compile_with_rules_on_is_deterministic(tmp_path):
+    """Two compiles of one commit into two empty stores, each with its own model: the same
+    snapshot, byte for byte, down to the hash that covers the decision ledger."""
+    first_model, second_model = FakeModel(), FakeModel()
+    files = {**CFML, **SAS, **CAPTURE}
+    store, first, shards = _compile(tmp_path, files, gateway=_gateway(first_model)[0])
+    assert _entities(shards, "BusinessRule") and _entities(shards, "Workflow"), "the comparison needs lifted knowledge"
+    cold = ObjectStore(tmp_path / "cold-store", "t")
+    second = compile_commit(cold, tmp_path / "repo", REPO_ID, first.manifest.commit_sha, gateway=_gateway(second_model)[0], policy=ON, use_cache=False)
+    assert second_model.calls and len(second_model.calls) == len(first_model.calls), "the cold store asked its model the same questions"
+    assert second.manifest.rkp_hash == first.manifest.rkp_hash
+    assert second.manifest.content_hash == first.manifest.content_hash and second.manifest.provenance_hash == first.manifest.provenance_hash
+    assert load_shards(cold, second.manifest) == shards
+
+
+def test_a_rule_a_function_enforces_stays_attached_in_the_architecture_tier(tmp_path):
+    files = {
+        "services/orderservice.cfc": (
+            '<cfcomponent output="false">\n'
+            '  <cffunction name="approve" access="public" returntype="void">\n'
+            '    <cfargument name="qty" type="numeric" required="true">\n'
+            '    <cfif arguments.qty LT 1>\n'
+            '      <cfthrow type="Validation" message="Quantity must be at least one">\n'
+            "    </cfif>\n"
+            "  </cffunction>\n"
+            "</cfcomponent>\n"
+        ),
+    }
+    gw, _ = _gateway(FakeModel())
+    store, result, shards = _compile(tmp_path, files, gateway=gw)
+    ents = {e["id"]: e for s in shards.values() for e in s["entities"]}
+    [rule] = _entities(shards, "BusinessRule")
+    enforces = sorted((ents[a["subject"]]["kind"], ents[a["subject"]]["name"], a["qualifiers"].get("via")) for a in _assertions(shards, "ENFORCES") if a["object"] == rule["id"])
+    symbol, program = enforces[1], enforces[0]
+    assert symbol[0] == "Symbol" and symbol[2] is None and rule["natural_key"]["scope"] == symbol[1]
+    assert program[0] == "Program" and program[2] == "symbol", "the component enforces the rule through its function"
+    contains = {(a["subject"], a["object"]) for a in _assertions(shards, "CONTAINS")}
+    sym_id = next(i for i, e in ents.items() if e["kind"] == "Symbol" and e["name"] == symbol[1])
+    prog_id = next(a["subject"] for a in _assertions(shards, "ENFORCES") if a["object"] == rule["id"] and a["qualifiers"].get("via") == "symbol")
+    assert (prog_id, sym_id) in contains
+    both = [a for a in _assertions(shards, "ENFORCES") if a["object"] == rule["id"]]
+    assert len({(a["assertion_kind"], a["epistemic_status"], a["evidence_class"], a["decision_ref"]) for a in both}) == 1, "the container's edge is as strong as the Symbol's"
+
+    conflicts = store.get_json(result.manifest.conflicts_ref)
+    tier = _architecture_shards(shards, conflicts)
+    kept = [a for s in tier.values() for a in s["assertions"] if a["predicate"] == "ENFORCES" and a["object"] == rule["id"]]
+    assert [(a["subject"], a["qualifiers"]) for a in kept] == [(prog_id, {"basis": "rule_lifting", "via": "symbol"})]
+    assert rule["id"] in {e["id"] for s in tier.values() for e in s["entities"]}
+
+
+def test_a_symbol_without_a_container_falls_back_to_the_package_its_key_names():
+    from repo_intel.decisions.rules import _Index
+
+    symbol = {"id": "ent_sym", "kind": "Symbol", "name": "save", "natural_key": {"package": "shop", "qualified_name": "app.save"}}
+    package = {"id": "ent_pkg", "kind": "Package", "name": "shop", "natural_key": {"ecosystem": "pypi", "name": "shop", "manifest_dir": ""}}
+    other = {"id": "ent_pkg2", "kind": "Package", "name": "shop", "natural_key": {"ecosystem": "npm", "name": "shop", "manifest_dir": "web"}}
+    empty = {"assertions": [], "evidence": [], "unknowns": []}
+    index = _Index({"@root": {**empty, "unit": "@root", "entities": [symbol, package]}, "web": {**empty, "unit": "web", "entities": [other]}})
+    assert index.symbol_containers("ent_sym") == ["ent_pkg"], "only the Package of the Symbol's own unit"
+    index = _Index({"@root": {**empty, "unit": "@root", "entities": [symbol, package, {**other, "id": "ent_pkg3"}]}})
+    assert index.symbol_containers("ent_sym") == [], "two Packages of that name: none is chosen"
+    index = _Index({"@root": {**empty, "unit": "@root", "entities": [symbol]}})
+    assert index.symbol_containers("ent_sym") == [], "no container and no Package: the Symbol keeps only its own edge"
 
 
 # ---------------------------------------------------------------- captured screens
