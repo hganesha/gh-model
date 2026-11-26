@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html>
+<head><title>@ViewData["Title"] - Customer portal</title></head>
+<body>
+<nav>
+    <a asp-page="/Index">Home</a>
+    <a asp-page="/Orders/Index">My orders</a>
+    @if (User.IsInRole("Support"))
+    {
+        <a href="/support/queue">Support queue</a>
+    }
+</nav>
+<main>@RenderBody()</main>
+@await RenderSectionAsync("Scripts", required: false)
+</body>
+</html>

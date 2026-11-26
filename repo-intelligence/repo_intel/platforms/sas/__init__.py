@@ -26,6 +26,7 @@ from __future__ import annotations
 
 from repo_intel.compile.ontology import EntityKind as K
 from repo_intel.platforms import Construct, PlatformPack, Term
+from repo_intel.platforms.sas import egp
 from repo_intel.platforms.sas.inputs import SasInputs
 
 NATIVE_INPUTS = ".rkp/inputs/sas/"
@@ -223,9 +224,9 @@ PACK = PlatformPack(
     name="SAS",
     prefix="sas",
     version="1.2.0",
-    terms=TERMS,
-    constructs=CONSTRUCTS,
-    extractors=(SasSource(), SasInputs()),
+    terms=TERMS + egp.TERMS,
+    constructs=CONSTRUCTS + egp.CONSTRUCTS,
+    extractors=(SasSource(), SasInputs(), egp.EgpProject()),
     supersedes=("legacy.sas",),
     inputs=(NATIVE_INPUTS + "**",),
 )

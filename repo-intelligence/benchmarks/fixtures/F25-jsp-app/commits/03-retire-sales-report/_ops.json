@@ -1,0 +1,1 @@
+{"message": "Sales figures moved to the warehouse: retire the sales report page", "delete": ["src/main/webapp/reports/sales.jsp"]}
