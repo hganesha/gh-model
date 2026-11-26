@@ -22,11 +22,17 @@ import threading
 from dataclasses import dataclass, field
 from typing import Any
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from repo_intel.compile.contracts import Model
 from repo_intel.storage.hashing import digest, make_id
 from repo_intel.storage.store import ObjectStore
+
+
+# Specs whose results an owner confirms or rejects rather than relabels (contract 8.2):
+# the override's scope is the lifted rule or workflow, and only these labels mean anything.
+CONFIRMATION_SPECS = frozenset({"dm.business-rules", "dm.workflows"})
+CONFIRMATION_LABELS = ("confirmed", "rejected")
 
 
 class DecisionOverride(Model):
@@ -34,6 +40,12 @@ class DecisionOverride(Model):
     scope_entity: str = Field(pattern=r"^ent_[a-z0-9]{26}$")
     label: str = Field(min_length=1, max_length=120)
     reason: str = Field("", max_length=500)
+
+    @model_validator(mode="after")
+    def _confirmation_label(self) -> "DecisionOverride":
+        if self.spec in CONFIRMATION_SPECS and self.label not in CONFIRMATION_LABELS:
+            raise ValueError(f"{self.spec} overrides confirm or reject: use label confirmed or rejected")
+        return self
 
 
 class PreferenceOverride(Model):
