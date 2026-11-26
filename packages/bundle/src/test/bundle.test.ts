@@ -4,6 +4,7 @@ import { promises as fs } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { BundleError, loadBundle, readManifest } from "../index";
+import type { BusinessRuleAttributes, CodeListAttributes, DataSchemaAttributes, DetailOmitted, RequirementAttributes, ScreenCapturedAttributes } from "../index";
 
 const SPAN = { start_byte: 0, end_byte: 10, start_line: 3, end_line: 5 };
 
@@ -163,4 +164,35 @@ test("indexes behaviour rows by owner and skips tables it does not know", async 
   assert.deepEqual(bundle.behaviorOf("ent_a").map((b) => b.kind), [undefined, "data_step"], "a unit's kind is kept when it has one");
   assert.deepEqual(bundle.behaviorOf("ent_b"), []);
   assert.equal(bundle.entities.size, 2);
+});
+
+test("reads the architecture tier's omitted attributes and the attributes of rules, requirements, schemas and code lists", async () => {
+  const entity = (id: string, kind: string, name: string, natural_key: Record<string, unknown>, attributes: Record<string, unknown>) =>
+    ({ table: "entity", id, kind, name, natural_key, attributes, evidence_ids: [] });
+  const rows = [
+    ...unitRows,
+    entity("ent_rule", "BusinessRule", "quantity-at-least-one", { scope: "approve.cfm", name: "quantity-at-least-one" },
+      { statement: "An order needs a quantity of at least one.", rule_kind: "validation", status: "confirmed", candidates: [{ id: "c1", kind: "guard", path: "approve.cfm", at: [3, 40] }], confirmation_ref: "dec_1" }),
+    entity("ent_req", "Requirement", "req-12", { scope: "docs/spec.md", name: "req-12" },
+      { statement: "REQ-12 The desk shall keep a history of every order.", modality: "shall", identifier: "REQ-12", section: ["Orders", "History"] }),
+    entity("ent_schema", "DataSchema", "docs/spec.md#orders", { name: "docs/spec.md#orders" }, { documents_table: "ent_table" }),
+    entity("ent_codes", "CodeList", "docs/spec.md#status", { platform: "document", name: "docs/spec.md#status" }, { values: [{ code: "O", label: "Open" }, { code: "C", label: "Closed" }] }),
+  ];
+  const omitted = { entities: 4, assertions: 9, evidence: 3, unknowns: 0, behaviors: 2, transforms: 1, "Screen.captured": 1 };
+  const root = await writeBundle({ ...manifest, tier: "architecture", detail_omitted: omitted, units: [{ ...manifest.units[0], entities: 6 }] }, { "units/root.jsonl": rows });
+  const bundle = await loadBundle(root);
+  assert.ok(bundle);
+  const detail: DetailOmitted | undefined = bundle.manifest.detail_omitted;
+  assert.equal(detail?.["Screen.captured"], 1);
+  assert.equal(detail?.transforms, 1);
+  const rule = bundle.ofKind("BusinessRule")[0]?.attributes as unknown as BusinessRuleAttributes;
+  assert.equal(rule.status, "confirmed");
+  assert.deepEqual(rule.candidates?.map((c) => c.at), [[3, 40]]);
+  const req = bundle.ofKind("Requirement")[0]?.attributes as unknown as RequirementAttributes;
+  assert.equal(req.identifier, "REQ-12");
+  assert.equal((bundle.ofKind("DataSchema")[0]?.attributes as DataSchemaAttributes).documents_table, "ent_table");
+  const codes = bundle.ofKind("CodeList")[0]?.attributes as CodeListAttributes;
+  assert.deepEqual(codes.values?.map((v) => v.code), ["O", "C"]);
+  const screen: ScreenCapturedAttributes = {};
+  assert.equal(screen.captured, undefined);
 });
