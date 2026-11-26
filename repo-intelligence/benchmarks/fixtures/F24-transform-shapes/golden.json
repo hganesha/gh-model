@@ -44,8 +44,8 @@
    "since": "M2",
    "attributes": {
     "transforms": {
-     "primitives": ["dedupe_by_key", "union_by_name"],
-     "purpose": "deduplication"
+     "primitives": ["union_by_name"],
+     "purpose": "integration"
     }
    }
   },
@@ -88,7 +88,7 @@
  "forbidden_kinds": ["Package", "Component"],
  "expected_unknowns": [
   {"since": "M2", "detail": "load_region reads a DataFrame passed in and writes silver.orders_{region}: both stay placeholders and the transform is marked dynamic"},
-  {"since": "M2", "detail": "PySpark dropDuplicates keeps an arbitrary row per key: dedupe_by_key without an order"}
+  {"since": "M2", "detail": "PySpark dropDuplicates keeps an arbitrary row per key: with no order it is only a dedupe_by_key candidate, so the job's primitives are union_by_name alone"}
  ],
  "expected_conflicts": [],
  "commits": [

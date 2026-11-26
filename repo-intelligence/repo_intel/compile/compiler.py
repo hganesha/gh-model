@@ -452,8 +452,9 @@ def _transforms(shard: _Shard, repo: str, unit_root: str, package: str | None, a
 
     Behaviour units stored in 4b are read again through `transforms.from_behavior`; `transform`
     observations come from extractors. "@package" is the unit's package, or the file's Artifact
-    when the unit has none. A unit whose owner nothing declares, or that does not validate,
-    becomes an unknown on its file, counted in `transform_shapes` coverage.
+    when the unit has none. A unit whose owner nothing declares, that does not validate, or
+    whose derivation failed, becomes an unknown on its file, counted in `transform_shapes`
+    coverage.
     """
     from repo_intel.compile import transforms as tx
 
@@ -464,6 +465,7 @@ def _transforms(shard: _Shard, repo: str, unit_root: str, package: str | None, a
             p = o["payload"]
             span = o["evidence"]["span"]
             at = [span["start_byte"], span["end_byte"]]
+            where = f"bytes {at[0]}-{at[1]}"
             if o["kind"] == "behavior":
                 owner = p.get("owner") if isinstance(p.get("owner"), dict) else {}
                 try:
@@ -472,7 +474,13 @@ def _transforms(shard: _Shard, repo: str, unit_root: str, package: str | None, a
                     continue
                 if (artifact, o["evidence"]["id"], owner_id) not in stored:
                     continue  # not stored: 4b already recorded why
-                derived = tx.from_behavior(p)
+                try:
+                    derived = tx.from_behavior(p)
+                except Exception as exc:  # a recognizer fault: the compile goes on, the unit is counted as not derived
+                    # The type only: an exception's text can quote the source it failed on.
+                    row = Unknown.make(artifact, TRANSFORM_OWNER, "unknown", f"transform shapes not derived at {where}: {type(exc).__name__}", f"transform_shapes:{shard.unit}").row()
+                    shard.unknowns[row["id"]] = row
+                    continue
                 if derived is None:
                     continue  # moves no data
                 language, transforms = derived
@@ -491,7 +499,6 @@ def _transforms(shard: _Shard, repo: str, unit_root: str, package: str | None, a
                         owner_id = None
             else:
                 continue
-            where = f"bytes {at[0]}-{at[1]}"
             if problems:
                 reason = f"transform unit at {where} is not valid: {problems[0]}"
             elif owner_id not in shard.entities:
@@ -518,7 +525,14 @@ def _transforms(shard: _Shard, repo: str, unit_root: str, package: str | None, a
 
 def transform_coverage(shards: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
     """`transform_shapes` coverage per unit that has any: units with at least one recognised
-    (non-`platform`) transform over units that move data, counting those dropped as unknowns."""
+    (non-`platform`) transform over units that move data, counting those dropped as unknowns.
+
+    `detail.statements` counts statements inside the stored units, so a script with one
+    recognised statement out of ten shows as 1 of 10 although the unit counts as recognised.
+    A statement is a distinct `at` span among a unit's transforms (every transform of one SQL
+    statement carries that statement's span; a SAS clause or PySpark call has its own), and it
+    is recognised when at least one transform with that span is not `platform`. Units dropped
+    as unknowns have no stored transforms, so they add no statements."""
     from repo_intel.compile.transforms import moves_data
 
     out = []
@@ -528,10 +542,18 @@ def transform_coverage(shards: dict[str, dict[str, Any]]) -> list[dict[str, Any]
         dropped = sum(1 for u in shard.get("unknowns", []) if u["predicate"] == TRANSFORM_OWNER)
         if rows or dropped:
             languages: dict[str, int] = {}
+            statements = recognised_statements = 0
             for r in rows:
                 languages[r["language"]] = languages.get(r["language"], 0) + 1
+                spans: dict[tuple[int, int], bool] = {}
+                for t in r["transforms"]:
+                    key = (t["at"][0], t["at"][1])
+                    spans[key] = spans.get(key, False) or t.get("op") != "platform"
+                statements += len(spans)
+                recognised_statements += sum(spans.values())
             recognised = sum(1 for r in rows if moves_data(r["transforms"]))
-            out.append(CoverageEntry(domain="transform_shapes", scope=name, numerator=recognised, denominator=len(rows) + dropped, detail={"by_language": dict(sorted(languages.items()))}).row())
+            detail = {"by_language": dict(sorted(languages.items())), "statements": {"recognised": recognised_statements, "total": statements}}
+            out.append(CoverageEntry(domain="transform_shapes", scope=name, numerator=recognised, denominator=len(rows) + dropped, detail=detail).row())
     return out
 
 

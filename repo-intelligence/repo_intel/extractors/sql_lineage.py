@@ -277,8 +277,9 @@ def transform_shapes(blob: str, data: bytes, text: str, a: int, b: int, owner: d
         if not transforms:
             return [], []
         return [transform_observation(blob, span(data, to_byte(a), to_byte(b)), owner, "sql", transforms)], []
-    except (ValueError, RecursionError) as exc:  # a recognizer fault: the lineage stands, the shapes are left out
-        return [], [diagnostic(extractor, "warning", f"transform shapes not derived: {exc}"[:200])]
+    except Exception as exc:  # a recognizer fault: the lineage stands, the shapes are left out
+        # The type only: an exception's text can quote the SQL it failed on.
+        return [], [diagnostic(extractor, "warning", f"transform shapes not derived: {type(exc).__name__}")]
 
 
 class SqlScripts:

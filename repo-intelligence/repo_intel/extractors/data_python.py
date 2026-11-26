@@ -29,7 +29,8 @@ is marked `parameterized`; anything else is counted in the file's
 "lineage_summary" as unresolved, never guessed.
 
 The subject of a notebook's reads and writes is the Notebook; elsewhere it is the
-package that owns the file ("@package").
+package that owns the file ("@package"). Transform shapes (repo_intel.compile.transforms)
+belong to the Notebook, or outside a notebook to the file's Artifact ("@file").
 """
 
 from __future__ import annotations
@@ -42,7 +43,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from repo_intel.compile.ontology import EntityKind, EvidenceClass, Predicate
-from repo_intel.extractors.base import PACKAGE, Extraction, diagnostic, entity, obs, ref, relation, span, whole_file
+from repo_intel.extractors.base import FILE, PACKAGE, Extraction, diagnostic, entity, obs, ref, relation, span, whole_file
 from repo_intel.extractors.sql_lineage import lineage
 
 K = EntityKind
@@ -1146,8 +1147,11 @@ class _SparkShapes:
                 return b.add("deduplicate", at, [ref], candidates=["dedupe_by_key"])
             if not subset:
                 return b.add("deduplicate", at, [ref], candidates=["dedupe_by_hash"])
-            primitive = "dedupe_by_hash" if len(subset) == 1 and subset[0] in self.hash_columns else "dedupe_by_key"
-            return b.add("deduplicate", at, [ref], keys=subset, primitive=primitive)
+            if len(subset) == 1 and subset[0] in self.hash_columns:
+                return b.add("deduplicate", at, [ref], keys=subset, primitive="dedupe_by_hash")
+            # pipeline-builder's dedupe_by_key needs an order that picks the surviving row;
+            # dropDuplicates keeps an arbitrary row per key, so it only suggests the primitive.
+            return b.add("deduplicate", at, [ref], keys=subset, candidates=["dedupe_by_key"])
         if method == "distinct":
             return b.add("deduplicate", at, [ref], candidates=["dedupe_by_hash"])
         if method in ("orderBy", "sort"):
@@ -1426,7 +1430,7 @@ def sql_cell_shapes(ctx: Context, cell: Cell, owner: Any) -> list:
 
 class DataPython:
     id = "data.python"
-    version = "1.1.0"
+    version = "1.2.0"
 
     def matches(self, path: str) -> bool:
         return path.lower().endswith(NOTEBOOK_EXTS)
@@ -1490,13 +1494,16 @@ def scan_cells(path: str, data: bytes, blob: str, language: str, cells: list[Cel
         if "airflow" in imports:
             _Airflow(ctx, strings, scan).run(tree)
     try:  # transform shapes: a recognizer fault leaves the lineage above as it is
-        out += pyspark_shapes(ctx, strings, trees, imports, subject, notebook_format is not None)
+        # Outside a notebook each module's shapes belong to its file, so a package's purpose
+        # is not a mix of every module in it; the lineage above stays on the package.
+        out += pyspark_shapes(ctx, strings, trees, imports, subject if notebook_format else FILE, notebook_format is not None)
         if notebook_format:
             for cell in cells:
                 if cell.kind == "sql":
                     out += sql_cell_shapes(ctx, cell, subject)
-    except (ValueError, RecursionError) as exc:
-        diagnostics.append(diagnostic(extractor_id, "warning", f"transform shapes not derived: {exc}"[:200]))
+    except Exception as exc:
+        # The type only: an exception's text can quote the source it failed on.
+        diagnostics.append(diagnostic(extractor_id, "warning", f"transform shapes not derived: {type(exc).__name__}"))
     if ctx.signals:
         out.append(obs("ml_signal", blob, whole_file(data), {"signals": sorted(ctx.signals)}, E2))
     if ctx.resolved or ctx.unresolved:

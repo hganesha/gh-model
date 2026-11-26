@@ -389,7 +389,7 @@ SPARK_HEADER = "from pyspark.sql import Window\nimport pyspark.sql.functions as 
 def test_pyspark_row_number_filter_is_dedupe_by_key():
     [u] = spark(SPARK_HEADER + "w = Window.partitionBy('order_id').orderBy(F.col('updated_at').desc())\n"
                 "spark.read.table('raw.orders').withColumn('rn', F.row_number().over(w)).filter(F.col('rn') == 1).drop('rn').write.saveAsTable('stg.latest')\n")
-    assert u["owner"] == "@package" and u["language"] == "pyspark"
+    assert u["owner"] == "@file" and u["language"] == "pyspark", "outside a notebook the shapes belong to the file, not its package"
     first, last = u["transforms"][0], u["transforms"][-1]
     assert first["primitive"] == "dedupe_by_key" and first["keys"] == ["order_id"] and first["order"] == [{"column": "updated_at", "desc": True}]
     assert last["primitive"] == "drop_columns" and last["output"] == "stg.latest"
@@ -421,6 +421,8 @@ def test_pyspark_methods():
     assert get("filter", primitive="top_n_filter")[0]["order"] == [{"column": "ts", "desc": False}]
     assert get("deduplicate", primitive="dedupe_by_hash")[0]["keys"] == ["h"]
     assert get("deduplicate", candidates=["dedupe_by_hash"])
+    assert get("deduplicate", keys=["k"], candidates=["dedupe_by_key"]), "dropDuplicates has no order: a candidate, not the primitive"
+    assert not get("deduplicate", primitive="dedupe_by_key")
     assert get("project", primitive="apply_defaults")[0]["columns"] == {"replace": ["amt"]}
     assert get("unpivot", primitive="unpivot")[0]["keys"] == ["id"]
     assert get("project", primitive="trim_strings")[0]["columns"] == {"replace": ["name"]}
@@ -448,6 +450,28 @@ def test_pyspark_parameters_and_f_strings_stay_dynamic():
     assert t[0]["inputs"] == ["{df}"] and t[0]["dynamic"] is True and t[-1]["output"] == "stg.orders_{region}"
     [u] = spark(SPARK_HEADER + "def read(name):\n    return spark.read.table(name).filter('amt > 0')\n")
     assert u["transforms"][0]["op"] == "platform" and u["transforms"][0]["dynamic"] is True, "a table named by a parameter is not guessed"
+
+
+def test_pyspark_modules_own_their_shapes_and_their_package_keeps_the_lineage():
+    text = SPARK_HEADER + "spark.table('raw.a').write.saveAsTable('stg.b')\ndef f():\n    spark.table('raw.c').write.saveAsTable('stg.d')\n"
+    extraction = DataPython().extract("jobs/job.py", text.encode(), "0" * 64)
+    units = [o.payload for o in extraction.observations if o.kind == "transform"]
+    assert len(units) == 2 and {u["owner"] for u in units} == {"@file"}, "module and function units belong to the file"
+    lineage = [o.payload for o in extraction.observations if o.kind == "relation" and o.payload["predicate"] in ("READS_FROM", "WRITES_TO")]
+    assert lineage and {r["subject"] for r in lineage} == {"@package"}
+
+
+def test_a_pyspark_recognizer_fault_leaves_the_lineage_and_names_only_its_type(monkeypatch):
+    from repo_intel.extractors import data_python
+
+    def broken(*args, **kwargs):
+        raise KeyError("secret-looking text")
+
+    monkeypatch.setattr(data_python, "pyspark_shapes", broken)
+    extraction = DataPython().extract("jobs/job.py", (SPARK_HEADER + "spark.table('raw.a').write.saveAsTable('stg.b')\n").encode(), "0" * 64)
+    assert not [o for o in extraction.observations if o.kind == "transform"]
+    assert [o for o in extraction.observations if o.kind == "relation"], "the lineage stands"
+    assert [d.message for d in extraction.diagnostics] == ["transform shapes not derived: KeyError"]
 
 
 def test_pandas_and_plain_python_are_never_read_as_spark():
@@ -508,7 +532,51 @@ def test_owner_attributes_and_coverage(compiled):
     history = entities[_owner("Program", {"platform": "sql", "name": "dim.load_customer_history"})]
     assert "apply_scd_type_2" in history["attributes"]["transforms"]["primitives"]
     coverage = [c for c in store.get_json(manifests[0].coverage_ref) if c["domain"] == "transform_shapes"]
-    assert coverage == [{"domain": "transform_shapes", "scope": "@root", "numerator": 11, "denominator": 11, "detail": {"by_language": {"pyspark": 3, "sas": 6, "sql": 2}}}]
+    assert coverage == [{"domain": "transform_shapes", "scope": "@root", "numerator": 11, "denominator": 11, "detail": {"by_language": {"pyspark": 3, "sas": 6, "sql": 2}, "statements": {"recognised": 24, "total": 24}}}]
+
+
+def test_statement_coverage_shows_one_recognised_statement_out_of_ten():
+    script = "insert into mart.n select region, count(*) as n from raw.orders group by region;\n" + "".join(f"delete from stg.t{i};\n" for i in range(9))
+    extraction = SqlScripts().extract("sql/load.sql", script.encode(), "0" * 64)
+    [unit] = [o.payload for o in extraction.observations if o.kind == "transform"]
+    row = {"owner": "ent_x", "path": "sql/load.sql", "at": [0, len(script)], "language": "sql", "transforms": unit["transforms"]}
+    [c] = compiler.transform_coverage({"@root": {"transforms": [row], "unknowns": []}})
+    assert (c["numerator"], c["denominator"]) == (1, 1), "the unit moves data and something in it is recognised"
+    assert c["detail"] == {"by_language": {"sql": 1}, "statements": {"recognised": 1, "total": 10}}
+
+
+def test_a_sql_recognizer_fault_leaves_the_lineage_and_names_only_its_type(monkeypatch):
+    def broken(*args, **kwargs):
+        raise KeyError("secret-looking text")
+
+    monkeypatch.setattr(tx, "sql_unit", broken)
+    extraction = SqlScripts().extract("sql/load.sql", b"insert into mart.n select k, sum(v) as s from raw.b group by k;\n", "0" * 64)
+    assert not [o for o in extraction.observations if o.kind == "transform"]
+    assert [o for o in extraction.observations if o.kind == "relation"], "the lineage stands"
+    assert [d.message for d in extraction.diagnostics] == ["transform shapes not derived: KeyError"]
+
+
+def test_a_fault_deriving_shapes_from_behaviour_is_an_unknown_and_the_compile_goes_on(tmp_path, monkeypatch):
+    def broken(unit):
+        raise KeyError("secret-looking text")
+
+    from repo_intel.compile import buildgraph
+
+    monkeypatch.setattr(tx, "from_behavior", broken)
+    monkeypatch.setenv(buildgraph.EXECUTOR_ENV, "inprocess")  # the patch exists only in this process
+    shas = materialize(FIXTURE, tmp_path / "repo")
+    store = ObjectStore(tmp_path / "store", "t")
+    manifest = compile_commit(store, tmp_path / "repo", REPO_ID, shas[0]).manifest
+    shards = load_shards(store, manifest)
+    unknowns = [u for s in shards.values() for u in s["unknowns"] if u["predicate"] == compiler.TRANSFORM_OWNER]
+    stored = [b for s in shards.values() for b in s.get("behaviors", [])]
+    assert len(stored) == 7 and len(unknowns) == 7, "one per stored SAS step: whether it moves data is not known"
+    assert all(u["reason"].startswith("transform shapes not derived at bytes ") and u["reason"].endswith(": KeyError") for u in unknowns)
+    assert all("secret" not in u["reason"] for u in unknowns), "the exception's text is never kept"
+    rows = [r for s in shards.values() for r in s.get("transforms", [])]
+    assert {r["language"] for r in rows} == {"pyspark", "sql"}, "shapes the extractors emitted are still stored"
+    [c] = [c for c in store.get_json(manifest.coverage_ref) if c["domain"] == "transform_shapes"]
+    assert (c["numerator"], c["denominator"]) == (5, 12)
 
 
 def test_an_owner_nothing_declares_is_an_unknown_counted_in_coverage():
@@ -533,6 +601,22 @@ def test_an_owner_nothing_declares_is_an_unknown_counted_in_coverage():
 
 def test_a_shard_without_shapes_has_no_table():
     assert "transforms" not in compiler._Shard("u").rows()
+
+
+def test_the_publish_gate_reads_a_transform_owner_as_a_content_id(tmp_path):
+    from repo_intel.ingest import secrets
+    from repo_intel.ingest.publish_secrets import leaked_secrets
+
+    # A URL password that happens to look like an entity id: the owner field is the id the
+    # compiler wrote, as it is for behaviour rows, so it is not a leak.
+    owner = "ent_abcdefghijklmnopqrstuvwxyz"
+    source = f"DATABASE_URL=postgres://app:{owner}@db/work\n".encode()
+    store = ObjectStore(tmp_path / "store", "t")
+    manifest = {"entries": [{"path": "config.env", "blob_sha256": store.put_bytes(source).split(":", 1)[1], "secret_findings": secrets.scan(source)}]}
+    row = {"owner": owner, "path": "jobs/job.py", "at": [0, 3], "language": "pyspark", "transforms": [{"id": "t1", "op": "read", "at": [0, 3], "inputs": ["a"], "output": "b"}]}
+    shard = {"unit": ".", "entities": [], "assertions": [], "evidence": [], "unknowns": [], "transforms": [row]}
+    assert leaked_secrets(store, manifest, [shard]) == []
+    assert leaked_secrets(store, manifest, [{**shard, "transforms": [{**row, "output": owner}]}]) == ["config.env"], "only the owner field is exempt"
 
 
 def test_the_architecture_tier_leaves_transforms_out_and_keeps_owner_attributes(compiled):

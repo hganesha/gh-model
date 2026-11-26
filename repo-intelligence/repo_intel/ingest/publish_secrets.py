@@ -63,7 +63,7 @@ def _publisher_scope(path: tuple[str, ...], value: bytes) -> bool:
         return True
     if group == "evidence" and field == ("span", "<key>") and value.decode() in Span.model_fields:
         return True
-    if group in {"entities", "assertions", "evidence", "unknowns", "behaviors", "conflicts", "operations", "unresolved_calls"}:
+    if group in {"entities", "assertions", "evidence", "unknowns", "behaviors", "transforms", "conflicts", "operations", "unresolved_calls"}:
         if field in _ID_FIELDS and _CONTENT_ID.fullmatch(value):
             return True
         if group == "evidence" and field == ("blob_sha256",) and _HASH.fullmatch(value):
@@ -88,11 +88,11 @@ def _records(documents: list[Any]) -> Iterator[tuple[tuple[str, ...], str, dict[
             for key in doc:
                 yield ("<key>",), key, {}
             yield ("unit",), doc["unit"], {}
-            for group in ("entities", "assertions", "evidence", "unknowns", *(g for g in ("behaviors",) if g in doc)):
+            for group in ("entities", "assertions", "evidence", "unknowns", *(g for g in ("behaviors", "transforms") if g in doc)):
                 for row in doc[group]:
                     for path, value in _values(row, (group,)):
                         yield path, value, row
-            for key in doc.keys() - {"unit", "entities", "assertions", "evidence", "unknowns", "behaviors"}:
+            for key in doc.keys() - {"unit", "entities", "assertions", "evidence", "unknowns", "behaviors", "transforms"}:
                 for path, value in _values(doc[key], ("other", key)):
                     yield path, value, {}
         elif isinstance(doc, dict) and doc.keys() == {"operations", "unresolved_calls"}:
