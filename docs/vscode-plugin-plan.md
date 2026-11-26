@@ -242,6 +242,29 @@ Wave 2, in order:
 6. Stylesheet imports and token aliases as relations; field keys that front-end bindings can reach, for BINDS_TO.
 7. Coverage per Explorer plane, and the remaining sources in the tables above: Enterprise Guide projects, JSP, ASPX and Razor, accessibility, and screenshots as E5 evidence.
 
+### Progress: wave 2 (2026-11-26)
+
+All seven items are built against section 8 of [the solution IR contract](solution-ir-contract.md). Six workstreams were built on separate branches, reviewed together, fixed and merged. The full suite passes (1,272 tests) and so does every golden, F01 to F27.
+
+| Built | Where | Coverage on its fixture |
+|---|---|---|
+| Transform shapes (`rkp-transform/1`): a SQL recognizer over sqlglot trees, SAS DATA and PROC steps, PySpark method chains and `%sql` cells, shapes derived from stored behaviour units; a detail-tier `transforms` table, `attributes.transforms` on owners, `transform_shapes` coverage with statement counts, shapes in the local API's behaviour answer | `repo_intel/compile/transforms.py`, `sql_lineage`, `data_python`, fixture F24 | 11 of 11 units, 24 of 24 statements |
+| Rule and workflow lifting (`dm.business-rules`, `dm.workflows`) and captured screens (`dm.screen-regions`), each behind its own `CompileSettings` switch (`business_rules`, `captured_screens`, off by default), confirmed or rejected by owner overrides | `repo_intel/decisions/rules.py`, `workflows.py`, `screens.py` | off by default, so no golden yet |
+| HTTP method on client calls; `exports.json` committed in every tier, checked by `rkp verify`, compared by `rkp diff`, read by the solution loader and `packages/bundle` | `typescript_source`, `bundle.py`, `bundle_check.py`, `solution/loader.py` | F23 now links `POST /api/orders` exactly |
+| Multi-repository goldens; F23 moved to `benchmarks/fixtures/` as a golden; coverage per Explorer plane | `golden_check.py`, `explorer/lib/plane-coverage.ts`, fixture F23 | |
+| `@symbol:` relation ends, the Screen `app` qualifier across a unit, stylesheet imports and token aliases, model field keys for `BINDS_TO`, `accessibility` coverage through a pack coverage hook | `repo_intel/platforms/web/`, `link.py`, fixture F22 | 32 of 43 controls have an accessible name |
+| JSP pack (pages, tag files, `web.xml`), ASP.NET pack (Web Forms rooted at their `Web.config`, Razor Pages, MVC views, Blazor), SAS Enterprise Guide projects; admission detectors for servlet parameter and connection-string passwords | `repo_intel/platforms/jsp/`, `aspnet/`, `sas/egp.py`, fixtures F25, F26, F27 | 110 of 116, 134 of 151, 27 of 30 |
+
+Known limits, left for a later wave:
+
+- A rule owned by a function with no containing Program, Component or Package has no owner edge in the architecture tier, because the ontology does not allow an Artifact to `ENFORCES` a rule. Allowing it is a contract decision.
+- The Explorer's settings page has no switches for `business_rules` and `captured_screens`, and the TypeScript bundle types don't declare the `Screen.captured` omission.
+- Form keys don't carry `app`, so two apps in one unit with a form on the same route still share a Form key.
+- A sub-folder `Web.config` that only sets authorization is treated as an application root. Two Web Forms apps in one unit share a component root, so equal relative routes merge.
+- SAS `PROC SORT NODUPKEY` stays the exact `dedupe_by_key` primitive with no order, because SAS keeps the first row in input order.
+- Code-behind, MVC controller routes and Struts action mappings are not read. Enterprise Guide parsing follows the documented project format and hasn't been checked against real projects.
+- When this branch reaches `main`, `repo_intel/knowledge/profile.py` there needs display names for the `jsp` and `aspnet` languages.
+
 ## Risks
 
 - **Intent lifting.** The claim that N source front ends and M target back ends replace N × M paths rests on the intent level. If lifting is weak, the output is a ColdFusion-shaped application in a new language.
