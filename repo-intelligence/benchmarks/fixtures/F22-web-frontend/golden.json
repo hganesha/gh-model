@@ -1,6 +1,6 @@
 {
   "fixture": "F22-web-frontend",
-  "description": "Three web front ends in one package: a React storefront (React Router, react-hook-form, Formik, a theme object, CSS custom properties and SCSS), a Vue checkout (Vue Router, v-model, vee-validate style controls) and an Angular back office (Routes with guards and role data, reactive and template-driven forms), plus static HTML pages and a small Express mock API. The web pack must find the screens, forms, controls, design tokens and guarded roles, link forms to the mock API's endpoints, and leave redirects and dynamic targets alone.",
+  "description": "Three web front ends in one package: a React storefront (React Router, react-hook-form, Formik, a theme object, CSS custom properties and SCSS), a Vue checkout (Vue Router, v-model, vee-validate style controls) and an Angular back office (Routes with guards and role data, reactive and template-driven forms), plus static HTML pages and a small Express mock API. The web pack must find the screens, forms, controls, design tokens and guarded roles, link forms to the mock API's endpoints, and leave redirects and dynamic targets alone. Wave 2 adds: views RENDERED by the exported component Symbol of their file, form controls BOUND_TO the fields of a declared form model, stylesheets that DEPEND_ON the stylesheets they import, style tokens that are ALIAS_OF other tokens, and accessibility facts on controls and screens.",
   "entities": [
     {
       "kind": "Screen",
@@ -174,7 +174,18 @@
         "name": "public/about.html"
       },
       "attributes": {
-        "platform_kind": "web:Page"
+        "platform_kind": "web:Page",
+        "accessibility": {
+          "heading_skips": 0,
+          "headings": [
+            1
+          ],
+          "landmarks": [
+            "banner",
+            "search"
+          ],
+          "positive_tabindex": 0
+        }
       },
       "since": "M2"
     },
@@ -375,7 +386,10 @@
         "binds": "customer",
         "validation": [
           "required"
-        ]
+        ],
+        "accessibility": {
+          "name_source": "label-prop"
+        }
       },
       "since": "M2"
     },
@@ -446,7 +460,11 @@
         "name": "email"
       },
       "attributes": {
-        "input_type": "email"
+        "input_type": "email",
+        "accessibility": {
+          "name_source": "aria-label",
+          "role": "textbox"
+        }
       },
       "since": "M2"
     },
@@ -457,7 +475,11 @@
         "name": "topic"
       },
       "attributes": {
-        "control_type": "select"
+        "control_type": "select",
+        "accessibility": {
+          "name_source": "none",
+          "role": "combobox"
+        }
       },
       "since": "M2"
     },
@@ -818,6 +840,154 @@
         "name": "customer"
       },
       "since": "M2"
+    },
+    {
+      "kind": "Field",
+      "natural_key": {
+        "table": "src/pages/NewOrderPage.tsx#NewOrder",
+        "name": "customer"
+      },
+      "attributes": {
+        "platform_kind": "web:ModelField",
+        "model": "NewOrder",
+        "schema": "typescript-type"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "Field",
+      "natural_key": {
+        "table": "src/pages/NewOrderPage.tsx#NewOrder",
+        "name": "quantity"
+      },
+      "attributes": {
+        "model": "NewOrder"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "Field",
+      "natural_key": {
+        "table": "src/pages/NewOrderPage.tsx#NewOrder",
+        "name": "status"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "Field",
+      "natural_key": {
+        "table": "src/pages/NewOrderPage.tsx#NewOrder",
+        "name": "notes"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "StyleToken",
+      "natural_key": {
+        "system": "src/styles/buttons.css",
+        "name": "--button-text"
+      },
+      "attributes": {
+        "contrast": [
+          {
+            "background": "--button-bg",
+            "ratio": 4.63,
+            "selector": ".button"
+          }
+        ]
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "StyleToken",
+      "natural_key": {
+        "system": "src/styles/buttons.css",
+        "name": "--button-muted"
+      },
+      "attributes": {
+        "category": "color",
+        "contrast": [
+          {
+            "background": "--button-text",
+            "ratio": 3.04,
+            "selector": ".button-quiet"
+          }
+        ]
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "StyleToken",
+      "natural_key": {
+        "system": "src/styles/buttons.css",
+        "name": "--button-bg"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "StyleToken",
+      "natural_key": {
+        "system": "src/styles/buttons.css",
+        "name": "--button-link"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "StyleToken",
+      "natural_key": {
+        "system": "src/styles/buttons.css",
+        "name": "--button-bg-hover"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "StyleToken",
+      "natural_key": {
+        "system": "src/styles/_aliases.scss",
+        "name": "$link"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "StyleToken",
+      "natural_key": {
+        "system": "src/styles/_aliases.scss",
+        "name": "$link-hover"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "StyleToken",
+      "natural_key": {
+        "system": "src/darkTheme.ts",
+        "name": "darkTheme.colors.primary"
+      },
+      "attributes": {
+        "platform_kind": "web:ThemeToken"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "StyleToken",
+      "natural_key": {
+        "system": "src/darkTheme.ts",
+        "name": "darkTokens.link"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "UIControl",
+      "natural_key": {
+        "container": "public/about.html#form1",
+        "name": "q"
+      },
+      "attributes": {
+        "accessibility": {
+          "name_source": "label-for",
+          "role": "searchbox"
+        }
+      },
+      "since": "M2"
     }
   ],
   "edges": [
@@ -899,11 +1069,10 @@
     },
     {
       "subject": {
-        "kind": "Package",
+        "kind": "Symbol",
         "natural_key": {
-          "ecosystem": "npm",
-          "name": "shop-web",
-          "manifest_dir": ""
+          "package": "shop-web",
+          "qualified_name": "src/pages/NewOrderPage#NewOrderPage"
         }
       },
       "predicate": "RENDERS",
@@ -1369,6 +1538,269 @@
         }
       },
       "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "UIControl",
+        "natural_key": {
+          "container": "src/pages/NewOrderPage.tsx#new-order",
+          "name": "customer"
+        }
+      },
+      "predicate": "BINDS_TO",
+      "object": {
+        "kind": "Field",
+        "natural_key": {
+          "table": "src/pages/NewOrderPage.tsx#NewOrder",
+          "name": "customer"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "UIControl",
+        "natural_key": {
+          "container": "src/pages/NewOrderPage.tsx#new-order",
+          "name": "quantity"
+        }
+      },
+      "predicate": "BINDS_TO",
+      "object": {
+        "kind": "Field",
+        "natural_key": {
+          "table": "src/pages/NewOrderPage.tsx#NewOrder",
+          "name": "quantity"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "UIControl",
+        "natural_key": {
+          "container": "src/pages/NewOrderPage.tsx#new-order",
+          "name": "status"
+        }
+      },
+      "predicate": "BINDS_TO",
+      "object": {
+        "kind": "Field",
+        "natural_key": {
+          "table": "src/pages/NewOrderPage.tsx#NewOrder",
+          "name": "status"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "UIControl",
+        "natural_key": {
+          "container": "src/pages/NewOrderPage.tsx#new-order",
+          "name": "notes"
+        }
+      },
+      "predicate": "BINDS_TO",
+      "object": {
+        "kind": "Field",
+        "natural_key": {
+          "table": "src/pages/NewOrderPage.tsx#NewOrder",
+          "name": "notes"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Artifact",
+        "natural_key": {
+          "path": "src/styles/buttons.css"
+        }
+      },
+      "predicate": "DEPENDS_ON",
+      "object": {
+        "kind": "Artifact",
+        "natural_key": {
+          "path": "src/styles/tokens.css"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Artifact",
+        "natural_key": {
+          "path": "src/styles/_aliases.scss"
+        }
+      },
+      "predicate": "DEPENDS_ON",
+      "object": {
+        "kind": "Artifact",
+        "natural_key": {
+          "path": "src/styles/_variables.scss"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Artifact",
+        "natural_key": {
+          "path": "src/styles/orders.module.scss"
+        }
+      },
+      "predicate": "DEPENDS_ON",
+      "object": {
+        "kind": "Artifact",
+        "natural_key": {
+          "path": "src/styles/_variables.scss"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Artifact",
+        "natural_key": {
+          "path": "checkout/src/views/CheckoutView.vue"
+        }
+      },
+      "predicate": "DEPENDS_ON",
+      "object": {
+        "kind": "Artifact",
+        "natural_key": {
+          "path": "src/styles/_variables.scss"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "StyleToken",
+        "natural_key": {
+          "system": "src/styles/buttons.css",
+          "name": "--button-bg-hover"
+        }
+      },
+      "predicate": "ALIAS_OF",
+      "object": {
+        "kind": "StyleToken",
+        "natural_key": {
+          "system": "src/styles/buttons.css",
+          "name": "--button-bg"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "StyleToken",
+        "natural_key": {
+          "system": "src/styles/buttons.css",
+          "name": "--button-link"
+        }
+      },
+      "predicate": "ALIAS_OF",
+      "object": {
+        "kind": "StyleToken",
+        "natural_key": {
+          "system": "src/styles/tokens.css",
+          "name": "--color-primary"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "StyleToken",
+        "natural_key": {
+          "system": "src/styles/_aliases.scss",
+          "name": "$link"
+        }
+      },
+      "predicate": "ALIAS_OF",
+      "object": {
+        "kind": "StyleToken",
+        "natural_key": {
+          "system": "src/styles/_variables.scss",
+          "name": "$brand"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "StyleToken",
+        "natural_key": {
+          "system": "src/styles/_aliases.scss",
+          "name": "$link-hover"
+        }
+      },
+      "predicate": "ALIAS_OF",
+      "object": {
+        "kind": "StyleToken",
+        "natural_key": {
+          "system": "src/styles/_aliases.scss",
+          "name": "$link"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "StyleToken",
+        "natural_key": {
+          "system": "src/darkTheme.ts",
+          "name": "darkTheme.colors.primary"
+        }
+      },
+      "predicate": "ALIAS_OF",
+      "object": {
+        "kind": "StyleToken",
+        "natural_key": {
+          "system": "src/theme.ts",
+          "name": "theme.colors.primary"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "StyleToken",
+        "natural_key": {
+          "system": "src/darkTheme.ts",
+          "name": "darkTokens.link"
+        }
+      },
+      "predicate": "ALIAS_OF",
+      "object": {
+        "kind": "StyleToken",
+        "natural_key": {
+          "system": "src/darkTheme.ts",
+          "name": "darkTheme.colors.primary"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Package",
+        "natural_key": {
+          "ecosystem": "npm",
+          "name": "shop-web",
+          "manifest_dir": ""
+        }
+      },
+      "predicate": "RENDERS",
+      "object": {
+        "kind": "Screen",
+        "natural_key": {
+          "platform": "web",
+          "name": "/orders/new"
+        }
+      },
+      "since": "M2"
     }
   ],
   "absent_entities": [
@@ -1459,11 +1891,26 @@
         "name": "$brand"
       },
       "why": "a stylesheet that uses a variable does not declare it"
+    },
+    {
+      "kind": "Field",
+      "natural_key": {
+        "table": "src/pages/NewOrderPage.tsx#NewOrder",
+        "name": "submit"
+      },
+      "why": "a control that binds no field of the model is not a field"
+    },
+    {
+      "kind": "StyleToken",
+      "natural_key": {
+        "system": "src/styles/_aliases.scss",
+        "name": "$brand"
+      },
+      "why": "an alias reads the imported variable; it does not declare it"
     }
   ],
   "exclusions": [],
   "forbidden_kinds": [
-    "Field",
     "Table"
   ],
   "expected_unknowns": [
@@ -1478,6 +1925,14 @@
     {
       "since": "M2",
       "detail": "users.component.ts names its template by templateUrl: counted as the unmodelled construct web:angular-template-url, so the route does not contain the template's view"
+    },
+    {
+      "since": "M2",
+      "detail": "a route whose element is a component imported from another file keeps the Package as the RENDERS subject, with the component name as the `component` qualifier"
+    },
+    {
+      "since": "M2",
+      "detail": "the checkout and back office forms bind plain objects with no declared type or schema: their controls keep `binds` and get no Field"
     }
   ],
   "expected_conflicts": [],
