@@ -1,11 +1,12 @@
 """TypeScript / JavaScript source: Express routes, Next.js App Router handlers,
 process.env config keys, and linker observations (imports, exported symbols,
-fetch calls, Prisma client call sites, unsafe raw SQL, test cases).
+HTTP client calls, Prisma client call sites, unsafe raw SQL, test cases).
 
 Parsing is done with tree-sitter only; repository code is never executed.
 Configuration VALUES are never copied: a ConfigKey carries its name, and an
 http_call carries only the static path text of the URL (no query string, no
-userinfo, interpolations replaced by "{}").
+userinfo, interpolations replaced by "{}") and, when the source states it, the
+HTTP method in upper case.
 """
 
 from __future__ import annotations
@@ -189,9 +190,188 @@ def is_test_file(path: str) -> bool:
     return bool(_TEST_FILE.search(path))
 
 
+# -- HTTP client calls (the `http_call` observation) -----------------------------
+
+_HTTP_VERBS = ("get", "post", "put", "patch", "delete", "head", "options")
+_HTTP_METHOD = re.compile(r"^[A-Za-z]{3,7}$")
+_SCHEME = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*://")
+
+
+def _receiver_name(node) -> str | None:
+    """`api` for `api` and for `this.api`; None for anything else."""
+    if node is None:
+        return None
+    if node.type == "identifier":
+        return _text(node)
+    if node.type == "member_expression":
+        obj, prop = node.child_by_field_name("object"), node.child_by_field_name("property")
+        if obj is not None and obj.type == "this" and prop is not None:
+            return "this." + _text(prop)
+    return None
+
+
+def _http_clients(nodes, data: bytes) -> dict[str, dict[str, str]]:
+    """The HTTP clients a file names, by the name a call reaches them through.
+
+    `axios`: local names of the axios module (`import axios from "axios"`, `import * as`,
+    `require("axios")`). `axios_instance`: name -> base path of `const api = axios.create({
+    baseURL })` (the static base when literal, `{}` when computed, empty when absent).
+    `angular`: names of an injected Angular `HttpClient` (a constructor parameter or field
+    typed `HttpClient`, or `inject(HttpClient)`), only when the file imports it from
+    `@angular/common/http`; a field is reached as `this.<name>`. AngularJS `$http` needs no
+    import: it is recognised by its name."""
+    axios: set[str] = set()
+    angular_imported = False
+    for n in nodes:
+        if n.type == "import_statement":
+            source = _string(n.child_by_field_name("source"))
+            if source == "axios":
+                for clause in (c for c in n.children if c.type == "import_clause"):
+                    for c in clause.children:
+                        if c.type == "identifier":
+                            axios.add(_text(c))
+                        elif c.type == "namespace_import":
+                            axios.update(_text(i) for i in c.named_children if i.type == "identifier")
+            elif source == "@angular/common/http" and b"HttpClient" in n.text:
+                angular_imported = True
+        elif n.type == "variable_declarator":
+            name, value = n.child_by_field_name("name"), _unwrap(n.child_by_field_name("value"))
+            if name is None or name.type != "identifier" or value is None:
+                continue
+            if value.type == "member_expression" and _tail_name(value) == "default":
+                value = value.child_by_field_name("object")
+            fn = value.child_by_field_name("function") if value.type == "call_expression" else None
+            if fn is not None and fn.type == "identifier" and fn.text == b"require":
+                args = _args(value)
+                if args and _string(args[0]) == "axios":
+                    axios.add(_text(name))
+    clients: dict[str, dict[str, str]] = {"axios": {name: "" for name in sorted(axios)}, "axios_instance": {}, "angular": {}}
+    for n in nodes:
+        holder = name = value = None
+        if n.type == "variable_declarator":
+            name, value = n.child_by_field_name("name"), _unwrap(n.child_by_field_name("value"))
+            holder = _text(name) if name is not None and name.type == "identifier" else None
+        elif n.type in ("public_field_definition", "field_definition"):
+            name, value = n.child_by_field_name("name") or n.child_by_field_name("property"), _unwrap(n.child_by_field_name("value"))
+            holder = "this." + _text(name) if name is not None else None
+        elif n.type in ("required_parameter", "optional_parameter") and angular_imported:
+            pattern, annotation = n.child_by_field_name("pattern"), n.child_by_field_name("type")
+            if pattern is not None and pattern.type == "identifier" and annotation is not None and _text(annotation).lstrip(":").strip() == "HttpClient":
+                # A constructor parameter with an access modifier is also a field.
+                clients["angular"][_text(pattern)] = ""
+                if any(c.type == "accessibility_modifier" or c.type == "readonly" for c in n.children):
+                    clients["angular"]["this." + _text(pattern)] = ""
+            continue
+        if holder is None:
+            continue
+        annotation = n.child_by_field_name("type")
+        if angular_imported and annotation is not None and _text(annotation).lstrip(":").strip() == "HttpClient":
+            clients["angular"][holder] = ""
+        if value is None or value.type != "call_expression":
+            continue
+        fn = value.child_by_field_name("function")
+        args = _args(value)
+        if angular_imported and fn is not None and _text(fn) == "inject" and args and _text(args[0]) == "HttpClient":
+            clients["angular"][holder] = ""
+        elif fn is not None and fn.type == "member_expression" and _tail_name(fn) == "create" and _receiver_name(fn.child_by_field_name("object")) in clients["axios"]:
+            config = _unwrap(args[0]) if args else None
+            base = ""
+            if config is not None and config.type == "object":
+                found = _pairs(config, "baseURL")
+                if found:
+                    text = _url_text(data, found[0])
+                    base = _static_path(text) if text is not None else "{}"
+                elif any(c.type == "spread_element" for c in config.named_children):
+                    base = "{}"  # a spread config may carry a base URL
+            elif config is not None:
+                base = "{}"  # a config built elsewhere may carry a base URL
+            clients["axios_instance"][holder] = base
+    return clients
+
+
+def _method_literal(node) -> str | None:
+    value = _string(_unwrap(node)) if node is not None else None
+    return value.upper() if value is not None and _HTTP_METHOD.match(value) else None
+
+
+def _config_url(config) -> tuple[object, str | None]:
+    """(URL node, method) of an axios or `$http` config object literal."""
+    if config is None or config.type != "object":
+        return None, None
+    urls, methods = _pairs(config, "url"), _pairs(config, "method")
+    return (urls[0] if urls else None), (_method_literal(methods[0]) if methods else None)
+
+
+def _http_call(fn, args, clients) -> tuple[str, object, str | None, str] | None:
+    """(client, URL node, method, base path) when `fn(args)` is an HTTP client call."""
+    if fn.type == "identifier" and fn.text == b"fetch" or fn.type == "member_expression" and _tail_name(fn) == "fetch" and _text(fn.child_by_field_name("object")) in ("window", "globalThis", "self"):
+        if not args:
+            return None
+        options = _unwrap(args[1]) if len(args) > 1 else None
+        methods = _pairs(options, "method") if options is not None and options.type == "object" else []
+        return "fetch", args[0], _method_literal(methods[0]) if methods else None, ""
+    name = _receiver_name(fn)
+    if name is not None:  # called directly: axios(config), axios(url, config), $http(config), api(config)
+        base = clients["axios"].get(name, clients["axios_instance"].get(name))
+        if base is None and name not in ("$http", "this.$http"):
+            return None
+        client = "$http" if base is None else "axios"
+        first = _unwrap(args[0]) if args else None
+        if first is not None and first.type == "object":
+            url, method = _config_url(first)
+            return client, url, method, base or ""
+        if client == "axios" and first is not None:
+            options = _unwrap(args[1]) if len(args) > 1 else None
+            return client, first, _config_url(options)[1] if options is not None else None, base or ""
+        return client, None, None, base or ""
+    if fn.type != "member_expression":
+        return None
+    verb = _text(fn.child_by_field_name("property")) if fn.child_by_field_name("property") is not None else ""
+    receiver = _receiver_name(fn.child_by_field_name("object"))
+    if receiver is None:
+        return None
+    if receiver in clients["axios"] or receiver in clients["axios_instance"]:
+        client, base = "axios", clients["axios"].get(receiver, clients["axios_instance"].get(receiver, ""))
+    elif receiver in ("$http", "this.$http"):
+        client, base = "$http", ""
+    elif receiver in clients["angular"]:
+        client, base = "HttpClient", ""
+    else:
+        return None
+    if verb in _HTTP_VERBS or verb == "jsonp" and client != "axios":
+        return client, args[0] if args else None, "GET" if verb == "jsonp" else verb.upper(), base
+    if verb == "request" and client == "axios":
+        url, method = _config_url(_unwrap(args[0]) if args else None)
+        return client, url, method, base
+    if verb == "request" and client == "HttpClient" and len(args) > 1:
+        return client, args[1], _method_literal(args[0]), base
+    return None
+
+
+def _url_text(data: bytes, node) -> str | None:
+    """The URL a call names when it is a string or template literal (interpolations as `{}`)."""
+    node = _unwrap(node) if node is not None else None
+    if node is None:
+        return None
+    if node.type == "string":
+        return _text(node)[1:-1]
+    if node.type == "template_string":
+        return _template(data, node)
+    return None
+
+
+def _join_base(base: str, path: str) -> str:
+    """An axios instance's base URL before a call's path; an absolute URL ignores the base."""
+    if not base or _SCHEME.match(path):
+        return path
+    if not path:
+        return base
+    return base.rstrip("/") + "/" + path.lstrip("/")
+
+
 class TypeScriptSource:
     id = "typescript.source"
-    version = "1.4.0"
+    version = "1.5.0"
 
     def matches(self, path: str) -> bool:
         return path.lower().endswith(EXTENSIONS)
@@ -564,25 +744,32 @@ class TypeScriptSource:
     # -- outbound HTTP calls ------------------------------------------------
 
     def _fetch(self, nodes, data, blob, at, out):
+        """One `http_call` per client call whose URL is in the source: `fetch`, axios (the
+        module, `axios.create()` instances, `axios(config)`), AngularJS `$http` and Angular
+        `HttpClient`. `method` is recorded, upper-case, only when the source states it: the
+        verb a call is named by (`axios.post`, `http.get`) or a literal `method:` option.
+        Nothing defaults: a `fetch` without a `method:` literal carries no method. A call
+        whose URL is not a literal is not recorded and gets an info diagnostic."""
+        clients = _http_clients(nodes, data)
         for n in nodes:
             if n.type != "call_expression":
                 continue
             fn = n.child_by_field_name("function")
             if fn is None:
                 continue
-            direct = fn.type == "identifier" and fn.text == b"fetch"
-            scoped = fn.type == "member_expression" and _tail_name(fn) == "fetch" and _text(fn.child_by_field_name("object")) in ("window", "globalThis", "self")
             args = _args(n)
-            if not (direct or scoped) or not args:
+            found = _http_call(fn, args, clients)
+            if found is None:
                 continue
-            first = args[0]
-            if first.type == "string":
-                text = _text(first)[1:-1]
-            elif first.type == "template_string":
-                text = _template(data, first)
-            else:
+            client, url, method, prefix = found
+            text = _url_text(data, url)
+            if text is None:
+                out.diagnostics.append(diagnostic(self.id, "info", f"line {n.start_point[0] + 1}: {client} call URL is not a literal; no http_call recorded"))
                 continue
-            out.observations.append(obs("http_call", blob, at(fn, first), {"path": _static_path(text)}, ast_node_kind=n.type))
+            payload = {"path": _join_base(prefix, _static_path(text))}
+            if method is not None:
+                payload["method"] = method
+            out.observations.append(obs("http_call", blob, at(fn, url), payload, ast_node_kind=n.type))
 
     # -- event topics ----------------------------------------------------------
 

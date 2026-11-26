@@ -525,7 +525,9 @@ def _repo_view(shards: dict[str, dict[str, Any]]) -> dict[str, Any]:
 
 def _http_hits(call: Mapping[str, Any], endpoints: list) -> list:
     hits = [(e, ev) for e, ev, _ in endpoints if match_call(call["call_path"], e["natural_key"]["route"])]
-    # The call's method is not known; a plain fetch is a GET, so prefer GET when one matches.
+    if call.get("method"):  # stated in the source: only an endpoint serving that method fits
+        return [h for h in hits if str(h[0]["natural_key"]["method"]).upper() in (call["method"], "ANY", "ALL")]
+    # The call's method is not stated; a plain fetch is a GET, so prefer GET when one matches.
     return [h for h in hits if h[0]["natural_key"]["method"] == "GET"] or hits
 
 
@@ -700,6 +702,7 @@ def _repo_compile(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, An
             if not hits:
                 workspace_exports["unresolved_calls"].append({
                     "caller": component_of.get(name, caller), "path": call["call_path"],
+                    **({"method": call["method"]} if call.get("method") else {}),
                     "evidence_ids": [g.cite(call["evidence"])],
                 })
             # DM04: several endpoints fit the call. A decision may pick one; if it abstains, every
