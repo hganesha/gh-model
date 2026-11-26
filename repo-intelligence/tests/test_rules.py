@@ -653,6 +653,5 @@ def test_captured_screens_attach_to_their_screen(tmp_path):
     [unmatched] = [u for s in shards.values() for u in s["unknowns"] if u["predicate"] == "captured_screen"]
     assert "route /nowhere" in unmatched["reason"] and "matches no Screen" in unmatched["reason"] and unmatched["coverage_ref"] == "decisions:@repo"
     assert _coverage(store, result, "decisions", "@repo")["detail"]["abstained_by_reason"]["capture_matches_no_screen"] == 1
-    assert ".rkp/inputs/screens/list.html" in screens, "the web pack reads the saved DOM as a page (a foundation request)"
-    assert "captured" not in screens[".rkp/inputs/screens/list.html"]["attributes"], "and a capture is never matched to it"
+    assert ".rkp/inputs/screens/list.html" not in screens, "the web pack does not read the saved DOM under .rkp/ as a page"
     assert "typed-by-a-user" not in json.dumps(shards)
