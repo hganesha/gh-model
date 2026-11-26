@@ -190,6 +190,13 @@ Where the application can be run, a headless browser can capture screenshots and
 
 ### 4. Business, security and process layers
 
+- **Transform shapes.** Lineage says a unit reads A and B and writes C; nothing yet says what it does to the rows. Each unit that moves data gets a list of transforms derived from what is already parsed (the sqlglot trees that `sql_lineage.py` now reduces to table names, the SAS DATA-step and PROC lowering, the PySpark AST), with no new parsers. The operation names and the column effect come from pipeline-builder (sourceform), which uses them in the other direction, to generate pipelines:
+  - **Operation**, from its TransformPlan set: project, rename, cast, filter, join (with type), union, deduplicate, aggregate, window, pivot, unpivot, validate, publish. Each entry has its inputs, output, keys, ordering and source span.
+  - **Column effect**, its `Shape`: the columns added, replaced and dropped, read from select lists, `KEEP`, `DROP`, `RENAME` and assignments. This is the start of column-level lineage.
+  - **Primitive name**, from its registry, only when a known idiom matches exactly (E2); a partial match stays a candidate. About 25 names are recognisable from code, for example `dedupe_by_key` for SAS `proc sort` then `if first.k`, SQL `row_number() over (…) = 1` or `dropDuplicates`; an anti join for `merge … by k; if a and not b`; `pivot` for `proc transpose`; `aggregate` for `proc means` or `GROUP BY`; `merge_into` and `apply_scd_type_2` for `MERGE INTO` or an end-dating update with an insert. Primitives named by business meaning (`calculate_score`, `classify_record`, `derive_status`) are left to rule lifting, and platform settings (`vacuum`, `cluster_by`) are not recognised.
+  - **Purpose**, one of the registry's categories (ingestion, quality, CDC, aggregation and so on), derived from a program's operations rather than detected.
+
+  Named idioms let a SAS job and its Spark replacement be compared step by step, and a shape expressed in pipeline-builder's terms is something its compiler can already lower to Databricks. Rule lifting builds on them: a condition is easier to name once it is known to be the filter of a deduplication or the test that classifies rows in a join. SQL comes first, then SAS DATA-step idioms, then PySpark method chains.
 - **Business rules.** Candidates come from conditions in the behavioural layer: `cfif` validations, SAS `WHERE` and `IF` logic, computed columns. A model lifts them into named rules and calculations that cite their evidence. They stay hypotheses until an owner confirms them through overrides, which the decision ledger already supports.
 - **Security.** Roles and permissions from `cflogin`, `IsUserInRole`, SAS metadata access lists and database grants; trust boundaries from where authentication checks run; field-level classification of personal data, building on the existing `sensitivity` field.
 - **Process.** Workflows and approvals inferred from status columns and the code paths that change them. Transactions, locking, retries and error handling come from the behavioural layer.
@@ -207,7 +214,7 @@ Where the application can be run, a headless browser can capture screenshots and
 3. SAS: symbolic macro expansion, DATA-step lowering, `PROC FORMAT` as reference data, stored-process prompts as forms.
 4. The solution manifest and configuration from outside the repository.
 5. Experience extractors for modern web front ends and CSS tokens. They are cheaper and test the experience model before the legacy versions.
-6. Business-rule lifting with models, gated by owner confirmation.
+6. Transform shapes, derived without models, then business-rule lifting with models, gated by owner confirmation.
 
 Behaviour and per-screen layout are large, as Symbol detail is, so they belong in the detail tier that stays in the local cache. Rules, screens, roles and the solution manifest are what review and design need, so they belong in the committed architecture tier.
 
@@ -227,12 +234,13 @@ Steps 1 to 5 are built against [the solution IR contract](solution-ir-contract.m
 
 Wave 2, in order:
 
-1. Business-rule and workflow lifting with models (step 6), gated by owner confirmation.
-2. Commit HTTP call exports into the bundle and record the HTTP method of client calls, so a solution links members loaded from committed bundles exactly.
-3. Multi-repository golden fixtures, so F23 becomes a golden instead of a test fixture.
-4. A per-file reference to a linker-declared Symbol, so a screen is rendered by its component rather than its package; an app or router qualifier in Screen keys.
-5. Stylesheet imports and token aliases as relations; field keys that front-end bindings can reach, for BINDS_TO.
-6. Coverage per Explorer plane, and the remaining sources in the tables above: Enterprise Guide projects, JSP, ASPX and Razor, accessibility, and screenshots as E5 evidence.
+1. Transform shapes for each unit that moves data (step 6): operations, column effects and exactly matched primitive names from pipeline-builder's registry, for SQL first, then SAS and PySpark.
+2. Business-rule and workflow lifting with models (step 6), gated by owner confirmation, using the transform shapes as context.
+3. Commit HTTP call exports into the bundle and record the HTTP method of client calls, so a solution links members loaded from committed bundles exactly.
+4. Multi-repository golden fixtures, so F23 becomes a golden instead of a test fixture.
+5. A per-file reference to a linker-declared Symbol, so a screen is rendered by its component rather than its package; an app or router qualifier in Screen keys.
+6. Stylesheet imports and token aliases as relations; field keys that front-end bindings can reach, for BINDS_TO.
+7. Coverage per Explorer plane, and the remaining sources in the tables above: Enterprise Guide projects, JSP, ASPX and Razor, accessibility, and screenshots as E5 evidence.
 
 ## Risks
 
