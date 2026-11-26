@@ -1,0 +1,10 @@
+<?xml version="1.0"?>
+<DTS:ConnectionManager xmlns:DTS="www.microsoft.com/SqlServer/Dts"
+  DTS:ObjectName="Warehouse"
+  DTS:DTSID="{5C2A1B90-0000-4D2E-8F11-00000000C001}"
+  DTS:CreationName="OLEDB">
+  <DTS:ObjectData>
+    <DTS:ConnectionManager
+      DTS:ConnectionString="Data Source=dwsql01.corp.example.invalid;User ID=etl_loader;Password=fixture-not-a-real-password-0002;Initial Catalog=SalesDW;Provider=SQLNCLI11.1;Auto Translate=False;" />
+  </DTS:ObjectData>
+</DTS:ConnectionManager>
