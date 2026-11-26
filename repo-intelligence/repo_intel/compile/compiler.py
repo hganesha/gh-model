@@ -214,7 +214,7 @@ def _unit_compile(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, An
     def declaring(o: Mapping[str, Any]) -> bool:
         return all(not isinstance(o["payload"][end], dict) or o["payload"][end].get("declare", True) for end in ("subject", "object"))
 
-    relations = [(s["path"], o) for s in summaries for o in s["observations"] if o["kind"] == "relation"]
+    relations = [(s["path"], o) for s in summaries for o in s["observations"] if o["kind"] == "relation" and not _symbol_end(o)]
     for path, o in [r for r in relations if declaring(r[1])] + [r for r in relations if not declaring(r[1])]:
         p = o["payload"]
         ev = o["evidence"]["id"]
@@ -239,6 +239,9 @@ def _unit_compile(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, An
             continue
         evs = [shard.cite(e) for e in o["evidence"]]
         shard.assertion(Assertion.make(subject, Predicate(p["predicate"]), obj, qualifiers=p.get("qualifiers", {}), assertion_kind=AssertionKind.DERIVED_RELATION, epistemic_status=_status(o["evidence_class"]), evidence_class=o["evidence_class"], evidence_ids=evs, resolution=o["resolution"]))
+
+    # 4a. Relations with a "@symbol:<name>" end, now that the linker's Symbols are declared.
+    _symbol_relations(shard, summaries, link.get("symbol_ends", {}), resolve)
 
     # 4b. Behaviour units, now that every entity of the unit is known.
     for s in summaries:
@@ -339,6 +342,44 @@ def _unit_compile(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, An
                 feature = shard.entity(Entity.make(repo, EntityKind.FEATURE, {"component": unit_root, "statement": digest(h["statement"])}, h["statement"][:80], attributes={"statement": h["statement"], "trust_label": "untrusted_generated", "decision_ref": behavior["decision_id"]}, evidence_ids=evs))
                 shard.assertion(Assertion.make(comp, Predicate.IMPLEMENTS, feature, qualifiers={"basis": "behavior_candidate"}, assertion_kind=AssertionKind.HYPOTHESIS, epistemic_status=EpistemicStatus.INFERRED, evidence_class=EvidenceClass.E5, evidence_ids=evs, resolution="candidate", decision_ref=behavior["decision_id"]))
     return shard.rows()
+
+
+SYMBOL_END = "@symbol:"  # docs/solution-ir-contract.md, section 8.5
+
+
+def _symbol_end(o: Mapping[str, Any]) -> bool:
+    """A relation observation with an end "@symbol:<name>" (handled in step 4a, not step 3)."""
+    return any(isinstance(o["payload"].get(end), str) and o["payload"][end].startswith(SYMBOL_END) for end in ("subject", "object"))
+
+
+def _symbol_relations(shard: _Shard, summaries: list[dict[str, Any]], symbol_ends: Mapping[str, Mapping[str, Any]], resolve: Any) -> None:
+    """Relations whose subject or object is "@symbol:<name>": the top-level exported symbol
+    `<name>` declared in the same file. The linker resolved each name (`_Linker.symbol_ends`);
+    a name the file does not export falls back to "@package" with qualifier `component: <name>`.
+    Run after step 4, which declares the linker's Symbols, so a resolved end is found and never
+    declared here. Otherwise compiled as step 3 compiles a relation."""
+    for s in summaries:
+        path = s["path"]
+        for o in s["observations"]:
+            if o["kind"] != "relation" or not _symbol_end(o):
+                continue
+            p = o["payload"]
+            qualifiers = dict(p.get("qualifiers", {}))
+            ends = []
+            for end in (p["subject"], p["object"]):
+                if isinstance(end, str) and end.startswith(SYMBOL_END):
+                    name = end[len(SYMBOL_END):]
+                    found = symbol_ends.get(path, {}).get(name)
+                    if found is None:
+                        qualifiers["component"] = name
+                    end = found if found is not None else "@package"
+                ends.append(end)
+            ev = o["evidence"]["id"]
+            subject, obj = resolve(ends[0], path, ev), resolve(ends[1], path, ev)
+            if subject is None or obj is None:
+                continue
+            shard.cite(o["evidence"])
+            shard.assertion(Assertion.make(subject, Predicate(p["predicate"]), obj, qualifiers=qualifiers, assertion_kind=AssertionKind.OBSERVED_FACT, epistemic_status=_status(o["evidence_class"]), evidence_class=o["evidence_class"], evidence_ids=[ev]))
 
 
 BEHAVIOR_OWNER = "behavior_owner"  # the unknown's predicate when a behaviour unit's owner is not declared

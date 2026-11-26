@@ -150,7 +150,7 @@ def test_react_router_elements_are_screens():
     role = entity(out, "Role", name="admin")
     assert role["natural_key"] == {"realm": "web", "name": "admin"}
     assert role["attributes"]["platform_kind"] == "web:Role" and "fidelity" not in role["attributes"]  # exact
-    assert ("@package", "/orders") in edges(out, "RENDERS")
+    assert ("@symbol:Orders", "/orders") in edges(out, "RENDERS")  # the linker resolves it, or falls back to the package
     assert ("/orders", "src/pages/Orders.tsx?") in edges(out, "CONTAINS")  # the view, when the unit declares one
     assert out["constructs"]["web:redirect-route"] == (1, 0)
     assert out["constructs"]["web:lazy-route"] == (1, 1)
@@ -737,7 +737,14 @@ def test_every_relation_on_the_fixture_fits_the_ontology():
                 if o.kind != "relation":
                     continue
                 p = o.payload
-                subject = EntityKind.PACKAGE if p["subject"] == "@package" else EntityKind(p["subject"]["kind"])
+                # "@symbol:<name>" is the Symbol the linker resolves, or the package it falls back to (section 8.5)
+                special = {"@package": EntityKind.PACKAGE, "@file": EntityKind.ARTIFACT}
+                if isinstance(p["subject"], str) and p["subject"].startswith("@symbol:"):
+                    for kind in (EntityKind.SYMBOL, EntityKind.PACKAGE):
+                        assert check_relation(p["predicate"], kind, EntityKind(p["object"]["kind"])) is None, (path, p)
+                    subject = EntityKind.SYMBOL
+                else:
+                    subject = special[p["subject"]] if isinstance(p["subject"], str) else EntityKind(p["subject"]["kind"])
                 assert check_relation(p["predicate"], subject, EntityKind(p["object"]["kind"])) is None, (path, p)
                 assert o.evidence_class in ("E2", "E3")
                 if p["object"].get("declare") is False and p["object"]["natural_key"].get("system") != path:

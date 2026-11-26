@@ -27,8 +27,9 @@ import posixpath
 import re
 
 from repo_intel.compile.ontology import EvidenceClass, Predicate
-from repo_intel.platforms.web import markup, script, styles
-from repo_intel.platforms.web.experience import Out, Owner, emit_roles, emit_style_refs, emit_tokens, emit_ui, has_ui, link_targets, renders, screen_ref
+from repo_intel.platforms.web import accessibility, markup, models, script, styles
+from repo_intel.platforms.web.experience import (FILE, Out, Owner, artifact_ref, emit_roles, emit_style_refs, emit_tokens, emit_ui, has_ui,
+                                                 link_targets, renders, screen_ref, token_ref)
 
 P = Predicate
 _SKIP = re.compile(r"(^|/)(node_modules|dist|build|coverage|\.next|\.nuxt|out|vendor|__tests__|__mocks__|e2e|cypress)/|\.(test|spec|stories|story|d)\.[a-z]+$|\.min\.(js|css)$", re.I)
@@ -74,7 +75,9 @@ def _nuxt_route(path: str) -> str | None:
 
 def _route_screens(out: Out, s: script.Script) -> None:
     for r in s.routes():
-        screen = out.entity("web:Route", {"platform": "web", "name": r.name}, r.name, r.start, r.end, r.attrs)
+        # With several routers in the file, the key gains `app` (contract section 8.5); with one it stays {platform, name}.
+        key = {"platform": "web", "name": r.name, **({"app": r.app} if r.app else {})}
+        screen = out.entity("web:Route", key, r.name, r.start, r.end, {**r.attrs, "app": r.app})
         out.construct(r.construct, r.start, r.end, True)
         renders(out, screen, r.start, r.end, r.component or r.module)
         emit_roles(out, screen, r.roles)
@@ -134,19 +137,58 @@ _ENV_READ = re.compile(r"(process\.env|import\.meta\.env|window\.)")
 
 
 def _theme_tokens(out: Out, s: script.Script) -> set[str]:
-    """Tokens from exported theme objects; returns the export names that hold them."""
+    """Tokens from exported theme objects; returns the export names that hold them.
+
+    A leaf that is another token (`primary: palette.blue` where `palette` is a theme object
+    this file exports, or one imported from a theme module) is ALIAS_OF that token."""
     names = set()
+    leaves = []
     for export, obj, cid in s.theme_objects(out.path):
         names.add(export)
-        for name, value, node in s.flatten(obj, export):
-            a, b = s.at(node)
-            if value is None and (node.type in ("call_expression", "arrow_function", "function_expression", "new_expression") or _ENV_READ.match(script.text(node))):
-                out.construct(cid, a, b, False)  # computed or read from the environment: not a design value
-                continue
-            safe = styles.safe_value(value) if value is not None else None
-            out.entity("web:ThemeToken", {"system": out.path, "name": name}, name, a, b, {"category": styles.category(name, safe), "value": safe})
-            out.construct(cid, a, b, True)
+        leaves += [(name, value, node, cid) for name, value, node in s.flatten(obj, export)]
+    local = {name for name, *_ in leaves}
+    for name, value, node, cid in leaves:
+        a, b = s.at(node)
+        if value is None and (node.type in ("call_expression", "arrow_function", "function_expression", "new_expression") or _ENV_READ.match(script.text(node))):
+            out.construct(cid, a, b, False)  # computed or read from the environment: not a design value
+            continue
+        safe = styles.safe_value(value) if value is not None else None
+        token = out.entity("web:ThemeToken", {"system": out.path, "name": name}, name, a, b, {"category": styles.category(name, safe), "value": safe})
+        out.construct(cid, a, b, True)
+        if value is None and node.type in ("member_expression", "subscript_expression"):
+            _theme_alias(out, s, token, script._chain(node), names, local, a, b)
     return names
+
+
+def _theme_alias(out: Out, s: script.Script, token: dict, chain: list[str] | None, exports: set[str], local: set[str], a: int, b: int) -> None:
+    if not chain or len(chain) < 2:
+        return
+    if chain[0] in exports:
+        target = ".".join(chain)
+        if target in local:
+            out.relate(token, P.ALIAS_OF, token_ref(out.path, target, declare=False), a, b, {"basis": "token_reference"})
+        return
+    imported = _theme_import(out, s, chain)
+    if imported is not None:
+        target, candidates = imported
+        for system in candidates:
+            out.relate(token, P.ALIAS_OF, token_ref(system, target, declare=False), a, b, {"basis": "token_reference"}, cls=EvidenceClass.E3)
+
+
+def _theme_import(out: Out, s: script.Script, chain: list[str]) -> tuple[str, list[str]] | None:
+    """For a member chain rooted in an import from a theme module (`theme.colors.primary`
+    after `import { theme } from "../theme"`): the token name it reads and the module paths
+    that can declare it. None when the root is not such an import."""
+    bound = s.imports.get(chain[0])
+    if bound is None or not bound[0].startswith("."):
+        return None
+    spec, imported = bound
+    stem = posixpath.basename(spec).split(".")[0]
+    themed = script._THEME_NAME.match(imported) or (imported in ("default", "*") and _THEME_IMPORT.search(stem))
+    if not themed:
+        return None
+    name = ".".join(chain[1:]) if imported == "*" else ".".join([imported, *chain[1:]])
+    return name, script.module_candidates(out.path, spec, (".ts", ".tsx", ".js", ".jsx", ".mjs"))
 
 
 def _script_style_refs(out: Out, owner: Owner | None, s: script.Script, stylesheets: list[str], theme_exports: set[str]) -> None:
@@ -168,14 +210,10 @@ def _script_style_refs(out: Out, owner: Owner | None, s: script.Script, styleshe
             continue
         bound = s.imports.get(root)
         if bound is not None and bound[0].startswith("."):
-            spec, imported = bound
-            stem = posixpath.basename(spec).split(".")[0]
-            themed = script._THEME_NAME.match(imported) or (imported in ("default", "*") and _THEME_IMPORT.search(stem))
-            if not themed:
+            imported = _theme_import(out, s, chain)
+            if imported is None:
                 continue
-            name = ".".join(chain[1:]) if imported == "*" else ".".join([imported, *chain[1:]])
-            candidates = script.module_candidates(out.path, spec, (".ts", ".tsx", ".js", ".jsx", ".mjs"))
-            emit_style_refs(out, owner, [(name, a, b)], candidates, None, set())
+            emit_style_refs(out, owner, [(imported[0], a, b)], imported[1], None, set())
         elif "theme" in (root, chain[1] if len(chain) > 1 else ""):
             out.construct("web:token-reference", a, b, False)  # a theme passed in at run time (props.theme, ({ theme }) => ...)
 
@@ -227,7 +265,7 @@ class WebScript:
     """JavaScript and TypeScript modules: routers, file routes, views, theme objects."""
 
     id = "web.script"
-    version = "1.0.0"
+    version = "1.1.0"
 
     def matches(self, path: str) -> bool:
         return path.lower().endswith(script.SCRIPT_EXTS) and not _skipped(path)
@@ -249,11 +287,11 @@ class WebScript:
         component = s.default_export_name()
         if route is not None:
             name, cid = route
-            ref = out.entity("web:Route", {"platform": "web", "name": name}, name, 0, len(data), {"framework": "nextjs", "router": "app" if cid == "web:nextjs-app-page" else "pages", "component": component, "stylesheets": sheets.attribute(), "guards": guards})
+            ref = out.entity("web:Route", {"platform": "web", "name": name}, name, 0, len(data), {"framework": "nextjs", "router": "app" if cid == "web:nextjs-app-page" else "pages", "component": component, "stylesheets": sheets.attribute(), "guards": guards, "accessibility": accessibility.screen(elements)})
             out.construct(cid, 0, len(data), True)
             owner = Owner(name, ref)
         elif has_ui(elements, path):
-            ref = out.entity("web:View", {"platform": "web", "name": path}, path, 0, len(data), {"framework": self._framework(s, templates), "component": component, "stylesheets": sheets.attribute(), "guards": guards})
+            ref = out.entity("web:View", {"platform": "web", "name": path}, path, 0, len(data), {"framework": self._framework(s, templates), "component": component, "stylesheets": sheets.attribute(), "guards": guards, "accessibility": accessibility.screen(elements)})
             out.construct("web:view", 0, len(data), True)
             owner = Owner(path, ref)
         if owner is not None:
@@ -261,7 +299,7 @@ class WebScript:
         if path.split("/")[-1].startswith("layout.") and "app" in path.split("/")[:-1]:
             out.construct("web:nextjs-layout", 0, len(data), False)
         sheets.emit(out, owner)
-        emit_ui(out, owner, elements, _script_resolver([s]))
+        emit_ui(out, owner, elements, _script_resolver([s]), form_models=models.Models([s]) if owner is not None else None)
         for el in guard_els if owner is not None else []:
             emit_roles(out, owner.ref, s.element_component(el)[2])
         for message in s.diagnostics:
@@ -305,7 +343,7 @@ class WebMarkup:
     """HTML documents and fragments, and Vue single-file components."""
 
     id = "web.markup"
-    version = "1.0.0"
+    version = "1.1.0"
 
     def matches(self, path: str) -> bool:
         return path.lower().endswith((".html", ".htm", ".vue")) and not _skipped(path)
@@ -329,17 +367,20 @@ class WebMarkup:
                 sheets.add(el.lit("href"), "web:stylesheet-import", el.start, el.end)
             elif el.tag == "style" and el.raw is not None:
                 style_scans.append(_style_scan(out, el.raw_start, el.raw_end, "css"))
+                _sheet_imports(out, style_scans[-1], "css")
+                for rule, spec, x, y in style_scans[-1].imports:
+                    sheets.add(spec, "web:stylesheet-import", x, y, "css")
             elif el.tag == "script":
                 out.construct("web:external-script" if el.has("src") else "web:inline-script", el.start, el.end, False)
         owner = None
         if _DOCUMENT.search(text):
             title = next((el.text for el in elements if el.tag == "title" and el.text), None)
-            ref = out.entity("web:Page", {"platform": "web", "name": path}, path, 0, len(out.data), {"title": title[:120] if title else None, "stylesheets": sheets.attribute()})
+            ref = out.entity("web:Page", {"platform": "web", "name": path}, path, 0, len(out.data), {"title": title[:120] if title else None, "stylesheets": sheets.attribute(), "accessibility": accessibility.screen(elements)})
             out.construct("web:static-page", 0, len(out.data), True)
             owner = Owner(path, ref)
         elif has_ui(elements, path):
             framework = "angular" if any(a.raw.startswith(("(", "[", "*ng")) for el in elements for a in el.attrs.values()) else "html"
-            ref = out.entity("web:View", {"platform": "web", "name": path}, path, 0, len(out.data), {"framework": framework, "stylesheets": sheets.attribute()})
+            ref = out.entity("web:View", {"platform": "web", "name": path}, path, 0, len(out.data), {"framework": framework, "stylesheets": sheets.attribute(), "accessibility": accessibility.screen(elements)})
             out.construct("web:view", 0, len(out.data), True)
             owner = Owner(path, ref)
         if owner is not None:
@@ -367,6 +408,7 @@ class WebMarkup:
                 dialect = styles.dialect_of(attrs.get("lang", "css"))
                 scan = _style_scan(out, byte_of(a), byte_of(b), dialect)
                 style_scans.append(scan)
+                _sheet_imports(out, scan, dialect)
                 for rule, spec, x, y in scan.imports:
                     sheets.add(spec, "web:stylesheet-import", x, y, dialect)
                 if attrs.get("src"):
@@ -382,7 +424,7 @@ class WebMarkup:
             args = call.child_by_field_name("arguments")
             p = script.pairs(args.named_children[0]) if args is not None and args.named_children else {}
             guards, roles, auth = s._object_guards(p)
-            ref = out.entity("web:Route", {"platform": "web", "name": route}, route, *s.at(call), {"framework": "nuxt", "guards": guards or None, "requires_auth": auth or None, "stylesheets": sheets.attribute()})
+            ref = out.entity("web:Route", {"platform": "web", "name": route}, route, *s.at(call), {"framework": "nuxt", "guards": guards or None, "requires_auth": auth or None, "stylesheets": sheets.attribute(), "accessibility": accessibility.screen(elements)})
             out.construct("web:nuxt-page", *s.at(call), True)
             owner = Owner(route, ref)
             emit_roles(out, ref, roles)
@@ -390,14 +432,14 @@ class WebMarkup:
                 out.construct(cid, x, y, modelled)
             s.constructs.clear()
         elif has_ui(elements, path):
-            ref = out.entity("web:View", {"platform": "web", "name": path}, path, 0, len(out.data), {"framework": "vue", "stylesheets": sheets.attribute()})
+            ref = out.entity("web:View", {"platform": "web", "name": path}, path, 0, len(out.data), {"framework": "vue", "stylesheets": sheets.attribute(), "accessibility": accessibility.screen(elements)})
             out.construct("web:view", 0, len(out.data), True)
             owner = Owner(path, ref)
         if owner is not None:
-            renders(out, owner.ref, 0, len(out.data), posixpath.splitext(posixpath.basename(path))[0])
+            renders(out, owner.ref, 0, len(out.data), posixpath.splitext(posixpath.basename(path))[0], symbol=False)
         sheets.emit(out, owner)
         library = "vee-validate" if any(s.imports_from("vee-validate") for s in scripts) else None
-        emit_ui(out, owner, elements, _script_resolver(scripts), library)
+        emit_ui(out, owner, elements, _script_resolver(scripts), library, form_models=models.Models(scripts) if owner is not None else None)
         _navigation(out, owner, scripts)
         for s in scripts:
             _script_style_refs(out, owner, s, sheets.paths, set())
@@ -416,7 +458,7 @@ class WebMarkup:
         local: set[str] = set()
         refs: list[tuple[str, int, int]] = []
         for scan in scans:
-            local |= emit_tokens(out, out.path, scan)
+            local |= emit_tokens(out, out.path, scan, stylesheets)
             refs += scan.refs
             for cid, a, b in scan.constructs:
                 out.construct(cid, a, b, cid in ("web:css-custom-property", "web:scss-variable", "web:less-variable"))
@@ -428,23 +470,40 @@ class WebMarkup:
         emit_style_refs(out, owner, refs, stylesheets, out.path, local)
 
 
+def _sheet_imports(out: Out, scan: styles.StyleScan, dialect: str) -> list[str]:
+    """Artifact DEPENDS_ON Artifact for each `@import`, `@use` or `@forward` of a literal
+    stylesheet path (section 8.5): this file's Artifact to each file the path can name,
+    kept only for the one the unit holds. Returns those candidate paths, in order."""
+    found: list[str] = []
+    for rule, spec, a, b in scan.imports:
+        for candidate in script.style_candidates(out.path, spec, dialect):
+            if candidate == out.path:
+                continue
+            out.relate(FILE, P.DEPENDS_ON, artifact_ref(candidate), a, b, {"via": "@" + rule}, cls=EvidenceClass.E3)
+            if candidate not in found:
+                found.append(candidate)
+    return found
+
+
 class WebStyles:
-    """Stylesheets: design tokens and the at-rules a stylesheet uses."""
+    """Stylesheets: design tokens, the stylesheets they import and the at-rules they use."""
 
     id = "web.styles"
-    version = "1.0.0"
+    version = "1.1.0"
 
     def matches(self, path: str) -> bool:
         return path.lower().endswith(script.STYLE_EXTS) and not _skipped(path)
 
     def extract(self, path: str, data: bytes, blob: str):
         out = Out(self.id, path, data, blob)
-        scan = styles.scan(data.decode("latin-1"), styles.dialect_of(path))
-        emit_tokens(out, path, scan)
+        dialect = styles.dialect_of(path)
+        scan = styles.scan(data.decode("latin-1"), dialect)
+        imported = _sheet_imports(out, scan, dialect)
+        emit_tokens(out, path, scan, imported)
         for cid, a, b in scan.constructs:
             out.construct(cid, a, b, cid in ("web:css-custom-property", "web:scss-variable", "web:less-variable"))
         for rule, spec, a, b in scan.imports:
-            out.construct("web:stylesheet-import", a, b, False)  # one stylesheet using another has no relation kind yet
+            out.construct("web:stylesheet-import", a, b, bool(script.style_candidates(path, spec, dialect)))
         for name, a, b in scan.refs:
             out.construct("web:token-reference", a, b, False)  # a stylesheet is not a screen: nothing to hang STYLED_BY on
         return out.result
