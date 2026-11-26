@@ -1,0 +1,54 @@
+/* ----------------------------------------------------------------- */
+/* Nightly reporting, exported with autorep -q                         */
+/* ----------------------------------------------------------------- */
+
+insert_job: RPT_NIGHTLY_BOX   job_type: BOX
+owner: rptsvc
+permission: gx,ge
+date_conditions: 1
+days_of_week: mo,tu,we,th,fr
+start_times: "03:00"
+run_calendar: RPT_BUSINESS_DAYS
+exclude_calendar: RPT_HOLIDAYS
+description: "Nightly reporting"
+alarm_if_fail: 1
+
+insert_job: RPT_EXTRACT   job_type: CMD
+box_name: RPT_NIGHTLY_BOX
+command: /opt/batch/scripts/extract_orders.sh report
+machine: rpthost02
+owner: rptsvc
+std_out_file: /var/log/rpt/extract.out
+std_err_file: /var/log/rpt/extract.err
+
+insert_job: RPT_BUILD   job_type: CMD
+box_name: RPT_NIGHTLY_BOX
+command: sas /opt/sas/programs/build_reports.sas -log /var/log/rpt/build.log
+machine: rpthost02
+owner: rptsvc
+condition: s(RPT_EXTRACT) & (s(ORD_FEED) | d(ORD_FEED_FALLBACK)) & v(RPT_MODE) = "full"
+n_retrys: 1
+
+insert_job: RPT_REFRESH_CICS   job_type: CICS
+box_name: RPT_NIGHTLY_BOX
+cics_region_name: CICSPRD1
+cics_tran_id: RPT1
+machine: cicsagent
+owner: rptsvc
+condition: success(RPT_BUILD)
+
+insert_job: PAY_SUBMIT_J020   job_type: ZOS
+machine: zosagent
+owner: paysvc
+jcl_library: PROD.PAYROLL.JCL
+jcl_member: PAYJ020
+condition: s(PAYJ010^CA7)
+
+insert_job: ORD_FEED   job_type: FW
+machine: rpthost02
+owner: rptsvc
+watch_file: /data/inbound/orders/feed_ready.flg
+watch_interval: 60
+
+update_job: RPT_EXTRACT
+n_retrys: 2
