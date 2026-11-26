@@ -263,6 +263,10 @@ class LocalApi:
                 return self.overrides()
             case "PUT", ["repositories", *rest] if rest[-1:] == ["overrides"]:
                 return self.save_overrides(body or {})
+            case "GET", ["repositories", *rest] if rest[-1:] == ["documents"]:
+                return self.documents()
+            case "PUT", ["repositories", *rest] if rest[-1:] == ["documents"]:
+                return self.save_documents(body or {})
             case _, ["business-maps", *_]:
                 raise HttpError(501, "The business map spans repositories and is not available in the editor.", "unsupported")
         raise _not_found()
@@ -418,6 +422,24 @@ class LocalApi:
         tmp.write_text(json.dumps(current.document, indent=2, sort_keys=True, ensure_ascii=False) + "\n")
         tmp.replace(path)
         return {"repository_id": self.snapshot().manifest.repository_id, "version": self._version(), "override_set_hash": current.set_hash}
+
+    # -- designated documents, in .rkp/documents.json (contract 9.1; repo_intel.documents.controls)
+
+    def documents(self) -> dict[str, Any]:
+        """`{documents, candidates, problems, version}`; answers before the first compile too."""
+        from repo_intel.documents import controls
+        return controls.listing(self.repo)
+
+    def save_documents(self, body: dict[str, Any]) -> dict[str, Any]:
+        """Validate `{documents: [...]}` and write `.rkp/documents.json`; 422 when an entry is
+        not acceptable, 409 when `expected_version` is given and the file changed since."""
+        from repo_intel.documents import controls, format as designations
+        try:
+            return controls.save(self.repo, body)
+        except designations.DesignationError as error:
+            raise HttpError(422, str(error), "invalid") from None
+        except controls.StaleDesignations as error:
+            raise HttpError(409, str(error), "stale") from None
 
 
 def serve_stdio(repo: str | Path, stdin: Any = None, stdout: Any = None, log: Callable[[str], None] | None = None) -> int:

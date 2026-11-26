@@ -1,0 +1,80 @@
+{
+ "fixture": "F36-designated-documents",
+ "description": "An order desk: two tables in db/schema.sql and the documents that describe them, with the owner's designations in .rkp/documents.json (contract 9.1). A Markdown requirements document whose REQ- items name a table and a field; a DOCX data dictionary (built by make_docs.py, members stored, fixed dates) with one table of fields per entity; an XLSX workbook whose first sheet is a code list and whose second holds formulas, matched by a glob; a rules document, read for rule candidates only, since models are off in a golden compile; a PDF designated for rules, which is excluded as binary and reported as a gap; and two Markdown documents that are not designated and must produce nothing. Commits add a designation, remove one, and designate a document again for two features. 'since' names the milestone whose compiler must produce the item.",
+ "entities": [
+  {"kind": "Table", "natural_key": {"datastore": "default", "name": "orders"}, "since": "M2"},
+  {"kind": "Table", "natural_key": {"datastore": "default", "name": "sales.customers"}, "since": "M2"},
+  {"kind": "Requirement", "natural_key": {"scope": "docs/requirements.md", "name": "req-1"}, "since": "M2", "attributes": {"identifier": "REQ-1", "modality": "must", "section": ["Order desk requirements", "Capture"], "statement": "Every order must carry a status from the order status list, held in `orders.status`.", "document": "docs/requirements.md"}},
+  {"kind": "Requirement", "natural_key": {"scope": "docs/requirements.md", "name": "req-2"}, "since": "M2", "attributes": {"identifier": "REQ-2", "modality": "shall"}},
+  {"kind": "Requirement", "natural_key": {"scope": "docs/requirements.md", "name": "req-3"}, "since": "M2", "attributes": {"identifier": "REQ-3", "statement": "A new order starts as a draft."}},
+  {"kind": "Requirement", "natural_key": {"scope": "docs/requirements.md", "name": "the-nightly-export-should-include-every-row-of"}, "since": "M2", "attributes": {"modality": "should", "section": ["Order desk requirements", "Customers"]}},
+  {"kind": "DataSchema", "natural_key": {"name": "docs/data-dictionary.docx#orders"}, "since": "M2", "attributes": {"entity": "orders", "document": "docs/data-dictionary.docx", "fields": 4, "documents_table": "ent_kfn5kr454lhqwk46yflo7pxhpm"}},
+  {"kind": "DataSchema", "natural_key": {"name": "docs/data-dictionary.docx#customers"}, "since": "M2", "attributes": {"entity": "customers", "fields": 3, "documents_table": "ent_txsa6ctl5t5krmxy32tq7vl5xc"}},
+  {"kind": "Field", "natural_key": {"table": "docs/data-dictionary.docx#orders", "name": "status"}, "since": "M2", "attributes": {"type": "varchar(20)", "nullable": false, "description": "Order status code, see order-codes.xlsx"}},
+  {"kind": "Field", "natural_key": {"table": "docs/data-dictionary.docx#orders", "name": "order_id"}, "since": "M2", "attributes": {"type": "integer", "key": "PK", "nullable": false}},
+  {"kind": "Field", "natural_key": {"table": "docs/data-dictionary.docx#orders", "name": "amount"}, "since": "M2", "attributes": {"type": "decimal(10,2)", "nullable": true}},
+  {"kind": "Field", "natural_key": {"table": "docs/data-dictionary.docx#customers", "name": "region"}, "since": "M2", "attributes": {"type": "char(2)"}},
+  {"kind": "CodeList", "natural_key": {"platform": "document", "name": "docs/order-codes.xlsx#order-status"}, "since": "M2", "attributes": {"document": "docs/order-codes.xlsx", "section": ["Order status"], "values": [{"code": "D", "label": "Draft"}, {"code": "S", "label": "Submitted"}, {"code": "A", "label": "Approved"}, {"code": "X", "label": "Cancelled"}]}}
+ ],
+ "edges": [
+  {"subject": {"kind": "Requirement", "natural_key": {"scope": "docs/requirements.md", "name": "req-1"}}, "predicate": "DEFINED_IN", "object": {"kind": "Artifact", "natural_key": {"path": "docs/requirements.md"}}, "since": "M2"},
+  {"subject": {"kind": "Requirement", "natural_key": {"scope": "docs/requirements.md", "name": "req-1"}}, "predicate": "APPLIES_TO", "object": {"kind": "Field", "natural_key": {"table": "orders", "name": "status"}}, "since": "M2"},
+  {"subject": {"kind": "Requirement", "natural_key": {"scope": "docs/requirements.md", "name": "req-2"}}, "predicate": "APPLIES_TO", "object": {"kind": "Table", "natural_key": {"datastore": "default", "name": "orders"}}, "since": "M2"},
+  {"subject": {"kind": "Requirement", "natural_key": {"scope": "docs/requirements.md", "name": "the-nightly-export-should-include-every-row-of"}}, "predicate": "APPLIES_TO", "object": {"kind": "Table", "natural_key": {"datastore": "default", "name": "sales.customers"}}, "since": "M2"},
+  {"subject": {"kind": "DataSchema", "natural_key": {"name": "docs/data-dictionary.docx#orders"}}, "predicate": "CONTAINS", "object": {"kind": "Field", "natural_key": {"table": "docs/data-dictionary.docx#orders", "name": "status"}}, "since": "M2"},
+  {"subject": {"kind": "DataSchema", "natural_key": {"name": "docs/data-dictionary.docx#orders"}}, "predicate": "DEFINED_IN", "object": {"kind": "Artifact", "natural_key": {"path": "docs/data-dictionary.docx"}}, "since": "M2"},
+  {"subject": {"kind": "Field", "natural_key": {"table": "docs/data-dictionary.docx#customers", "name": "region"}}, "predicate": "DEFINED_IN", "object": {"kind": "Artifact", "natural_key": {"path": "docs/data-dictionary.docx"}}, "since": "M2"},
+  {"subject": {"kind": "CodeList", "natural_key": {"platform": "document", "name": "docs/order-codes.xlsx#order-status"}}, "predicate": "DEFINED_IN", "object": {"kind": "Artifact", "natural_key": {"path": "docs/order-codes.xlsx"}}, "since": "M2"}
+ ],
+ "absent_entities": [
+  {"kind": "Requirement", "natural_key": {"scope": "docs/meeting-notes.md", "name": "req-90"}, "why": "meeting-notes.md is not designated: nothing is read from it, however much it looks like a requirement"},
+  {"kind": "CodeList", "natural_key": {"platform": "document", "name": "docs/meeting-notes.md#status-codes-we-discussed"}, "why": "an undesignated document's code table is not a code list"},
+  {"kind": "DataSchema", "natural_key": {"name": "docs/meeting-notes.md#Fields we discussed"}, "why": "an undesignated document's field table is not a schema"},
+  {"kind": "CodeList", "natural_key": {"platform": "document", "name": "docs/glossary.md#region-codes"}, "why": "the glossary is designated only from commit 01"},
+  {"kind": "Requirement", "natural_key": {"scope": "docs/pricing-rules.md", "name": "orders-over-1000-must-be-approved-by-a"}, "why": "pricing-rules.md is designated for rules only, not requirements"},
+  {"kind": "CodeList", "natural_key": {"platform": "document", "name": "docs/order-codes.xlsx#counts"}, "why": "the Counts sheet's second column is a count, not a meaning; its formulas are not evaluated"},
+  {"kind": "DataSchema", "natural_key": {"name": "docs/requirements.md#order_return"}, "why": "requirements.md is designated for schema only from commit 03"}
+ ],
+ "exclusions": [
+  {"path": "docs/scanned-policy.pdf", "reason": "binary"}
+ ],
+ "forbidden_kinds": ["BusinessRule"],
+ "expected_unknowns": [
+  {"since": "M2", "detail": "docs/scanned-policy.pdf is designated for rules but excluded from the snapshot as binary: an unknown in the documents coverage names the export needed (Markdown, DOCX or text)"}
+ ],
+ "expected_conflicts": [],
+ "secret_probes": [],
+ "decision_cases": [],
+ "granularity": {"label": null, "why": "a schema and documents, with no build or deployment a repository shows", "source": "fixture design"},
+ "commits": [
+  {
+   "dir": "01-designate-glossary",
+   "expect": "The glossary is designated for code lists: its region table becomes a code list",
+   "added_entities": [
+    {"kind": "CodeList", "natural_key": {"platform": "document", "name": "docs/glossary.md#region-codes"}, "since": "M2"}
+   ],
+   "removed_entities": []
+  },
+  {
+   "dir": "02-drop-requirements",
+   "expect": "The requirements document is no longer designated: its requirements go",
+   "added_entities": [],
+   "removed_entities": [
+    {"kind": "Requirement", "natural_key": {"scope": "docs/requirements.md", "name": "req-1"}, "since": "M2"},
+    {"kind": "Requirement", "natural_key": {"scope": "docs/requirements.md", "name": "req-2"}, "since": "M2"},
+    {"kind": "Requirement", "natural_key": {"scope": "docs/requirements.md", "name": "req-3"}, "since": "M2"},
+    {"kind": "Requirement", "natural_key": {"scope": "docs/requirements.md", "name": "the-nightly-export-should-include-every-row-of"}, "since": "M2"}
+   ]
+  },
+  {
+   "dir": "03-requirements-with-schema",
+   "expect": "The requirements document is designated again, for requirements and schema, and gains an entity diagram",
+   "added_entities": [
+    {"kind": "Requirement", "natural_key": {"scope": "docs/requirements.md", "name": "req-1"}, "since": "M2"},
+    {"kind": "DataSchema", "natural_key": {"name": "docs/requirements.md#order_return"}, "since": "M2"},
+    {"kind": "Field", "natural_key": {"table": "docs/requirements.md#order_return", "name": "return_id"}, "since": "M2"}
+   ],
+   "removed_entities": []
+  }
+ ]
+}

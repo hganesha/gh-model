@@ -1063,6 +1063,8 @@ def _repo_compile(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, An
 
     if "lifted" in inputs.names():  # contract 8.2, only when the compile settings turned it on
         _lifted_knowledge(repo, g, inputs["lifted"])
+    if "documents" in inputs.names():  # contract 9.1, only when the commit holds .rkp/documents.json
+        coverage += _document_knowledge(repo, g, inputs["documents"])
 
     # Conflicts: single-valued predicates with two objects, and decisions that disagree.
     every = [a for s in shards.values() for a in s["assertions"]] + list(g.assertions.values())
@@ -1230,6 +1232,135 @@ def _lifted_knowledge(repo: str, g: _Shard, lifted: Mapping[str, Any]) -> None:
         for problem in captures["problems"]:
             row = Unknown.make(artifact, "captured_screen", "unknown", problem, "decisions:@repo").row()
             g.unknowns[row["id"]] = row
+
+
+# ------------------------------------------------------------------ designated documents (contract 9.1)
+
+
+def _document_knowledge(repo: str, g: _Shard, documents: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """What the designated documents state (repo_intel.documents), in the global shard, and
+    the `documents` coverage: one entry per unit holding a designated document or the
+    designation file, blocks a feature used over blocks read.
+
+    Requirements are read from the text (`E2`); schemas, fields and code lists are declared
+    (`E1`); what a requirement or rule names is a candidate (`E4`). A rule a model named is
+    a hypothesis (`E5`) until the owner confirms it; a rejected one is left out. What could
+    not be read, and every ignored designation, is an unknown in the unit's coverage.
+    """
+    def artifact(path: str) -> str:
+        return Entity.make(repo, EntityKind.ARTIFACT, {"path": path}, posixpath.basename(path)).id
+
+    designation = documents["designation"]
+    home = designation["unit"]
+    scopes: dict[str, dict[str, Any]] = {}
+
+    def scope(unit: str) -> dict[str, Any]:
+        return scopes.setdefault(unit, {"blocks": 0, "used": 0, "documents": 0, "by_feature": {}, "unreadable": [], "reading": {}})
+
+    scope(home)
+
+    def tally(s: dict[str, Any], feature: str, **counts: int) -> None:
+        slot = s["by_feature"].setdefault(feature, {})
+        for k, n in counts.items():
+            slot[k] = slot.get(k, 0) + n
+
+    def unknown(subject: str, predicate: str, reason: str, unit: str) -> None:
+        row = Unknown.make(subject, predicate, "unknown", reason, f"documents:{unit}").row()
+        g.unknowns[row["id"]] = row
+
+    observed = dict(assertion_kind=AssertionKind.OBSERVED_FACT, epistemic_status=EpistemicStatus.SUPPORTED)
+    candidate = dict(assertion_kind=AssertionKind.DERIVED_RELATION, epistemic_status=EpistemicStatus.INFERRED, evidence_class=EvidenceClass.E4, resolution="candidate")
+    for d in documents["documents"]:
+        s = scope(d["unit"])
+        doc_artifact = artifact(d["path"])
+        if d["problem"]:
+            s["unreadable"].append({"path": d["path"], "reason": d["problem"], "export": "Markdown, DOCX or text"})
+            unknown(doc_artifact, "document_read", f"{d['path']} is designated for {', '.join(d['features'])} and cannot be read: {d['problem']}", d["unit"])
+            continue
+        s["documents"] += 1
+        s["blocks"] += d["blocks"]
+        for k, n in d["counts"].items():  # what a reader saw and did not use, such as formulas with no cached value
+            if n:
+                s["reading"][k] = s["reading"].get(k, 0) + n
+        evidence = {ev["id"]: ev for ev in d["evidence"]}
+
+        def cite(ids: list[str]) -> list[str]:
+            return [g.cite(evidence[i]) for i in ids if i in evidence]
+
+        used = {i for blocks in d["used"].values() for i in blocks}
+        for r in d["requirements"]:
+            evs = cite(r["evidence_ids"])
+            attributes = {"statement": r["statement"], "section": r["section"], "document": d["path"], **{k: r[k] for k in ("identifier", "modality") if r.get(k)}}
+            rid = g.entity(Entity.make(repo, EntityKind.REQUIREMENT, {"scope": d["path"], "name": r["name"]}, r.get("identifier") or r["name"], attributes=attributes, evidence_ids=evs))
+            g.assertion(Assertion.make(rid, Predicate.DEFINED_IN, doc_artifact, evidence_class=EvidenceClass.E2, evidence_ids=evs, **observed))
+            for target in r["applies_to"]:
+                g.assertion(Assertion.make(rid, Predicate.APPLIES_TO, target, qualifiers={"basis": "document_mention"}, evidence_ids=evs, **candidate))
+        for sc in d["schemas"]:
+            evs = cite(sc["evidence_ids"])
+            attributes = {"document": d["path"], "entity": sc["entity"], "fields": len(sc["fields"]), **({"documents_table": sc["documents_table"]} if sc.get("documents_table") else {})}
+            sid = g.entity(Entity.make(repo, EntityKind.DATA_SCHEMA, {"name": sc["name"]}, sc["name"], attributes=attributes, evidence_ids=evs))
+            g.assertion(Assertion.make(sid, Predicate.DEFINED_IN, doc_artifact, evidence_class=EvidenceClass.E1, evidence_ids=evs, **observed))
+            for f in sc["fields"]:
+                fevs = cite(f["evidence_ids"]) or evs
+                fid = g.entity(Entity.make(repo, EntityKind.FIELD, {"table": sc["name"], "name": f["name"]}, f["name"], attributes={k: f[k] for k in ("type", "nullable", "key", "description") if k in f}, evidence_ids=fevs))
+                g.assertion(Assertion.make(sid, Predicate.CONTAINS, fid, evidence_class=EvidenceClass.E1, evidence_ids=fevs, **observed))
+                g.assertion(Assertion.make(fid, Predicate.DEFINED_IN, doc_artifact, evidence_class=EvidenceClass.E1, evidence_ids=fevs, **observed))
+        for c in d["code_lists"]:
+            evs = cite(c["evidence_ids"])
+            attributes = {"document": d["path"], "section": c["heading"], "values": c["values"], **({"values_omitted": c["omitted"]} if c["omitted"] else {})}
+            cid = g.entity(Entity.make(repo, EntityKind.CODE_LIST, {"platform": "document", "name": c["name"]}, c["name"], attributes=attributes, evidence_ids=evs))
+            g.assertion(Assertion.make(cid, Predicate.DEFINED_IN, doc_artifact, evidence_class=EvidenceClass.E1, evidence_ids=evs, **observed))
+        lifted = 0
+        for r in d["rules"]:
+            if r["status"] == "rejected":
+                continue
+            lifted += 1
+            used.update(r["blocks"])
+            confirmed = r["status"] == "confirmed"
+            evs = [g.cite(ev) for ev in r["evidence"]]
+            attributes = {
+                "statement": r["statement"], "rule_kind": r["rule_kind"], "status": r["status"], "candidates": r["candidates"], "document": d["path"],
+                "trust_label": "untrusted_generated", "decision_ref": r["decision_ref"], **({"confirmation_ref": r["confirmation_ref"]} if confirmed else {}),
+            }
+            rid = g.entity(Entity.make(repo, EntityKind.BUSINESS_RULE, r["natural_key"], r["natural_key"]["name"], attributes=attributes, evidence_ids=evs))
+            how = dict(
+                assertion_kind=AssertionKind.INFERRED_RELATION if confirmed else AssertionKind.HYPOTHESIS,
+                epistemic_status=EpistemicStatus.SUPPORTED if confirmed else EpistemicStatus.INFERRED,
+                evidence_class=EvidenceClass.E5, evidence_ids=evs, resolution="exact" if confirmed else "candidate",
+                decision_ref=r["confirmation_ref"] if confirmed else r["decision_ref"], verification_ref="owner_override" if confirmed else None,
+            )
+            g.assertion(Assertion.make(rid, Predicate.DEFINED_IN, doc_artifact, qualifiers={"basis": "rule_lifting"}, **how))
+            for target in r["applies_to"]:
+                g.assertion(Assertion.make(rid, Predicate.APPLIES_TO, target, qualifiers={"basis": "rule_lifting"}, **how))
+        s["used"] += len(used)
+        for feature in d["features"]:
+            if feature == "requirements":
+                tally(s, feature, blocks=len(d["used"].get(feature, [])), entities=len(d["requirements"]))
+            elif feature == "schema":
+                tally(s, feature, blocks=len(d["used"].get(feature, [])), entities=len(d["schemas"]), fields=sum(len(x["fields"]) for x in d["schemas"]))
+            elif feature == "code_lists":
+                tally(s, feature, blocks=len(d["used"].get(feature, [])), entities=len(d["code_lists"]), values=sum(len(x["values"]) for x in d["code_lists"]))
+            else:
+                tally(s, feature, candidates=len(d["candidates"]) + d["omitted_candidates"], blocks=len({b for r in d["rules"] if r["status"] != "rejected" for b in r["blocks"]}), entities=lifted)
+
+    for u in documents["unreadable"]:
+        scope(u["unit"])["unreadable"].append({"path": u["path"], "reason": u["reason"], "export": u["export"]})
+        subject = artifact(u["path"]) if u["artifact"] else artifact(designation["path"])
+        unknown(subject, "document_read", f"{u['path']} is designated for {', '.join(u['features'])} and is not read: {u['reason']}; commit it as {u['export']}", u["unit"])
+    for p in documents["problems"]:
+        unknown(artifact(designation["path"]), "document_designation", f"{designation['path']}: {p['message']}", home)
+
+    out = []
+    for unit in sorted(scopes):
+        s = scopes[unit]
+        detail = {
+            "documents": s["documents"], "by_feature": dict(sorted(s["by_feature"].items())),
+            "unreadable": sorted(s["unreadable"], key=lambda u: u["path"]), "rule_lifting": documents["rule_lifting"],
+            **({"reading": dict(sorted(s["reading"].items()))} if s["reading"] else {}),
+            **({"designation": {"path": designation["path"], "blob_sha256": designation["blob_sha256"], "entries": len(documents["entries"]), "problems": len(documents["problems"])}} if unit == home else {}),
+        }
+        out.append(CoverageEntry(domain="documents", scope=unit, numerator=s["used"], denominator=s["blocks"], detail=detail).row())
+    return out
 
 
 def _preference(overrides: Mapping[str, Any], predicate: str, subject: str) -> str | None:

@@ -28,6 +28,8 @@ from repo_intel.decisions import overrides as override_store
 from repo_intel.decisions import rules as dm_rules
 from repo_intel.decisions import screens as dm_screens
 from repo_intel.decisions import workflows as dm_workflows
+from repo_intel.documents import rules as doc_rules
+from repo_intel.documents import stage as doc_stage
 from repo_intel.decisions.gateway import Gateway, pins_hash
 from repo_intel.decisions.overrides import Overrides
 from repo_intel.decisions.runner import Budget, Ledger, evaluate, hypothesize
@@ -42,7 +44,7 @@ from repo_intel.compile.verify import content_leaves, verify_snapshot
 
 POLICY_VERSION = "repo-intelligence-policy-v3"
 EMPTY_OVERRIDES = override_store.EMPTY.set_hash
-SPECS: dict[str, DecisionSpec] = {s.id: s for s in (dm_component.SPEC, dm_component.TOPOLOGY_SPEC, dm_component.STACK_SPEC, *dm_linking.SPECS, dm_behavior.SPEC, dm_architecture.GRANULARITY_SPEC, dm_rules.SPEC, dm_workflows.SPEC, dm_screens.SPEC)}
+SPECS: dict[str, DecisionSpec] = {s.id: s for s in (dm_component.SPEC, dm_component.TOPOLOGY_SPEC, dm_component.STACK_SPEC, *dm_linking.SPECS, dm_behavior.SPEC, dm_architecture.GRANULARITY_SPEC, dm_rules.SPEC, dm_workflows.SPEC, dm_screens.SPEC, doc_rules.SPEC)}
 
 
 class PublishGateError(RuntimeError):
@@ -291,6 +293,10 @@ def stage_compile(store: ObjectStore, repository_id: str, path_manifest_digest: 
         unit_decisions += made
     if capture_summary is not None:
         lifted["captures"] = capture_summary
+    # 9.1: owner-designated documents, read only when the commit holds .rkp/documents.json;
+    # their rules are lifted only when the settings turn business rules on.
+    documents, made = doc_stage.designated_documents(runner, repository_id, entries, pm["exclusions"], shard_refs, plan["units"], lift_rules=dm_rules.enabled(policy), ledger=ledger, gateway=gateway, budget=budget, overrides=overrides, root_unit=ROOT_UNIT)
+    unit_decisions += made
 
     tell("repo_compile", units=len(plan["units"]))
     requests = runner.load(runner.run(REPO_REQUESTS, {"repository_id": repository_id, "shards": shard_refs, "links": link_refs}))["requests"]
@@ -311,6 +317,7 @@ def stage_compile(store: ObjectStore, repository_id: str, path_manifest_digest: 
         "pattern_catalogue": Ref(store.put_json(load_patterns().row())),
         "decisions": repo_decisions, "unit_decisions": unit_decisions, "overrides": overrides.document,
         **({"lifted": lifted} if lifted else {}),  # declared only when there is any, so other compiles keep their key
+        **({"documents": documents} if documents is not None else {}),  # 9.1, likewise only with a designation file
     }))
 
     shard_digests = {name: ref.digest for name, ref in shard_refs.items()}
