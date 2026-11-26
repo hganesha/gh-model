@@ -32,7 +32,8 @@ from repo_intel.compile.ontology import EvidenceClass
 SCHEMA = "rkp-behavior/1"
 TYPES = frozenset({"string", "number", "integer", "boolean", "date", "datetime", "binary", "array", "struct", "query", "dataset", "any", "null", "unknown"})
 # What a unit is the behaviour of, when an owner has several (a program's DATA steps and open code).
-UNIT_KINDS = frozenset({"function", "page", "macro", "data_step", "sql_step", "proc_step", "open_code", "handler"})
+# paragraph: a COBOL paragraph or RPG subroutine; trigger: a database trigger; flow: an ETL or integration flow (section 10).
+UNIT_KINDS = frozenset({"function", "page", "macro", "data_step", "sql_step", "proc_step", "open_code", "handler", "paragraph", "trigger", "flow"})
 # Statement ops, with their required fields and which fields hold statement lists or expressions.
 STATEMENTS: dict[str, dict[str, tuple[str, ...]]] = {
     "assign": {"required": ("target", "value"), "exprs": ("target", "value")},

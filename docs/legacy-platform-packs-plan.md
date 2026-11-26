@@ -1,6 +1,6 @@
 # Legacy platform packs: waves W7 to W10
 
-Status: 2026-11-26, proposed. Waves W1 to W6 are planned and in progress; this adds waves W7 to W10. It follows the format of the [solution IR contract](solution-ir-contract.md) (on `claude/solution-ir`; not yet on `main`), which records waves 1 and 2, and is written to be folded into that contract as one section per wave. Sections 1 to 7 of the contract apply to every workstream here.
+Status: 2026-11-26. Waves 1 and 2 are built; wave W7 is folded into sections 9 and 10 of the contract, which bind it. Waves W8 to W10 are proposed. It follows the format of the [solution IR contract](solution-ir-contract.md), which records waves 1 and 2, and is written to be folded into that contract as one section per wave. Sections 1 to 7 of the contract apply to every workstream here.
 
 A workstream is named by its wave and its place in it: `W8.1` is the first workstream of wave W8. The contract restarts W1 to W6 inside each wave; the wave prefix keeps the names apart.
 

@@ -250,7 +250,8 @@ def sql_platform(path: str, text: str) -> str:
     return "sql"
 
 
-DIALECT = {"teradata": "teradata", "tsql": "tsql", "sql": None}
+# sqlglot has no DB2 dialect, so DB2 is read as generic SQL; Netezza is read as Postgres and Sybase as T-SQL.
+DIALECT = {"teradata": "teradata", "tsql": "tsql", "sql": None, "oracle": "oracle", "db2": None, "hive": "hive", "netezza": "postgres", "sybase": "tsql"}
 
 
 def program(platform: str, name: str, declare: bool = True) -> dict:

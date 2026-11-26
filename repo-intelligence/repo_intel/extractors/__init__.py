@@ -40,6 +40,16 @@ LANGUAGES = {
     # Server pages and SAS Enterprise Guide (docs/solution-ir-contract.md section 8.6).
     ".jsp": "jsp", ".jspx": "jsp", ".jspf": "jsp", ".tag": "jsp", ".tagx": "jsp",
     ".aspx": "aspnet", ".ascx": "aspnet", ".master": "aspnet", ".cshtml": "aspnet", ".razor": "aspnet", ".egp": "sas",
+    # Data estate packs, wave W7 (docs/solution-ir-contract.md, section 10). `.prc` stays jcl here;
+    # the plsql pack recognises an Oracle `.prc` by its content.
+    ".pks": "plsql", ".pkb": "plsql", ".pls": "plsql", ".plb": "plsql", ".fnc": "plsql", ".trg": "plsql",
+    ".fastload": "teradata", ".mload": "teradata", ".fexp": "teradata",
+    ".ksh": "shell", ".bash": "shell", ".bat": "batch", ".cmd": "batch", ".ps1": "powershell",
+    ".dtsx": "ssis", ".conmgr": "ssis", ".ispac": "ssis",
+    ".dsx": "datastage", ".isx": "datastage", ".dml": "abinitio", ".xfr": "abinitio",
+    ".hql": "hive", ".pig": "pig",
+    # Documents an owner may designate (section 9.1).
+    ".txt": "text", ".csv": "csv", ".html": "html", ".htm": "html", ".docx": "docx", ".xlsx": "xlsx", ".pdf": "pdf",
     # More languages, API contracts, and build and infrastructure files.
     ".kt": "kotlin", ".kts": "kotlin", ".cs": "csharp", ".fs": "fsharp", ".swift": "swift", ".gradle": "gradle", ".sbt": "sbt",
     ".csproj": "msbuild", ".fsproj": "msbuild", ".vbproj": "msbuild", ".gemspec": "ruby", ".rake": "ruby", ".erb": "erb",

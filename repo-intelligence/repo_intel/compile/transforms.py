@@ -166,6 +166,18 @@ def _check_transform(t: Any, i: int, problems: list[str]) -> None:
         problems.append(f"{where}: a platform transform names its construct")
 
 
+def _known_language(language: Any) -> bool:
+    """`sql`, `sas`, `pyspark`, or the id of a registered platform pack, so an ETL mapping or
+    a DFSORT step is described in the same vocabulary (docs/solution-ir-contract.md, section 10)."""
+    if language in LANGUAGES:
+        return True
+    if not isinstance(language, str):
+        return False
+    from repo_intel.platforms import packs  # imported here: packs import this module
+
+    return language in packs()
+
+
 def validate_shape(unit: Any) -> list[str]:
     """Every way `unit` breaks the transform-shape contract; empty when it is valid."""
     if not isinstance(unit, dict):
@@ -174,8 +186,8 @@ def validate_shape(unit: Any) -> list[str]:
     owner = unit.get("owner")
     if not (owner in OWNER_STRINGS or (isinstance(owner, dict) and {"kind", "natural_key", "name"} <= set(owner))):
         problems.append("owner must be an entity reference {kind, natural_key, name}, '@package' or '@file'")
-    if unit.get("language") not in LANGUAGES:
-        problems.append(f"language must be one of {', '.join(LANGUAGES)}")
+    if not _known_language(unit.get("language")):
+        problems.append(f"language must be one of {', '.join(LANGUAGES)} or a registered platform pack id")
     if unit.get("schema", SCHEMA) != SCHEMA:
         problems.append(f"schema must be {SCHEMA}")
     transforms = unit.get("transforms")
