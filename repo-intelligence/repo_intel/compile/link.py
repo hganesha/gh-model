@@ -37,6 +37,7 @@ NODE_BUILTINS = {"assert", "buffer", "child_process", "cluster", "crypto", "dns"
 AI_SDKS = {"anthropic": "anthropic", "openai": "openai", "google.generativeai": "google", "google.genai": "google", "mistralai": "mistral", "cohere": "cohere",
            "@anthropic-ai/sdk": "anthropic", "@google/generative-ai": "google", "@mistralai/mistralai": "mistral", "cohere-ai": "cohere"}
 TS_EXT = (".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs")
+SYMBOL_END = "@symbol:"  # a relation end naming a top-level exported symbol of the same file (section 8.5)
 _TEST_PY = re.compile(r"(^|/)(test_[^/]*|[^/]*_test)\.py$")
 _TEST_TS = re.compile(r"(\.(test|spec)\.[cm]?[jt]sx?$)|(^|/)__tests__/")
 
@@ -682,6 +683,28 @@ class _Linker:
                 if m["payload"]["natural_key"]["provider"] == provider:
                     self.relate(first["path"], component, Predicate.CONSUMES, ref(EntityKind.MODEL_ENDPOINT, m["payload"]["natural_key"], m["payload"]["name"]), [first["evidence"], m["evidence"]], {"basis": "same_package"}, evidence_class=EvidenceClass.E4, resolution="candidate")
 
+    # -- per-file Symbol ends (docs/solution-ir-contract.md, section 8.5)
+
+    def symbol_ends(self) -> dict[str, dict[str, dict[str, Any] | None]]:
+        """What each "@symbol:<name>" relation end of a file resolves to.
+
+        An extractor may name a relation end "@symbol:<name>": the top-level exported symbol
+        `<name>` declared in the same file. One file cannot build that Symbol's key, which
+        needs the unit's package, so the linker resolves it here. The result maps each file
+        that uses such an end to {name: the Symbol ref, as `symbol_ref` builds it, or None
+        when the file exports no symbol of that name}. `unit.compile` then relates the
+        Symbol, or falls back to "@package" with qualifier `component: <name>`.
+        """
+        out: dict[str, dict[str, dict[str, Any] | None]] = {}
+        for path in sorted(self.files):
+            for o in _of(self.files[path], "relation"):
+                for end in (o["payload"].get("subject"), o["payload"].get("object")):
+                    if isinstance(end, str) and end.startswith(SYMBOL_END):
+                        name = end[len(SYMBOL_END):]
+                        found = name in self.symbols[path]
+                        out.setdefault(path, {})[name] = {**self.symbol_ref(path, name), "declare": False} if found else None
+        return out
+
     # -- exports for repo-level linking
 
     def exports(self) -> dict[str, Any]:
@@ -732,7 +755,7 @@ def _unit_link(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, Any]:
     if lineage:  # reported only where a unit reads or writes data by name (spec §8.2)
         resolved, unresolved = sum(p["resolved"] for _, p in lineage), sum(p["unresolved"] for _, p in lineage)
         coverage.append(CoverageEntry(domain="data_lineage", scope=unit["name"], numerator=resolved, denominator=resolved + unresolved, detail={"files": len(lineage), "files_with_unresolved": sorted(path for path, p in lineage if p["unresolved"])[:50]}).row())
-    return {"unit": unit["name"], "observations": linker.out, "unknowns": linker.unknowns, "coverage": coverage, "exports": linker.exports()}
+    return {"unit": unit["name"], "observations": linker.out, "unknowns": linker.unknowns, "coverage": coverage, "exports": linker.exports(), "symbol_ends": linker.symbol_ends()}
 
 
 UNIT_LINK = Step("unit.link", "0.12.0", _unit_link)

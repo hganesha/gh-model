@@ -150,7 +150,7 @@ def test_react_router_elements_are_screens():
     role = entity(out, "Role", name="admin")
     assert role["natural_key"] == {"realm": "web", "name": "admin"}
     assert role["attributes"]["platform_kind"] == "web:Role" and "fidelity" not in role["attributes"]  # exact
-    assert ("@package", "/orders") in edges(out, "RENDERS")
+    assert ("@symbol:Orders", "/orders") in edges(out, "RENDERS")  # the linker resolves it, or falls back to the package
     assert ("/orders", "src/pages/Orders.tsx?") in edges(out, "CONTAINS")  # the view, when the unit declares one
     assert out["constructs"]["web:redirect-route"] == (1, 0)
     assert out["constructs"]["web:lazy-route"] == (1, 1)
@@ -737,7 +737,14 @@ def test_every_relation_on_the_fixture_fits_the_ontology():
                 if o.kind != "relation":
                     continue
                 p = o.payload
-                subject = EntityKind.PACKAGE if p["subject"] == "@package" else EntityKind(p["subject"]["kind"])
+                # "@symbol:<name>" is the Symbol the linker resolves, or the package it falls back to (section 8.5)
+                special = {"@package": EntityKind.PACKAGE, "@file": EntityKind.ARTIFACT}
+                if isinstance(p["subject"], str) and p["subject"].startswith("@symbol:"):
+                    for kind in (EntityKind.SYMBOL, EntityKind.PACKAGE):
+                        assert check_relation(p["predicate"], kind, EntityKind(p["object"]["kind"])) is None, (path, p)
+                    subject = EntityKind.SYMBOL
+                else:
+                    subject = special[p["subject"]] if isinstance(p["subject"], str) else EntityKind(p["subject"]["kind"])
                 assert check_relation(p["predicate"], subject, EntityKind(p["object"]["kind"])) is None, (path, p)
                 assert o.evidence_class in ("E2", "E3")
                 if p["object"].get("declare") is False and p["object"]["natural_key"].get("system") != path:
@@ -825,3 +832,390 @@ async function save() { await $fetch("/api/account", { method: "PUT" }); }
     assert out["constructs"]["web:nuxt-page"] == (1, 1)
     assert edges(out, "REQUIRES_ROLE") == [("/account/settings", "customer")]
     assert entity(out, "Form", name="form1")["attributes"]["submits"] == ["PUT /api/account"]
+
+
+# ------------------------------------------------------------------ wave 2 (section 8.5)
+
+
+def test_the_pack_declares_model_fields_and_its_version():
+    term = PACK.term("web:ModelField")
+    assert term.core is EntityKind.FIELD and term.fidelity == "lossy"
+    assert "web:form-model" in {c.id for c in PACK.constructs}
+    assert PACK.version == "1.3.0"
+
+
+def _git_repo(path: Path, files: dict[str, str]) -> str:
+    for name, text in files.items():
+        (path / name).parent.mkdir(parents=True, exist_ok=True)
+        (path / name).write_text(text)
+    env = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.invalid", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@example.invalid",
+           "GIT_AUTHOR_DATE": "2026-01-01T00:00:00Z", "GIT_COMMITTER_DATE": "2026-01-01T00:00:00Z", "PATH": os.environ.get("PATH", "/usr/bin:/bin")}
+    for cmd in (["init", "-q", "-b", "main"], ["add", "-A"], ["commit", "-q", "-m", "x"]):
+        subprocess.run(["git", "-C", str(path), *cmd], check=True, env=env)
+    return subprocess.run(["git", "-C", str(path), "rev-parse", "HEAD"], capture_output=True, text=True, check=True).stdout.strip()
+
+
+def _compile(tmp_path: Path, files: dict[str, str]):
+    """Compile a one-commit repository: (entities by id, assertions)."""
+    from repo_intel.compile.pipeline import compile_commit, load_shards
+    from repo_intel.storage.store import ObjectStore
+
+    repo = tmp_path / "repo"
+    sha = _git_repo(repo, files)
+    store = ObjectStore(tmp_path / "store", "t")
+    result = compile_commit(store, repo, "github.com/1001", sha)
+    shards = load_shards(store, result.manifest)
+    return {e["id"]: e for s in shards.values() for e in s["entities"]}, [a for s in shards.values() for a in s["assertions"]]
+
+
+def _renders(ents, assertions):
+    """{screen name: (subject kind, subject key, qualifiers)} for every RENDERS assertion."""
+    out = {}
+    for a in assertions:
+        if a["predicate"] == "RENDERS":
+            s, o = ents[a["subject"]], ents[a["object"]]
+            out[o["natural_key"]["name"]] = (s["kind"], s["natural_key"], a["qualifiers"])
+    return out
+
+
+RENDER_FILES = {
+    "package.json": '{"name": "shop"}',
+    "src/App.tsx": """
+import { Route, Routes } from "react-router-dom";
+import OrdersPage from "./pages/OrdersPage";
+export function App() {
+  return <Routes><Route path="/orders" element={<OrdersPage />} /></Routes>;
+}
+""",
+    "src/pages/OrdersPage.tsx": """
+export default function OrdersPage() {
+  return <form><input name="q" /><a href="/orders">All</a></form>;
+}
+""",
+    "src/pages/Hidden.tsx": """
+const Hidden = () => <form><input name="q" /></form>;
+export default Hidden;
+""",
+}
+
+
+def test_a_view_is_rendered_by_the_symbol_its_file_exports(tmp_path):
+    ents, assertions = _compile(tmp_path, RENDER_FILES)
+    renders = _renders(ents, assertions)
+    kind, key, qualifiers = renders["src/pages/OrdersPage.tsx"]
+    assert kind == "Symbol" and key == {"package": "shop", "qualified_name": "src/pages/OrdersPage#OrdersPage"}
+    assert "component" not in qualifiers
+    symbol = next(e for e in ents.values() if e["kind"] == "Symbol" and e["natural_key"] == key)
+    assert symbol is not None
+
+
+def test_a_symbol_end_the_file_does_not_export_falls_back_to_the_package(tmp_path):
+    ents, assertions = _compile(tmp_path, RENDER_FILES)
+    renders = _renders(ents, assertions)
+    # App.tsx names OrdersPage but does not export it: the package renders the route.
+    kind, key, qualifiers = renders["/orders"]
+    assert kind == "Package" and key["name"] == "shop" and qualifiers["component"] == "OrdersPage"
+    # Hidden is exported only as `default`, so no exported symbol carries its name.
+    kind, key, qualifiers = renders["src/pages/Hidden.tsx"]
+    assert kind == "Package" and qualifiers["component"] == "Hidden"
+    assert all(a["subject"] in ents and a["object"] in ents for a in assertions if a["predicate"] == "RENDERS")
+
+
+TWO_ROUTERS = """
+import { createBrowserRouter } from "react-router-dom";
+import Home from "./Home";
+import Admin from "./Admin";
+import Users from "./Users";
+export const shopRouter = createBrowserRouter([{ path: "/", element: <Home /> }]);
+export const adminRouter = createBrowserRouter([
+  { path: "/", element: <Admin /> },
+  { path: "/users", element: <Users /> },
+]);
+"""
+
+
+def test_a_file_with_two_routers_keys_its_screens_by_app():
+    out = run("src/routers.tsx", TWO_ROUTERS)
+    keys = sorted((e["natural_key"]["name"], e["natural_key"].get("app")) for e in out["entities"] if e["kind"] == "Screen")
+    assert keys == [("/", "adminRouter"), ("/", "shopRouter"), ("/users", "adminRouter")]
+    assert entity(out, "Screen", name="/users")["attributes"]["app"] == "adminRouter"
+    assert any("declares 2 routers" in d for d in out["diagnostics"])
+
+
+def test_a_single_router_keeps_its_screen_keys():
+    out = run("src/App.tsx", REACT_ROUTES)
+    assert all(set(e["natural_key"]) == {"platform", "name"} for e in out["entities"] if e["kind"] == "Screen")
+
+
+def test_two_router_components_in_one_file_are_told_apart():
+    out = run("src/Apps.tsx", """
+import { BrowserRouter, MemoryRouter, Route, Routes } from "react-router-dom";
+import A from "./A";
+import B from "./B";
+export function ShopApp() { return <BrowserRouter><Routes><Route path="/" element={<A />} /></Routes></BrowserRouter>; }
+export function AdminApp() { return <MemoryRouter><Routes><Route path="/" element={<B />} /></Routes></MemoryRouter>; }
+""")
+    assert sorted(e["natural_key"]["app"] for e in out["entities"] if e["kind"] == "Screen") == ["AdminApp", "ShopApp"]
+
+
+def test_nested_routes_elements_under_one_router_share_the_app():
+    # <Routes> blocks in several components render under the one router the app mounts.
+    out = run("src/Sections.tsx", """
+import { Route, Routes } from "react-router-dom";
+import A from "./A";
+import B from "./B";
+export function Shop() { return <Routes><Route path="/shop" element={<A />} /></Routes>; }
+export function Admin() { return <Routes><Route path="/admin" element={<B />} /></Routes>; }
+""")
+    assert all("app" not in e["natural_key"] for e in out["entities"] if e["kind"] == "Screen")
+
+
+def _imports(out):
+    return sorted((r["subject"], r["object"]["natural_key"]["path"], r["qualifiers"]["via"], r["evidence_class"])
+                  for r in out["relations"] if r["predicate"] == "DEPENDS_ON")
+
+
+def test_stylesheet_imports_are_artifact_dependencies():
+    out = run("src/styles/main.scss", '@use "variables";\n@import "./reset.css";\n@forward "mixins/buttons";\n@import url("https://fonts.example.com/a.css");\n$x: 1px;\n')
+    found = _imports(out)
+    assert ("@file", "src/styles/_variables.scss", "@use", "E3") in found
+    assert ("@file", "src/styles/reset.css", "@import", "E3") in found
+    assert any(p.startswith("src/styles/mixins/") and via == "@forward" for _, p, via, _ in found)
+    assert not any("example.com" in p for _, p, _, _ in found)  # another host is not a file of this unit
+    assert check_relation("DEPENDS_ON", EntityKind.ARTIFACT, EntityKind.ARTIFACT) is None
+
+
+def test_a_vue_style_block_import_is_a_dependency_too():
+    out = run("src/views/A.vue", '<template><div /></template>\n<style lang="scss">\n@use "../styles/variables";\n</style>\n')
+    assert ("@file", "src/styles/_variables.scss", "@use", "E3") in _imports(out)
+
+
+def _aliases(out):
+    return sorted((r["subject"]["natural_key"]["name"], r["object"]["natural_key"]["system"], r["object"]["natural_key"]["name"], r["evidence_class"])
+                  for r in out["relations"] if r["predicate"] == "ALIAS_OF")
+
+
+def test_css_scss_and_less_token_aliases():
+    css = run("src/a.css", '@import "./base.css";\n:root { --a: #fff; --b: var(--a); --c: var(--brand); --d: calc(var(--a) * 2); --e: var(--a, red); }\n')
+    assert _aliases(css) == [("--b", "src/a.css", "--a", "E2"), ("--c", "src/base.css", "--brand", "E3")]
+    scss = run("src/b.scss", "$a: #fff;\n$b: $a;\n$c: darken($a, 10%);\n$d: colors.$brand;\n")
+    assert ("$b", "src/b.scss", "$a", "E2") in _aliases(scss)
+    assert not any(name == "$c" for name, *_ in _aliases(scss))  # a computed value is not an alias
+    less = run("src/c.less", "@a: #fff;\n@b: @a;\n")
+    assert _aliases(less) == [("@b", "src/c.less", "@a", "E2")]
+
+
+def test_an_alias_to_an_undeclared_token_without_imports_relates_nothing():
+    assert _aliases(run("src/a.css", ":root { --b: var(--nowhere); }\n")) == []
+
+
+def test_theme_token_aliases():
+    out = run("src/darkTheme.ts", """
+import { theme } from "./theme";
+export const palette = { blue: "#1f6feb" };
+export const darkTheme = { colors: { primary: palette.blue, brand: theme.colors.primary, other: somewhere.blue } };
+""")
+    found = _aliases(out)
+    assert ("darkTheme.colors.primary", "src/darkTheme.ts", "palette.blue", "E2") in found
+    assert any(name == "darkTheme.colors.brand" and system.startswith("src/theme") and target == "theme.colors.primary" and cls == "E3"
+               for name, system, target, cls in found)
+    assert not any(name == "darkTheme.colors.other" for name, *_ in found)
+
+
+def test_token_aliases_fit_the_ontology():
+    assert check_relation("ALIAS_OF", EntityKind.STYLE_TOKEN, EntityKind.STYLE_TOKEN) is None
+
+
+def _fields(out):
+    return sorted((e["natural_key"]["table"], e["natural_key"]["name"], e["attributes"]["schema"]) for e in out["entities"] if e["kind"] == "Field")
+
+
+def _binds(out):
+    return sorted((r["subject"]["natural_key"]["name"], r["object"]["natural_key"]["name"]) for r in out["relations"] if r["predicate"] == "BINDS_TO")
+
+
+def test_react_hook_form_controls_bind_the_fields_of_a_typescript_interface():
+    out = run("src/NewOrder.tsx", """
+import { useForm } from "react-hook-form";
+interface NewOrder { customer: string; quantity: number; address: { city: string } }
+export function NewOrder() {
+  const { register } = useForm<NewOrder>();
+  return <form><input {...register("customer")} /><input {...register("address.city")} /><input {...register("nickname")} /></form>;
+}
+""")
+    assert _fields(out) == [("src/NewOrder.tsx#NewOrder", n, "typescript-interface") for n in ("address", "address.city", "customer", "quantity")]
+    assert _binds(out) == [("address.city", "address.city"), ("customer", "customer")]
+    assert entity(out, "Field", name="customer")["attributes"]["platform_kind"] == "web:ModelField"
+    assert any("nickname" in d and "does not declare" in d for d in out["diagnostics"])
+    assert out["constructs"]["web:form-model"] == (1, 1)
+    assert check_relation("BINDS_TO", EntityKind.UI_CONTROL, EntityKind.FIELD) is None
+
+
+def test_a_zod_schema_through_a_resolver_is_a_form_model():
+    out = run("src/Signup.tsx", """
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+const signup = z.object({ email: z.string().email(), age: z.number().optional() }).strict();
+export function Signup() {
+  const { register } = useForm({ resolver: zodResolver(signup) });
+  return <form><input {...register("email")} /></form>;
+}
+""")
+    assert _fields(out) == [("src/Signup.tsx#signup", "age", "zod"), ("src/Signup.tsx#signup", "email", "zod")]
+    assert _binds(out) == [("email", "email")]
+
+
+def test_a_yup_schema_on_formik_is_a_form_model():
+    out = run("src/Contact.tsx", """
+import { Formik, Form, Field } from "formik";
+import * as Yup from "yup";
+const contactSchema = Yup.object().shape({ name: Yup.string().required(), topic: Yup.string() });
+export function Contact() {
+  return <Formik validationSchema={contactSchema} onSubmit={send}><Form><Field name="name" /><Field name="topic" /></Form></Formik>;
+}
+""")
+    assert _fields(out) == [("src/Contact.tsx#contactSchema", "name", "yup"), ("src/Contact.tsx#contactSchema", "topic", "yup")]
+    assert _binds(out) == [("name", "name"), ("topic", "topic")]
+
+
+def test_a_typed_vue_model_binds_its_fields():
+    out = run("src/views/Checkout.vue", """<template>
+  <form @submit.prevent="save"><input v-model="form.email" /><input v-model="form.coupon" /></form>
+</template>
+<script setup lang="ts">
+import { reactive } from "vue";
+type Checkout = { email: string; coupon: string };
+const form = reactive<Checkout>({ email: "", coupon: "" });
+</script>
+""")
+    assert _fields(out) == [("src/views/Checkout.vue#Checkout", "coupon", "typescript-type"), ("src/views/Checkout.vue#Checkout", "email", "typescript-type")]
+    assert _binds(out) == [("form.coupon", "coupon"), ("form.email", "email")]
+
+
+def test_an_untyped_model_declares_no_field():
+    out = run("src/views/Checkout.vue", """<template>
+  <form><input v-model="form.email" /></form>
+</template>
+<script setup>
+import { reactive } from "vue";
+const form = reactive({ email: "" });
+</script>
+""")
+    assert _fields(out) == [] and _binds(out) == []
+    assert entity(out, "UIControl", name="form.email")["attributes"]["binds"] == "form.email"
+
+
+def test_a_model_this_file_does_not_declare_or_list_literally_declares_no_field():
+    imported = run("src/A.tsx", """
+import { useForm } from "react-hook-form";
+import type { Order } from "./types";
+export function A() { const { register } = useForm<Order>(); return <form><input {...register("id")} /></form>; }
+""")
+    assert _fields(imported) == [] and _binds(imported) == []
+    assert any("Order is not declared in this file" in d for d in imported["diagnostics"])
+    assert imported["constructs"]["web:form-model"] == (1, 0)
+    extended = run("src/B.tsx", """
+import { useForm } from "react-hook-form";
+interface Base { id: string }
+interface Order extends Base { note: string }
+export function B() { const { register } = useForm<Order>(); return <form><input {...register("note")} /></form>; }
+""")
+    assert _fields(extended) == [] and _binds(extended) == []
+    assert any("does not list all its fields literally" in d for d in extended["diagnostics"])
+    spread = run("src/C.tsx", """
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+const c = z.object({ ...base, note: z.string() });
+export function C() { const { register } = useForm({ resolver: zodResolver(c) }); return <form><input {...register("note")} /></form>; }
+""")
+    assert _fields(spread) == []
+
+
+ACCESSIBLE = """<!doctype html>
+<html><body>
+<header><nav><a href="/">Home</a></nav></header>
+<main>
+  <h1>Contact</h1>
+  <h3>Form</h3>
+  <form name="contact">
+    <label for="email">Email</label><input id="email" name="email" type="email" />
+    <label>Topic <select name="topic"><option>a</option></select></label>
+    <span id="msg-label">Message</span><textarea name="message" aria-labelledby="msg-label"></textarea>
+    <input name="phone" placeholder="Phone" tabindex="2" />
+    <input name="fax" />
+    <input type="checkbox" name="agree" aria-label="I agree" />
+    <div role="button" name="custom">Send</div>
+    <button type="submit">Send</button>
+  </form>
+</main>
+<footer>Shop</footer>
+</body></html>
+"""
+
+
+def test_controls_carry_their_accessible_name_source_and_role():
+    out = run("public/contact.html", ACCESSIBLE)
+    facts = {e["natural_key"]["name"]: e["attributes"]["accessibility"] for e in out["entities"] if e["kind"] == "UIControl" and e["natural_key"]["container"].endswith("#contact")}
+    assert facts["email"] == {"name_source": "label-for", "role": "textbox"}
+    assert facts["topic"]["name_source"] == "wrapping-label" and facts["topic"]["role"] == "combobox"
+    assert facts["message"]["name_source"] == "aria-labelledby"
+    assert facts["phone"] == {"name_source": "placeholder", "role": "textbox", "tabindex": 2}
+    assert facts["fax"]["name_source"] == "none"
+    assert facts["agree"] == {"name_source": "aria-label", "role": "checkbox"}
+    assert facts["submit"] == {"name_source": "content", "role": "button"}
+
+
+def test_screens_carry_landmarks_headings_and_tabindex():
+    out = run("public/contact.html", ACCESSIBLE)
+    facts = entity(out, "Screen", name="public/contact.html")["attributes"]["accessibility"]
+    assert facts["landmarks"] == ["banner", "contentinfo", "main", "navigation"]
+    assert facts["headings"] == [1, 3] and facts["heading_skips"] == 1
+    assert facts["positive_tabindex"] == 1
+
+
+def test_a_bound_name_counts_but_its_value_is_never_copied():
+    out = run("src/A.tsx", 'export function A() { return <form><input name="q" aria-label={t("search")} tabIndex={n} /></form>; }')
+    facts = entity(out, "UIControl", name="q")["attributes"]["accessibility"]
+    assert facts["name_source"] == "aria-label" and facts["tabindex"] == "dynamic"
+    assert "search" not in repr(facts)
+
+
+def test_contrast_ratios_of_colour_tokens():
+    from repo_intel.platforms.web import accessibility
+
+    assert accessibility.contrast_ratio(accessibility.parse_colour("#000"), accessibility.parse_colour("#ffffff")) == 21.0
+    assert accessibility.parse_colour("rgb(255 0 0)") == accessibility.parse_colour("#f00")
+    assert accessibility.parse_colour("var(--x)") is None
+    out = run("src/buttons.css", """:root { --fg: #ffffff; --bg: #1f6feb; --muted: #8c959f; --alias-bg: var(--bg); }
+.a { color: var(--fg); background-color: var(--bg); }
+.b { color: var(--muted); background: var(--fg); }
+.c { color: var(--fg); background-color: var(--alias-bg); }
+.d { color: var(--fg); background-color: var(--nowhere); }
+""")
+    fg = entity(out, "StyleToken", name="--fg")["attributes"]["contrast"]
+    assert fg == [{"background": "--alias-bg", "ratio": 4.63, "selector": ".c"}, {"background": "--bg", "ratio": 4.63, "selector": ".a"}]
+    assert entity(out, "StyleToken", name="--muted")["attributes"]["contrast"] == [{"background": "--fg", "ratio": 3.04, "selector": ".b"}]
+
+
+def test_a_token_declared_twice_has_no_contrast():
+    out = run("src/t.css", ":root { --fg: #fff; --bg: #000; }\n[data-theme=dark] { --fg: #000; }\n.a { color: var(--fg); background-color: var(--bg); }\n")
+    assert not entity(out, "StyleToken", name="--fg")["attributes"].get("contrast")
+
+
+def test_accessibility_coverage_counts_named_controls():
+    from repo_intel.platforms.web.accessibility import accessibility_coverage
+
+    out = run("public/contact.html", ACCESSIBLE)
+    css = run("src/buttons.css", ":root { --fg: #fff; --muted: #8c959f; }\n.b { color: var(--muted); background: var(--fg); }\n")
+    entries = accessibility_coverage({"a": {"entities": out["entities"] + css["entities"]}})
+    assert len(entries) == 1
+    e = entries[0]
+    controls = [x for x in out["entities"] if x["kind"] == "UIControl"]
+    unnamed = sum(x["attributes"]["accessibility"]["name_source"] == "none" for x in controls)
+    assert e["domain"] == "accessibility" and e["scope"] == "web"
+    assert (e["numerator"], e["denominator"]) == (len(controls) - unnamed, len(controls))
+    assert e["detail"]["screens_with_heading_skips"] == 1 and e["detail"]["screens_with_positive_tabindex"] == 1
+    assert e["detail"]["contrast_below_4_5"] == ["src/buttons.css --muted on --fg"]
+    assert accessibility_coverage({}) == []

@@ -11,6 +11,10 @@ Tokens:
                        selectors that redeclare it are listed)
   SCSS variable        `$brand: #0a6;` at the top level only (inside a block it is local)
   LESS variable        `@brand: #0a6;` at the top level only
+
+A token whose whole value is another token (`var(--brand)`, `$brand`, `ns.$brand`,
+`@brand`) is an alias of it (`alias_of`). Plain declarations inside a rule are kept per
+rule (`StyleScan.rules`) so that text and background token pairs can be found.
 """
 
 from __future__ import annotations
@@ -47,11 +51,40 @@ class Token:
 
 
 @dataclass
+class Rule:
+    """A style rule's selector and its plain declarations (not custom properties or variables)."""
+
+    selector: str
+    start: int
+    end: int = 0
+    declarations: dict[str, tuple[str, int, int]] = field(default_factory=dict)  # property -> (value, start, end); the last one wins
+
+
+@dataclass
 class StyleScan:
     tokens: dict[str, Token] = field(default_factory=dict)
     refs: list[tuple[str, int, int]] = field(default_factory=list)  # (token name, start, end)
     imports: list[tuple[str, str, int, int]] = field(default_factory=list)  # (rule, specifier, start, end)
     constructs: list[tuple[str, int, int]] = field(default_factory=list)  # (construct id, start, end)
+    rules: list[Rule] = field(default_factory=list)  # style rules in document order (at-rule blocks are not rules)
+
+
+_ALIAS = (
+    re.compile(r"^var\(\s*(--[A-Za-z0-9_-]+)\s*\)$"),  # --a: var(--b)
+    re.compile(r"^(?:[A-Za-z_][\w-]*\.)?(\$[A-Za-z_][\w-]*)$"),  # $a: $b, or $a: tokens.$b after @use
+    re.compile(r"^(@[A-Za-z_][\w-]*)$"),  # LESS @a: @b
+)
+
+
+def alias_of(value: str) -> str | None:
+    """The token a value is defined as, when the whole value is one token reference
+    (`var(--b)`, `$b`, `ns.$b`, `@b`); None for anything else, a fallback included."""
+    v = " ".join(value.split())
+    for pattern in _ALIAS:
+        m = pattern.match(v)
+        if m and m.group(1)[1:].lower() not in _LESS_AT_RULES:
+            return m.group(1)
+    return None
 
 
 def dialect_of(path_or_lang: str) -> str:
@@ -98,6 +131,7 @@ def scan(text: str, dialect: str, base: int = 0) -> StyleScan:
     out = StyleScan()
     n = len(text)
     stack: list[str] = []
+    rules: list[Rule | None] = []  # the rule each open block is, None for an at-rule block
     i = 0
     stmt = 0
     paren = 0
@@ -136,14 +170,22 @@ def scan(text: str, dialect: str, base: int = 0) -> StyleScan:
         elif c == "{":
             _prelude(out, text, stmt, i, base, dialect)
             stack.append(text[stmt:i].strip()[:80])
+            selector = " ".join(text[stmt:i].split())[:80]
+            rule = Rule(selector, base + _trimmed(text, stmt, i)[0]) if selector and not selector.startswith("@") else None
+            if rule is not None:
+                out.rules.append(rule)
+            rules.append(rule)
             stmt, paren = i + 1, 0
         elif c == ";" or c == "}":
-            _statement(out, text, stmt, i, base, stack, dialect)
+            _statement(out, text, stmt, i, base, stack, dialect, rules[-1] if rules else None)
             if c == "}" and stack:
                 stack.pop()
+                closed = rules.pop() if rules else None
+                if closed is not None:
+                    closed.end = base + i + 1
             stmt, paren = i + 1, 0
         i += 1
-    _statement(out, text, stmt, n, base, stack, dialect)
+    _statement(out, text, stmt, n, base, stack, dialect, rules[-1] if rules else None)
     return out
 
 
@@ -173,7 +215,7 @@ def _prelude(out: StyleScan, text: str, a: int, b: int, base: int, dialect: str)
     _refs(out, s, base + a, dialect)
 
 
-def _statement(out: StyleScan, text: str, a: int, b: int, base: int, stack: list[str], dialect: str) -> None:
+def _statement(out: StyleScan, text: str, a: int, b: int, base: int, stack: list[str], dialect: str, rule: Rule | None = None) -> None:
     a, b = _trimmed(text, a, b)
     if a >= b:
         return
@@ -208,6 +250,10 @@ def _statement(out: StyleScan, text: str, a: int, b: int, base: int, stack: list
         return
     colon = s.find(":")
     if colon > 0:
+        if rule is not None:
+            prop = s[:colon].strip().lower()
+            if re.fullmatch(r"[a-z-]+", prop):
+                rule.declarations[prop] = (" ".join(s[colon + 1:].replace("!important", "").split()), base + a, base + b)
         _refs(out, s[colon + 1:], base + a + colon + 1, dialect)
 
 
