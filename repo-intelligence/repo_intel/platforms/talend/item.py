@@ -21,7 +21,11 @@ Read at evidence `E1`:
   `talend`, named by the item's label: the file name without its version. Its version and
   folder, and its context variables by name only (never their values), are attributes;
 - each component (`node`) is a `Task` (`tal:Component`) named by its unique name, which the
-  job CONTAINS; a connection from A to B makes B DEPENDS_ON A (`via: flow` for rows,
+  job CONTAINS. Talend keeps every version of a job as its own file (`X_0.1.item`,
+  `X_0.2.item`), all declaring the one Job `X`; so that two versions' components, their
+  lineage and their RUNS stay apart, a component of any version but 0.1 is named
+  `<unique name>@<version>` (`tMap_1@0.2`), and a diagnostic says the job may have several
+  versions in the repository. A connection from A to B makes B DEPENDS_ON A (`via: flow` for rows,
   `via: trigger` for subjob and component triggers, Run if and iterate), with the connector
   and the connection's label;
 - file components read and write a `Dataset` named by the file setting, database
@@ -225,6 +229,11 @@ class ItemReader:
                  "context_parameters": sorted(names), "contexts": sorted({c.get("name") for c in contexts if c.get("name")})}
         job_ref = self.entity(self.whole, term, key, label, attrs)
         self.construct(self.whole, "tal:job", True)
+        # Version 0.1 is the first one Talend writes; a later version's file usually sits
+        # beside the earlier ones and declares the same Job, so its components carry the version.
+        qualifier = f"@{version}" if version and version != "0.1" else ""
+        if qualifier:
+            self.note("info", f"{self.path} is version {version} of job {label}: other versions may be in the repository, so its components are named <unique name>{qualifier}")
         for n in root.find("note"):
             self.construct(self.at(n), "tal:note", False)
 
@@ -238,7 +247,7 @@ class ItemReader:
                 self.construct(self.at(node), "tal:component.unknown", False)
                 continue
             n = seen[unique] = seen.get(unique, 0) + 1
-            name = unique if n == 1 else f"{unique}~{n}"
+            name = (unique if n == 1 else f"{unique}~{n}") + qualifier
             known = component_kind(component)
             canonical, family, dialect = known if known else (None, "unknown", None)
             vendor = VENDOR_OF.get(component.lower())
