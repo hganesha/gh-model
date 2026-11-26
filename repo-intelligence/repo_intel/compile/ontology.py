@@ -175,8 +175,8 @@ RELATIONS: dict[Predicate, RelationSchema] = {
     P.DEFINED_IN: _r(_ANY - {K.REPOSITORY, K.ARTIFACT}, {K.ARTIFACT}),
     # Component IMPLEMENTS Feature is a DM08 behaviour hypothesis, never more than inferred.
     P.IMPLEMENTS: _r({K.SYMBOL, K.COMPONENT, K.PROGRAM}, {K.ENDPOINT, K.INTERFACE, K.FEATURE}),
-    P.EXPOSES: _r({K.COMPONENT, K.PROGRAM}, {K.INTERFACE, K.ENDPOINT}),
-    P.CONSUMES: _r(_CODE | {K.AI_COMPONENT}, {K.INTERFACE, K.ENDPOINT, K.MODEL_ENDPOINT}),
+    P.EXPOSES: _r({K.COMPONENT, K.PROGRAM, K.JOB}, {K.INTERFACE, K.ENDPOINT}),  # a scheduled Job EXPOSES its TRANSACTION Endpoint
+    P.CONSUMES: _r(_CODE | _WORK | {K.AI_COMPONENT}, {K.INTERFACE, K.ENDPOINT, K.MODEL_ENDPOINT}),  # a scheduler Job CONSUMES the transaction it starts
     P.CALLS: _r({K.SYMBOL, K.PROGRAM}, {K.SYMBOL, K.PROGRAM}),
     # A build target depends only on other build targets (Bazel deps, Nx and Turborepo dependsOn).
     # A source file depends on the files of its unit it imports (the module graph).

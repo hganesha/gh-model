@@ -31,7 +31,7 @@ from repo_intel.storage.store import ObjectStore
 
 # Specs whose results an owner confirms or rejects rather than relabels (contract 8.2):
 # the override's scope is the lifted rule or workflow, and only these labels mean anything.
-CONFIRMATION_SPECS = frozenset({"dm.business-rules", "dm.workflows"})
+CONFIRMATION_SPECS = frozenset({"dm.business-rules", "dm.document-rules", "dm.workflows"})
 CONFIRMATION_LABELS = ("confirmed", "rejected")
 
 

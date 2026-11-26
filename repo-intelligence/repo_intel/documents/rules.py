@@ -64,7 +64,7 @@ def lift(document: Mapping[str, Any], artifact: str, *, ledger: Ledger, gateway:
     by_id = {c["id"]: c for c in document["candidates"][:MAX_SENT]}
 
     def accept(content: Mapping[str, Any]) -> tuple[list[Hypothesis], list[str]] | None:
-        rules = dm_rules._answered_rules(content, by_id)
+        rules = dm_rules.answered_rules(content, by_id)
         if not rules:
             return None
         hypotheses = [Hypothesis(statement=statement, evidence_ids=sorted({by_id[c]["evidence_id"] for c in cited})) for _, _, statement, cited in rules]

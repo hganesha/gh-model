@@ -9,7 +9,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-SCAN_VERSION = "3"
+SCAN_VERSION = "4"
 URL_CREDENTIALS = re.compile(rb"://[^/\s:@]+:([^@\s/]{3,})@")
 
 # A servlet `<init-param>` or `<context-param>` (web.xml) whose name says it holds a
@@ -50,6 +50,20 @@ def _any(value: bytes) -> bool:
     return True
 
 
+def _credential_value(value: bytes) -> bool:
+    """`_secret_like`, and not a reference to another value: a SQL*Plus substitution
+    (`&pwd`), a bind variable (`:pwd`) or another parameter (`$PMPassword`, `$$DB_PWD`)."""
+    return _secret_like(value) and not value.startswith((b"$", b"&", b":"))
+
+
+# Oracle `CREATE USER x IDENTIFIED BY pw` and `CREATE DATABASE LINK ... IDENTIFIED BY "pw"`;
+# `IDENTIFIED BY VALUES '<hash>'` carries a hash, not the password, and is left alone.
+_IDENTIFIED_BY = re.compile(rb"(?i)\bidentified\s+by\s+(\"?)(?!values\b)([^\s\";]+)\1")
+# An Informatica parameter file (.par, .prm, .parm) line `$$DB_PASSWORD=value` or
+# `$DBConnection_Pwd=value`: a parameter whose name says it holds a credential.
+_PARAMETER_FILE_CREDENTIAL = re.compile(rb"(?im)^\s*\$\$?\w*(?:password|passwd|pwd|secret)\w*\s*=\s*(\S+)")
+
+
 # (detector id, pattern, group whose span is the secret)
 _DETECTORS: list[tuple[str, re.Pattern[bytes], int]] = [
     ("private_key_block", re.compile(rb"-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----"), 0),
@@ -63,9 +77,14 @@ _DETECTORS: list[tuple[str, re.Pattern[bytes], int]] = [
     ("env_assignment", re.compile(rb"(?im)^[A-Z0-9_]*(?:SECRET|TOKEN|PASSWORD|API_?KEY)[A-Z0-9_]*=([^\s\"'#$]{20,})\s*$"), 1),
     ("servlet_param_value", _PARAM_VALUE, 1),
     ("connection_string_password", _CONNECTION_PASSWORD, 1),
+    ("oracle_identified_by", _IDENTIFIED_BY, 2),
+    ("parameter_file_credential", _PARAMETER_FILE_CREDENTIAL, 1),
 ]
 # Detectors whose match is a finding only when the value passes a check.
-_VALUE_CHECKS = {"servlet_param_value": _secret_like, "connection_string_password": _secret_like}
+_VALUE_CHECKS = {
+    "servlet_param_value": _secret_like, "connection_string_password": _secret_like,
+    "oracle_identified_by": _credential_value, "parameter_file_credential": _credential_value,
+}
 
 
 def scan(data: bytes) -> list[dict[str, Any]]:

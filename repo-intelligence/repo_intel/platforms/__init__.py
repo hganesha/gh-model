@@ -99,10 +99,16 @@ def validate_pack(pack: PlatformPack) -> list[str]:
                 problems.append(f"{pack.id}: {label} {item!r} must be '{pack.prefix}:<Name>'")
     for c in pack.constructs:
         kind, _, target = c.modelled_as.partition(":")
-        if c.modelled_as != "unmapped" and kind not in ("entity", "relation", "behavior", "attribute"):
-            problems.append(f"{pack.id}: construct {c.id} modelled_as {c.modelled_as!r} is not entity:/relation:/behavior:/attribute: or unmapped")
+        if c.modelled_as != "unmapped" and kind not in ("entity", "relation", "behavior", "attribute", "transform"):
+            problems.append(f"{pack.id}: construct {c.id} modelled_as {c.modelled_as!r} is not entity:/relation:/behavior:/attribute:/transform: or unmapped")
         if kind == "entity" and target not in {k.value for k in EntityKind}:
             problems.append(f"{pack.id}: construct {c.id} names unknown kind {target!r}")
+        if kind == "transform":
+            # A construct that becomes a transform shape (an ETL lookup, a sort stage) names its op.
+            from repo_intel.compile.transforms import OPS
+
+            if target not in OPS:
+                problems.append(f"{pack.id}: construct {c.id} names unknown transform op {target!r}")
     for e in pack.extractors:
         if not getattr(e, "id", "").startswith(pack.id + "."):
             problems.append(f"{pack.id}: extractor id {getattr(e, 'id', None)!r} must start with '{pack.id}.'")
