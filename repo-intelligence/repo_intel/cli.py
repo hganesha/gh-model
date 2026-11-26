@@ -8,6 +8,9 @@
     rkp verify  [PATH] [--json]
     rkp diff    A B [--repo PATH] [--json]
 
+    rkp documents list [--repo PATH] [--json]
+    rkp documents set DOCUMENT (--feature F ... | --clear) [--note TEXT] [--repo PATH] [--json]
+
 `verify` re-checks the committed `.rkp/knowledge/` without compiling; `diff` compares two
 bundles, read from two directories or from two commits of one repository
 (repo_intel.knowledge.bundle_check). `serve --stdio` answers the Explorer's read API from the bundle, one JSON request per
@@ -114,9 +117,12 @@ def main(argv: list[str] | None = None) -> int:
     _solution_parser(commands)
     _add_verify_command(commands)
     _add_diff_command(commands)
+    _add_documents_command(commands)
     args = parser.parse_args(argv)
     if args.command == "solution":
         return _solution(args)
+    if args.command == "documents":
+        return _documents(args)
     if args.command == "verify":
         return _verify(args)
     if args.command == "diff":
@@ -293,6 +299,80 @@ def _diff(args: argparse.Namespace) -> int:
         _emit("result", **result)
     else:
         _print_diff(result)
+    return 0
+
+
+# ------------------------------------------------------------------ rkp documents
+#
+# Which documents the engine reads, and for which features (contract 9.1); the file and its
+# checks are repo_intel.documents.format and .controls. A change takes effect at the next compile.
+
+
+def _add_documents_command(commands: Any) -> None:
+    from repo_intel.documents.format import FEATURES
+
+    documents = commands.add_parser("documents", help="list or change which documents are read, in .rkp/documents.json")
+    actions = documents.add_subparsers(dest="action", required=True)
+    listing = actions.add_parser("list", help="designated documents, candidate documents and problems")
+    listing.add_argument("--repo", default=".", help="a directory inside the repository (default: .)")
+    listing.add_argument("--json", action="store_true", help="one JSON object on stdout")
+    change = actions.add_parser("set", help="designate a document or glob for features, or clear its entry")
+    change.add_argument("path", help="a repository path or glob (a file on disk is made relative to the repository)")
+    what = change.add_mutually_exclusive_group(required=True)
+    what.add_argument("--feature", action="append", choices=FEATURES, help="a feature to read it for; repeat for several")
+    what.add_argument("--clear", action="store_true", help="remove the entry for this path")
+    change.add_argument("--note", help="the owner's note on the entry, kept as written")
+    change.add_argument("--repo", default=".", help="a directory inside the repository (default: .)")
+    change.add_argument("--json", action="store_true", help="one JSON object on stdout")
+
+
+def _document_path(repo: Any, path: str) -> str:
+    """A file on disk inside the repository as its repository path; anything else (a glob,
+    a path not checked out) as written."""
+    candidate = os.path.abspath(path)
+    if os.path.exists(candidate):
+        relative = os.path.relpath(os.path.realpath(candidate), os.path.realpath(repo))
+        if not relative.startswith(".."):
+            return relative.replace(os.sep, "/")
+    return path
+
+
+def _documents(args: argparse.Namespace) -> int:
+    """`rkp documents list|set`: exit 0 on success, 1 when the file cannot be read or written."""
+    from repo_intel.documents import controls
+    from repo_intel.documents.format import DesignationError
+
+    try:
+        repo = bundle.repository_root(args.repo)
+        if args.action == "list":
+            result = controls.listing(repo)
+        else:
+            result = controls.set_document(repo, _document_path(repo, args.path), None if args.clear else sorted(set(args.feature)), args.note)
+    except (DesignationError, bundle.BundleError, OSError) as error:
+        if args.json:
+            _emit("error", message=str(error), kind=type(error).__name__)
+        else:
+            print(f"rkp: {error}", file=sys.stderr)
+        return 1
+    if args.json:
+        _emit("result", **result)
+        return 0
+    if not result["documents"]:
+        print("No documents are designated.")
+    for entry in result["documents"]:
+        print(f"{entry['path']}: {', '.join(entry['features'])}" + (f"  ({entry['note']})" if entry.get("note") else ""))
+    for problem in result["problems"]:
+        print(f"  problem: {problem['message']}")
+    if args.action == "list":
+        designated = [e["path"] for e in result["documents"]]
+        from repo_intel.documents.format import matches
+        rest = [c for c in result["candidates"] if not any(matches(p, c["path"]) for p in designated)]
+        if rest:
+            print(f"{len(rest)} other document{'s' if len(rest) != 1 else ''} could be designated:")
+            for c in rest:
+                print(f"  {c['path']} ({c['language']})")
+    else:
+        print("The change takes effect at the next compile.")
     return 0
 
 

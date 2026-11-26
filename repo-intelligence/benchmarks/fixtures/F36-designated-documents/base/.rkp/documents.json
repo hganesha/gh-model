@@ -1,0 +1,28 @@
+{
+  "schema": "rkp-documents/1",
+  "documents": [
+    {
+      "path": "docs/*.xlsx",
+      "features": ["code_lists"]
+    },
+    {
+      "path": "docs/data-dictionary.docx",
+      "features": ["schema"],
+      "note": "kept by the warehouse team"
+    },
+    {
+      "path": "docs/pricing-rules.md",
+      "features": ["rules"],
+      "note": "signed off by finance"
+    },
+    {
+      "path": "docs/requirements.md",
+      "features": ["requirements"]
+    },
+    {
+      "path": "docs/scanned-policy.pdf",
+      "features": ["rules"],
+      "note": "a scan; the text export is pending"
+    }
+  ]
+}
