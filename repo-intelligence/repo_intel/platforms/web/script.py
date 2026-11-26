@@ -239,7 +239,7 @@ class RouteScreen:
     roles: list[tuple[str, int, int]] = field(default_factory=list)
     component: str | None = None
     module: str | None = None  # import specifier of the component, if the file shows it
-    app: str | None = None  # the router's label, when this file declares more than one router (section 8.5)
+    router: str | None = None  # the label of the router this file shows the route under (section 8.5)
     root: Any = None  # the router call or element the route is declared under, when the file shows it
 
 
@@ -333,6 +333,12 @@ class Script:
                 decl = n.child_by_field_name("declaration")
                 if decl is not None and decl.type in ("function_declaration", "class_declaration") and any(c.type == "default" for c in n.children):
                     self.exports["default"] = decl
+                if n.child_by_field_name("source") is None:  # export { X as default }: the default is the local X
+                    for clause in (c for c in n.children if c.type == "export_clause"):
+                        for spec in (s for s in clause.named_children if s.type == "export_specifier"):
+                            alias, local = spec.child_by_field_name("alias"), spec.child_by_field_name("name")
+                            if alias is not None and text(alias) == "default" and local is not None and local.type == "identifier":
+                                self.exports["default"] = local
             elif t == "assignment_expression":  # module.exports = {...}
                 left = n.child_by_field_name("left")
                 if left is not None and text(left) == "module.exports":
@@ -708,30 +714,31 @@ class Script:
             for r in out[before:]:
                 r.root = router_of.get(aid)
         out += self._jsx_routes(framework)
-        self._name_apps(out)
+        self._name_routers(out)
         return out
 
-    # -- several routers in one file (docs/solution-ir-contract.md, section 8.5)
+    # -- routers (docs/solution-ir-contract.md, section 8.5)
 
-    def _name_apps(self, out: list[RouteScreen]) -> None:
-        """When this file declares routes under more than one router (two createBrowserRouter
-        calls, two RouterModule.forRoot, two <BrowserRouter> trees), each route gets `app`,
-        its router's label (`router_label`), which its Screen key carries. With one router
-        nothing changes, so existing keys stay as they are. A route that this file shows
-        under no router keeps its key."""
+    def _name_routers(self, out: list[RouteScreen]) -> None:
+        """Each route this file shows under a router (a createBrowserRouter call, a
+        RouterModule.forRoot, a <BrowserRouter> tree) gets `router`, that router's label
+        (`router_label`; `router<n>` when nothing names it, `<label>~<n>` when two routers
+        of the file share a label). The extractor stores it as the Screen's `router`
+        attribute, `<path>#<label>`, and the compiler adds `app` to the Screen keys of a
+        unit that holds more than one router. A route under no router this file shows
+        (a <Routes> block in a component, an exported routes array) has no `router`."""
         roots = sorted({r.root.id: r.root for r in out if r.root is not None}.values(), key=lambda n: n.start_byte)
-        if len(roots) > 1:
-            labels: dict[int, str] = {}
-            taken: dict[str, int] = {}
-            for i, node in enumerate(roots, start=1):
-                label = self.router_label(node) or f"router{i}"
-                seen = taken[label] = taken.get(label, 0) + 1
-                labels[node.id] = label if seen == 1 else f"{label}~{seen}"
-            for r in out:
-                r.app = labels.get(r.root.id) if r.root is not None else None
-            self.diagnostics.append(f"this file declares {len(roots)} routers ({', '.join(labels[n.id] for n in roots)}): their Screen keys carry `app`")
+        labels: dict[int, str] = {}
+        taken: dict[str, int] = {}
+        for i, node in enumerate(roots, start=1):
+            label = self.router_label(node) or f"router{i}"
+            seen = taken[label] = taken.get(label, 0) + 1
+            labels[node.id] = label if seen == 1 else f"{label}~{seen}"
         for r in out:
+            r.router = labels.get(r.root.id) if r.root is not None else None
             r.root = None
+        if len(roots) > 1:
+            self.diagnostics.append(f"this file declares {len(roots)} routers ({', '.join(labels[n.id] for n in roots)})")
 
     def router_label(self, node) -> str | None:
         """A router's label: the variable it is assigned to (`const adminRouter = createBrowserRouter(...)`);

@@ -193,6 +193,9 @@ def _unit_compile(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, An
             shard.entity(Entity.make(repo, EntityKind(end["kind"]), key, end["name"], evidence_ids=[ev]))
         return eid
 
+    # 1b. Web Screens of a unit with several routers gain `app` in their keys (section 8.5).
+    summaries = _screen_apps(summaries, unit_root)
+
     # 2. Declared dependencies, entities and relations.
     for s in summaries:
         for o in s["observations"]:
@@ -350,6 +353,111 @@ def _unit_compile(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, An
 
     _captured_screens(shard, repo, unit_root, inputs["decisions"].get("captured", []))
     return shard.rows()
+
+
+_FILE_ROUTERS = ("nextjs", "nuxt")  # file-route frameworks: one app directory is one router
+
+
+def _screen_apps(summaries: list[dict[str, Any]], unit_root: str) -> list[dict[str, Any]]:
+    """Step 1b: the Screen key qualifier `app` (docs/solution-ir-contract.md, section 8.5).
+
+    The web extractors put `attributes.router` (`<path>#<label>`) on each Screen they found
+    under a router the file shows: the router's variable or routes name, or, for a Next.js
+    or Nuxt file route, `<app dir>#nextjs` or `<app dir>#nuxt`. With one distinct router in
+    the unit nothing changes, so keys stay `{platform, name}`. With more than one, each
+    routed web Screen's key gains `app`: the router's label, or for a file route the app
+    directory from the unit root ("." for the unit root itself). Routers that share a label
+    get the directory of their file from the unit root instead, and routers that share that
+    too get `<path from the unit root>#<label>`, so no two routers get the same `app`. A
+    Screen with no `router` (routes in a component the router is mounted around elsewhere)
+    keeps its key: which router it belongs to is not known from one file, so it is not
+    guessed.
+
+    Relation ends naming a rekeyed Screen are rekeyed with it. An end is matched by its old
+    key among the unit's Screen declarations: the declaration in the same file whose span
+    holds the relation's span first, else the only declaration with that key in the unit.
+    An end that still matches several Screens, or one whose key some unrouted Screen keeps,
+    is left as written. Summaries are copied where changed, never modified in place.
+    """
+    def routed(o: Mapping[str, Any]) -> bool:
+        p = o["payload"]
+        return (o["kind"] == "entity" and p.get("kind") == EntityKind.SCREEN and "app" not in p["natural_key"]
+                and p.get("attributes", {}).get("platform") == "web" and isinstance(p.get("attributes", {}).get("router"), str))
+
+    routers: dict[str, str | None] = {}  # router id -> framework of its screens
+    for s in summaries:
+        for o in s["observations"]:
+            if routed(o):
+                routers.setdefault(o["payload"]["attributes"]["router"], o["payload"]["attributes"].get("framework"))
+    if len(routers) < 2:
+        return summaries
+
+    def relative(path: str) -> str:
+        if not unit_root:
+            return path
+        return "." if path == unit_root else path[len(unit_root) + 1:] if path.startswith(unit_root + "/") else path
+
+    # The label first; routers that share it get their directory, then their full id.
+    levels: dict[str, list[str]] = {}
+    for router, framework in sorted(routers.items()):
+        where, _, name = router.rpartition("#")
+        if framework in _FILE_ROUTERS and name == framework:
+            levels[router] = [relative(where), f"{relative(where)}#{name}"]
+        else:
+            levels[router] = [name, posixpath.dirname(relative(where)) or ".", f"{relative(where)}#{name}"]
+    level = dict.fromkeys(levels, 0)
+    while True:
+        app = {router: names[level[router]] for router, names in levels.items()}
+        counts: dict[str, int] = {}
+        for v in app.values():
+            counts[v] = counts.get(v, 0) + 1
+        clashing = [r for r in levels if counts[app[r]] > 1 and level[r] < len(levels[r]) - 1]
+        if not clashing:
+            break
+        for router in clashing:
+            level[router] += 1
+
+    def key_of(natural_key: Mapping[str, Any]) -> str:
+        return digest(natural_key)
+
+    # Every web Screen declaration by its key as written: (path, start, end, app or None).
+    declared: dict[str, list[tuple[str, int, int, str | None]]] = {}
+    for s in summaries:
+        for o in s["observations"]:
+            p = o["payload"]
+            if o["kind"] == "entity" and p.get("kind") == EntityKind.SCREEN and p.get("attributes", {}).get("platform") == "web":
+                sp = o["evidence"]["span"]
+                declared.setdefault(key_of(p["natural_key"]), []).append((s["path"], sp["start_byte"], sp["end_byte"], app[p["attributes"]["router"]] if routed(o) else None))
+
+    def end_app(end: Any, path: str, span: Mapping[str, int]) -> str | None:
+        if not isinstance(end, dict) or end.get("kind") != EntityKind.SCREEN or not isinstance(end.get("natural_key"), dict):
+            return None
+        found = declared.get(key_of(end["natural_key"]), [])
+        here = [d for d in found if d[0] == path and d[1] <= span["start_byte"] and span["end_byte"] <= d[2]]
+        if len(here) == 1:
+            return here[0][3]
+        if len({d[3] for d in found}) == 1:
+            return found[0][3]
+        return None
+
+    out = []
+    for s in summaries:
+        observations = []
+        for o in s["observations"]:
+            p = o["payload"]
+            if routed(o):
+                o = {**o, "payload": {**p, "natural_key": {**p["natural_key"], "app": app[p["attributes"]["router"]]}}}
+            elif o["kind"] == "relation":
+                changed = {}
+                for side in ("subject", "object"):
+                    a = end_app(p[side], s["path"], o["evidence"]["span"])
+                    if a is not None:
+                        changed[side] = {**p[side], "natural_key": {**p[side]["natural_key"], "app": a}}
+                if changed:
+                    o = {**o, "payload": {**p, **changed}}
+            observations.append(o)
+        out.append({**s, "observations": observations})
+    return out
 
 
 SYMBOL_END = "@symbol:"  # docs/solution-ir-contract.md, section 8.5
@@ -822,6 +930,11 @@ def _repo_compile(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, An
     coverage += platform_construct_coverage(shards)
     coverage += behavior_coverage(shards)
     coverage += transform_coverage(shards)
+    # Coverage a platform pack computes itself (`PlatformPack.coverage`), in pack id order.
+    from repo_intel.platforms import packs as platform_packs
+    for _, pack in sorted(platform_packs().items()):
+        if pack.coverage is not None:
+            coverage += pack.coverage(shards)
 
     # Repo-level linking: things that cross unit boundaries.
     links: dict[str, dict[str, Any]] = inputs["links"]

@@ -107,6 +107,9 @@ def test_no_module_level_import_of_the_extractors_package(module):
     ("src/App.tsx", True), ("index.html", True), ("src/views/A.vue", True), ("src/styles/a.scss", True),
     ("node_modules/react-router/index.js", False), ("dist/app.js", False), ("src/App.test.tsx", False),
     ("src/Button.stories.tsx", False), ("src/types.d.ts", False), ("public/vendor.min.js", False),
+    # Owner inputs under .rkp/ (saved DOMs of captured screens) are never pages of the application.
+    (".rkp/inputs/screens/home.html", False), ("web/.rkp/inputs/screens/cart.html", False),
+    (".rkp/inputs/screens/app.css", False), (".rkp/notes.tsx", False), ("src/rkp/page.html", True),
 ])
 def test_which_files_the_pack_reads(path, claimed):
     assert any(e.matches(path) for e in PACK.extractors) is claimed
@@ -841,7 +844,7 @@ def test_the_pack_declares_model_fields_and_its_version():
     term = PACK.term("web:ModelField")
     assert term.core is EntityKind.FIELD and term.fidelity == "lossy"
     assert "web:form-model" in {c.id for c in PACK.constructs}
-    assert PACK.version == "1.3.0"
+    assert PACK.version == "1.4.0"
 
 
 def _git_repo(path: Path, files: dict[str, str]) -> str:
@@ -915,10 +918,66 @@ def test_a_symbol_end_the_file_does_not_export_falls_back_to_the_package(tmp_pat
     # App.tsx names OrdersPage but does not export it: the package renders the route.
     kind, key, qualifiers = renders["/orders"]
     assert kind == "Package" and key["name"] == "shop" and qualifiers["component"] == "OrdersPage"
-    # Hidden is exported only as `default`, so no exported symbol carries its name.
-    kind, key, qualifiers = renders["src/pages/Hidden.tsx"]
-    assert kind == "Package" and qualifiers["component"] == "Hidden"
     assert all(a["subject"] in ents and a["object"] in ents for a in assertions if a["predicate"] == "RENDERS")
+
+
+def test_a_local_name_exported_as_default_renders_through_the_default_symbol(tmp_path):
+    # `const Hidden = ...; export default Hidden`: "@symbol:Hidden" is the file's `default` Symbol.
+    files = {**RENDER_FILES, "src/pages/Aliased.tsx": """
+function Aliased() { return <form><input name="q" /></form>; }
+export { Aliased as default };
+"""}
+    ents, assertions = _compile(tmp_path, files)
+    renders = _renders(ents, assertions)
+    for path, stem in (("src/pages/Hidden.tsx", "src/pages/Hidden"), ("src/pages/Aliased.tsx", "src/pages/Aliased")):
+        kind, key, qualifiers = renders[path]
+        assert kind == "Symbol" and key == {"package": "shop", "qualified_name": f"{stem}#default"}, path
+        assert "component" not in qualifiers
+
+
+def _ts_symbols(source):
+    from repo_intel.extractors.typescript_source import TypeScriptSource
+
+    return [o.payload for o in TypeScriptSource().extract("src/x.tsx", source.encode(), BLOB).observations if o.kind == "symbol"]
+
+
+def test_symbols_are_marked_exported_and_a_default_export_records_its_local_name():
+    assert _ts_symbols("const Hidden = () => 1;\nexport default Hidden;\n") == [{"name": "default", "symbol_kind": "const", "exported": True, "local": "Hidden"}]
+    assert _ts_symbols("function A() {}\nexport { A as default };\n") == [{"name": "default", "symbol_kind": "const", "exported": True, "local": "A"}]
+    assert _ts_symbols("export default function C() {}\nexport const D = 1;\n") == [
+        {"name": "C", "symbol_kind": "function", "exported": True}, {"name": "D", "symbol_kind": "const", "exported": True}]
+    # A default export of an imported name: the file declares nothing under that name.
+    assert _ts_symbols('import B from "./b";\nexport default B;\n') == [{"name": "default", "symbol_kind": "const", "exported": True}]
+
+
+def _summary(path, *observations):
+    from repo_intel.compile.contracts import Evidence, Span
+
+    def ev(i):
+        return Evidence.make(BLOB, Span(start_byte=i, end_byte=i + 1, start_line=1, end_line=1), "x").row()
+    return {"path": path, "observations": [{"kind": k, "payload": p, "evidence": ev(i), "evidence_class": "E2"} for i, (k, p) in enumerate(observations)]}
+
+
+def test_symbol_ends_resolve_only_to_exported_symbols():
+    from repo_intel.compile.link import _Linker
+
+    def renders(name):
+        return ("relation", {"subject": "@symbol:" + name, "predicate": "RENDERS", "object": "@file", "qualifiers": {}})
+    files = [
+        _summary("package.json", ("package_declaration", {"ecosystem": "npm", "name": "shop", "manifest_dir": ""})),
+        _summary("src/a.tsx", ("symbol", {"name": "default", "symbol_kind": "const", "exported": True, "local": "Shown"}),
+                 ("symbol", {"name": "Named", "symbol_kind": "function", "exported": True}), renders("Shown"), renders("Named"), renders("Other")),
+        # A symbol reported without `exported` (a Python method, say) is not an export.
+        _summary("src/b.tsx", ("symbol", {"name": "Inner", "symbol_kind": "method"}), renders("Inner")),
+        # `local` on a symbol that is not the default export maps nothing.
+        _summary("src/c.tsx", ("symbol", {"name": "Other", "symbol_kind": "const", "exported": True, "local": "Hidden"}), renders("Hidden")),
+    ]
+    ends = _Linker({"name": ".", "paths": []}, files, []).symbol_ends()
+    assert ends["src/a.tsx"]["Shown"]["natural_key"] == {"package": "shop", "qualified_name": "src/a#default"}
+    assert ends["src/a.tsx"]["Named"]["natural_key"] == {"package": "shop", "qualified_name": "src/a#Named"}
+    assert ends["src/a.tsx"]["Other"] is None
+    assert ends["src/b.tsx"] == {"Inner": None}
+    assert ends["src/c.tsx"] == {"Hidden": None}
 
 
 TWO_ROUTERS = """
@@ -934,32 +993,52 @@ export const adminRouter = createBrowserRouter([
 """
 
 
-def test_a_file_with_two_routers_keys_its_screens_by_app():
+def _screens(ents):
+    """(name, app) of every routed Screen (`web:Route`), sorted."""
+    return sorted(((e["natural_key"]["name"], e["natural_key"].get("app")) for e in ents.values() if e["attributes"].get("platform_kind") == "web:Route"), key=str)
+
+
+def test_routed_screens_carry_their_router_and_the_extractor_never_adds_app():
     out = run("src/routers.tsx", TWO_ROUTERS)
-    keys = sorted((e["natural_key"]["name"], e["natural_key"].get("app")) for e in out["entities"] if e["kind"] == "Screen")
-    assert keys == [("/", "adminRouter"), ("/", "shopRouter"), ("/users", "adminRouter")]
-    assert entity(out, "Screen", name="/users")["attributes"]["app"] == "adminRouter"
+    keys = sorted((e["natural_key"]["name"], e["attributes"]["router"]) for e in out["entities"] if e["kind"] == "Screen")
+    assert keys == [("/", "src/routers.tsx#adminRouter"), ("/", "src/routers.tsx#shopRouter"), ("/users", "src/routers.tsx#adminRouter")]
+    assert all("app" not in e["natural_key"] for e in out["entities"] if e["kind"] == "Screen")
     assert any("declares 2 routers" in d for d in out["diagnostics"])
 
 
-def test_a_single_router_keeps_its_screen_keys():
+def test_a_unit_with_two_routers_in_one_file_keys_its_screens_by_app(tmp_path):
+    ents, assertions = _compile(tmp_path, {"package.json": '{"name": "shop"}', "src/routers.tsx": TWO_ROUTERS})
+    assert _screens(ents) == [("/", "adminRouter"), ("/", "shopRouter"), ("/users", "adminRouter")]
+    # The relation ends naming a routed Screen follow it to its new key, each to its own router's.
+    renders = [a for a in assertions if a["predicate"] == "RENDERS"]
+    assert sorted((ents[a["object"]]["natural_key"]["name"], ents[a["object"]]["natural_key"]["app"], a["qualifiers"]["component"]) for a in renders) == [
+        ("/", "adminRouter", "Admin"), ("/", "shopRouter", "Home"), ("/users", "adminRouter", "Users")]
+
+
+def test_a_single_router_keeps_its_screen_keys(tmp_path):
     out = run("src/App.tsx", REACT_ROUTES)
-    assert all(set(e["natural_key"]) == {"platform", "name"} for e in out["entities"] if e["kind"] == "Screen")
+    assert {e["attributes"].get("router") for e in out["entities"] if e["kind"] == "Screen"} == {"src/App.tsx#App"}
+    ents, _ = _compile(tmp_path, {"package.json": '{"name": "shop"}', "src/App.tsx": REACT_ROUTES})
+    assert _screens(ents) and all(app is None for _, app in _screens(ents))
 
 
-def test_two_router_components_in_one_file_are_told_apart():
-    out = run("src/Apps.tsx", """
+def test_two_router_components_in_one_file_are_told_apart(tmp_path):
+    source = """
 import { BrowserRouter, MemoryRouter, Route, Routes } from "react-router-dom";
 import A from "./A";
 import B from "./B";
 export function ShopApp() { return <BrowserRouter><Routes><Route path="/" element={<A />} /></Routes></BrowserRouter>; }
 export function AdminApp() { return <MemoryRouter><Routes><Route path="/" element={<B />} /></Routes></MemoryRouter>; }
-""")
-    assert sorted(e["natural_key"]["app"] for e in out["entities"] if e["kind"] == "Screen") == ["AdminApp", "ShopApp"]
+"""
+    out = run("src/Apps.tsx", source)
+    assert sorted(e["attributes"]["router"] for e in out["entities"] if e["kind"] == "Screen") == ["src/Apps.tsx#AdminApp", "src/Apps.tsx#ShopApp"]
+    ents, _ = _compile(tmp_path, {"package.json": '{"name": "shop"}', "src/Apps.tsx": source})
+    assert _screens(ents) == [("/", "AdminApp"), ("/", "ShopApp")]
 
 
 def test_nested_routes_elements_under_one_router_share_the_app():
-    # <Routes> blocks in several components render under the one router the app mounts.
+    # <Routes> blocks in several components render under the one router the app mounts:
+    # this file shows no router, so its routes carry none and keep their keys.
     out = run("src/Sections.tsx", """
 import { Route, Routes } from "react-router-dom";
 import A from "./A";
@@ -967,7 +1046,99 @@ import B from "./B";
 export function Shop() { return <Routes><Route path="/shop" element={<A />} /></Routes>; }
 export function Admin() { return <Routes><Route path="/admin" element={<B />} /></Routes>; }
 """)
-    assert all("app" not in e["natural_key"] for e in out["entities"] if e["kind"] == "Screen")
+    assert all("app" not in e["natural_key"] and "router" not in e["attributes"] for e in out["entities"] if e["kind"] == "Screen")
+
+
+SEVERAL_APPS = {
+    "package.json": '{"name": "suite"}',
+    # Two routers in two files, both given a `routes` array: they share the label, so each
+    # router is named by its file's directory.
+    "shop/router.ts": """
+import { createRouter, createWebHistory } from "vue-router";
+import Cart from "./Cart.vue";
+const routes = [{ path: "/", component: Cart }, { path: "/cart", component: Cart, meta: { roles: ["customer"] } }];
+export default createRouter({ history: createWebHistory(), routes });
+""",
+    "admin/router.ts": """
+import { createRouter, createWebHistory } from "vue-router";
+import Users from "./Users.vue";
+const routes = [{ path: "/", component: Users }, { path: "/users", component: Users }];
+export default createRouter({ history: createWebHistory(), routes });
+""",
+    # Routes in a component mounted under a router elsewhere: no router of their own.
+    "storefront/App.tsx": """
+import { Route, Routes } from "react-router-dom";
+import Home from "./Home";
+export default function App() { return <Routes><Route path="/home" element={<Home />} /></Routes>; }
+""",
+    "storefront/Nav.tsx": 'export default function Nav() { return <nav><a href="/users">Users</a><a href="/">Home</a><a href="/home">Store</a></nav>; }\n',
+}
+
+
+def test_routers_across_files_key_their_screens_by_app_and_rekey_links(tmp_path):
+    ents, assertions = _compile(tmp_path, SEVERAL_APPS)
+    assert _screens(ents) == [("/", "admin"), ("/", "shop"), ("/cart", "shop"), ("/home", None), ("/users", "admin")]
+    nav = {(ents[a["object"]]["natural_key"]["name"], ents[a["object"]]["natural_key"].get("app")) for a in assertions if a["predicate"] == "NAVIGATES_TO"}
+    # One Screen in the unit has the name "/users": the link follows it to its new key.
+    assert ("/users", "admin") in nav
+    # A Screen with no router keeps its key, and its links.
+    assert ("/home", None) in nav
+    # Both routers declare "/": which one the link means is not known, so it relates nothing.
+    assert not any(name == "/" for name, _ in nav)
+    roles = {(ents[a["subject"]]["natural_key"]["name"], ents[a["subject"]]["natural_key"].get("app")) for a in assertions if a["predicate"] == "REQUIRES_ROLE"}
+    assert roles == {("/cart", "shop")}
+
+
+NEXT_PAGE = 'export default function Page() { return <form><input name="q" /></form>; }\n'
+
+
+def test_next_apps_in_one_unit_are_keyed_by_their_directory(tmp_path):
+    out = run("apps/admin/src/app/orders/page.tsx", NEXT_PAGE)
+    attrs = entity(out, "Screen", name="/orders")["attributes"]
+    assert attrs["router"] == "apps/admin#nextjs" and attrs["route_dir"] == "app"
+    files = {"package.json": '{"name": "suite"}', "apps/shop/app/orders/page.tsx": NEXT_PAGE,
+             "apps/admin/src/app/orders/page.tsx": NEXT_PAGE, "apps/admin/src/app/page.tsx": NEXT_PAGE}
+    ents, assertions = _compile(tmp_path, files)
+    assert _screens(ents) == [("/", "apps/admin"), ("/orders", "apps/admin"), ("/orders", "apps/shop")]
+    screens = {e["id"] for e in ents.values() if e["kind"] == "Screen"}
+    contained = [a for a in assertions if a["predicate"] == "CONTAINS" and ents[a["object"]]["kind"] == "Form"]
+    assert contained and all(a["subject"] in screens for a in contained)
+
+
+def test_one_next_app_keeps_its_keys(tmp_path):
+    files = {"package.json": '{"name": "shop"}', "app/orders/page.tsx": NEXT_PAGE, "app/page.tsx": NEXT_PAGE,
+             "pages/legacy.tsx": 'import Link from "next/link";\n' + NEXT_PAGE}
+    ents, _ = _compile(tmp_path, files)
+    assert _screens(ents) == [("/", None), ("/legacy", None), ("/orders", None)]
+
+
+def test_pack_coverage_runs_in_the_repository_compile(tmp_path):
+    from repo_intel.compile.pipeline import compile_commit
+    from repo_intel.storage.store import ObjectStore
+
+    assert PACK.coverage is not None
+    repo = tmp_path / "repo"
+    sha = _git_repo(repo, {"package.json": '{"name": "shop"}', "public/contact.html": ACCESSIBLE})
+    store = ObjectStore(tmp_path / "store", "t")
+    result = compile_commit(store, repo, "github.com/1001", sha)
+    rows = [c for c in store.get_json(result.manifest.coverage_ref) if c["domain"] == "accessibility"]
+    out = run("public/contact.html", ACCESSIBLE)
+    controls = [x for x in out["entities"] if x["kind"] == "UIControl"]
+    named = sum(x["attributes"]["accessibility"]["name_source"] != "none" for x in controls)
+    assert [(r["scope"], r["numerator"], r["denominator"]) for r in rows] == [("web", named, len(controls))]
+
+
+def test_f22_accessibility_coverage(tmp_path):
+    # The golden format has no coverage rows for one-repository fixtures, so F22's row is pinned here.
+    from repo_intel.compile.fixtures import materialize
+    from repo_intel.compile.pipeline import compile_commit
+    from repo_intel.storage.store import ObjectStore
+
+    sha = materialize("F22-web-frontend", tmp_path / "repo")[0]
+    store = ObjectStore(tmp_path / "store", "t")
+    result = compile_commit(store, tmp_path / "repo", "github.com/1001", sha)
+    rows = [c for c in store.get_json(result.manifest.coverage_ref) if c["domain"] == "accessibility"]
+    assert [(r["scope"], r["numerator"], r["denominator"]) for r in rows] == [("web", 32, 43)]
 
 
 def _imports(out):
