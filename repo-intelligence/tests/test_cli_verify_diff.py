@@ -330,6 +330,60 @@ def test_diff_matches_two_repositories_by_kind_and_natural_key(compiled, tmp_pat
     assert "two repositories: entities are matched by kind and natural key" in capsys.readouterr().out
 
 
+CONTRACT = "openapi: 3.0.0\ninfo:\n  title: Orders\n  version: 1\npaths:\n  /orders:\n{ops}"
+OPERATION = "    {method}:\n      operationId: {name}\n      responses:\n        '200':\n          description: OK\n"
+
+
+def test_diff_compares_the_exports(tmp_path, capsys):
+    repo = tmp_path / "web"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    (repo / "package.json").write_text('{"name": "web", "version": "1.0.0", "dependencies": {"axios": "1.7.0"}}\n')
+    versions = [
+        (OPERATION.format(method="get", name="listOrders") + OPERATION.format(method="post", name="placeOrder"),
+         'import axios from "axios";\nexport const a = () => fetch("/api/customers");\nexport const b = () => axios.post("/api/customers", {});\n'),
+        (OPERATION.format(method="get", name="listOrders") + OPERATION.format(method="put", name="replaceOrders"),
+         'import axios from "axios";\nexport const a = () => fetch("/api/customers");\nexport const c = () => axios.delete("/api/invoices");\n'),
+    ]
+    for contract, source in versions:
+        (repo / "openapi.yaml").write_text(CONTRACT.format(ops=contract))
+        (repo / "src").mkdir(exist_ok=True)
+        (repo / "src" / "api.ts").write_text(source)
+        _commit_all(repo, "source")
+        bundle.compile_bundle(repo)
+        _commit_all(repo, "knowledge")
+
+    code, result = _diff(capsys, "HEAD~2", "HEAD", "--repo", repo)
+    assert code == 0 and result["warnings"] == []
+    exports = result["exports"]
+    assert exports["compared"] is True and exports["summary"] == {"added": 2, "removed": 2}
+    assert [(r["change"], r["method"], r["route"], r["interface"]["kind"]) for r in exports["operations"]] == [
+        ("removed", "POST", "/orders", "Interface"), ("added", "PUT", "/orders", "Interface")]
+    assert [(r["change"], r["method"], r["path"]) for r in exports["unresolved_calls"]] == [
+        ("removed", "POST", "/api/customers"), ("added", "DELETE", "/api/invoices")]
+    assert all(r["caller"] and r["caller"]["id"].startswith("ent_") for r in exports["unresolved_calls"])
+
+    # The text output lists the same changes.
+    assert cli.main(["diff", "HEAD~2", "HEAD", "--repo", str(repo)]) == 0
+    text = capsys.readouterr().out
+    assert "exports: 2 added, 2 removed" in text
+    assert "+ operation PUT /orders (Interface " in text and "- unresolved call POST /api/customers (" in text
+
+    # The same bundle on both sides: nothing added or removed.
+    code, result = _diff(capsys, "HEAD", repo, "--repo", repo)
+    assert result["exports"] == {"compared": True, "summary": {"added": 0, "removed": 0}, "operations": [], "unresolved_calls": []}
+
+    # A bundle written before exports.json existed: the exports are not compared.
+    old = tmp_path / "old"
+    shutil.copytree(_knowledge(repo), old)
+    document = json.loads((old / "manifest.json").read_text())
+    del document["exports"]
+    (old / "manifest.json").write_text(json.dumps(document))
+    (old / bundle.EXPORTS_FILE).unlink()
+    code, result = _diff(capsys, old, repo)
+    assert code == 0 and result["exports"] == {"compared": False, "summary": {"added": 0, "removed": 0}, "operations": [], "unresolved_calls": []}
+
+
 def test_diff_reports_a_damaged_side_as_a_warning(compiled, tmp_path, capsys):
     repo, _ = compiled
     damaged = tmp_path / "damaged"
@@ -503,14 +557,41 @@ def test_the_architecture_tier_must_leave_behaviour_out(demo, tmp_path, capsys):
     path = _knowledge(repo) / unit["file"]
     _write_lines(path, _lines(path) + [r for r in rows if r["table"] == "behavior"])
     document = _manifest(repo)
-    document["detail_tables"] = []
+    document["detail_tables"] = ["behaviors", "secrets"]
     _write_manifest(repo, document)
     code, result = _verify(capsys, repo)
     problems = result["problems"]
     assert code == 1
     assert "the architecture tier holds detail it should leave out: 3 behaviors rows" in problems
-    assert "manifest.json: detail_tables is []; the architecture tier leaves out ['behaviors']" in problems
+    assert "manifest.json: detail_tables is ['behaviors', 'secrets']; the architecture tier leaves out only tables among ['behaviors', 'transforms']" in problems
     assert f"{unit['file']}: rows do not hash to the unit's digest in manifest.json" in problems
+
+
+def test_an_architecture_bundle_written_before_a_detail_table_existed_still_verifies(demo, tmp_path, capsys):
+    # Written before transform shapes: detail_tables names only behaviour.
+    repo = _demo_repo(tmp_path / "repo", "architecture")
+    document = _manifest(repo)
+    document["detail_tables"] = ["behaviors"]
+    del document["detail_omitted"]["transforms"]
+    _write_manifest(repo, document)
+    code, result = _verify(capsys, repo)
+    assert code == 0, result["problems"]
+
+    for wrong in ("behaviors", [["behaviors"]], ["secrets"]):  # not a list of known table names
+        document["detail_tables"] = wrong
+        _write_manifest(repo, document)
+        code, result = _verify(capsys, repo)
+        assert code == 1 and f"manifest.json: detail_tables is {wrong!r}; the architecture tier leaves out only tables among ['behaviors', 'transforms']" in result["problems"]
+
+    # The rows are checked whatever the list says: behaviour put back is still refused.
+    document["detail_tables"] = ["behaviors"]
+    _write_manifest(repo, document)
+    full = _demo_repo(tmp_path / "full", "full")
+    _, rows = _behaviour_unit(full)
+    path = _knowledge(repo) / _largest_unit(repo)["file"]
+    _write_lines(path, _lines(path) + [r for r in rows if r["table"] == "behavior"])
+    code, result = _verify(capsys, repo)
+    assert code == 1 and "the architecture tier holds detail it should leave out: 3 behaviors rows" in result["problems"]
 
 
 def test_a_full_bundle_from_a_real_pack_verifies_clean(tmp_path, capsys):

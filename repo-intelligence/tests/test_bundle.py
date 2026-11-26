@@ -256,6 +256,53 @@ def test_architecture_tier_is_checked_on_load(repo):
         bundle.hydrate(repo)
 
 
+def test_architecture_tier_drops_captured_screen_regions(tmp_path):
+    """Contract 8.2: captured regions are detail. The architecture tier keeps the Screen and
+    drops `attributes.captured`, counts it in detail_omitted, and verify refuses it put back."""
+    from test_rules import CAPTURE, CFML, FakeModel, _gateway, _repo
+    from repo_intel.compile.pipeline import compile_commit
+    from repo_intel.knowledge import bundle_check
+    from repo_intel.workspace.settings import CompileSettings
+
+    repo = tmp_path / "repo"
+    commit = _repo(repo, {**CFML, **CAPTURE})
+    config = bundle.ensure_layout(repo)
+    store = bundle.store_for(repo)
+    gateway, _ = _gateway(FakeModel())
+    result = compile_commit(store, repo, config["repository_id"], commit, gateway=gateway, policy=CompileSettings(captured_screens=True))
+    full = load_shards(store, result.manifest)
+    [captured] = [e for s in full.values() for e in s["entities"] if e["kind"] == "Screen" and "captured" in e["attributes"]]
+
+    document = bundle.write_bundle(repo, store, result.manifest, tier="architecture")
+    assert document["detail_omitted"]["Screen.captured"] == 1
+    [screen] = [r for r in _unit_rows(repo, document) if r["table"] == "entity" and r["id"] == captured["id"]]
+    assert screen["attributes"] == {k: v for k, v in captured["attributes"].items() if k != "captured"}, "only the regions are dropped"
+    problems, _ = bundle_check.verify_bundle(bundle_check.load_bundle(bundle_check.directory_source(repo)))
+    assert problems == []
+    architecture = tmp_path / "architecture"
+    shutil.copytree(repo / ".rkp" / "knowledge", architecture)
+
+    # The full tier keeps them, and a diff against it compares at the architecture tier.
+    document = bundle.write_bundle(repo, store, result.manifest, tier="full")
+    assert "detail_omitted" not in document
+    [screen] = [r for r in _unit_rows(repo, document) if r["table"] == "entity" and r["id"] == captured["id"]]
+    assert screen["attributes"]["captured"] == captured["attributes"]["captured"]
+    diff = bundle_check.diff_bundles(bundle_check.load_bundle(bundle_check.directory_source(architecture)), bundle_check.load_bundle(bundle_check.directory_source(repo)))
+    assert diff["compared_tier"] == "architecture" and not [r for r in diff["entities"]["rows"] if r["kind"] == "Screen"]
+
+    # Put back by hand into the architecture tier: verify names it.
+    unit = next(u for u in json.loads((architecture / "manifest.json").read_text())["units"] if u["entities"] and any(
+        json.loads(line).get("id") == captured["id"] for line in (architecture / u["file"]).read_text().splitlines()))
+    path = architecture / unit["file"]
+    rows = [json.loads(line) for line in path.read_text().splitlines()]
+    for row in rows:
+        if row.get("id") == captured["id"]:
+            row["attributes"]["captured"] = captured["attributes"]["captured"]
+    path.write_text("".join(json.dumps(r, sort_keys=True, separators=(",", ":")) + "\n" for r in rows))
+    problems, _ = bundle_check.verify_bundle(bundle_check.load_bundle(bundle_check.directory_source(architecture)))
+    assert "the architecture tier holds detail it should leave out: 1 Screen entity with attributes.captured" in problems
+
+
 def test_changing_the_commit_setting_makes_the_bundle_stale(repo):
     bundle.compile_bundle(repo)
     _set_commit(repo, "full")

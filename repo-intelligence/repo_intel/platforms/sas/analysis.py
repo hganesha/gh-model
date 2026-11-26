@@ -794,6 +794,9 @@ class Analysis:
         if named:
             call["named"] = named
         node: dict[str, Any] = {"op": "call", "at": self.at(step.start, step.end), "call": call}
+        detail = proc_detail(header[2:], [toks_of(st) for st in inner])
+        if detail:  # options and statements transform shapes read (repo_intel.compile.transforms)
+            node["detail"] = detail
         if name in UNMAPPED_PROCS:
             node = {"op": "platform", "construct": cid, "at": self.at(step.start, step.end), "detail": {"procedure": name}}
         self.proc_reference(index, step, name or "unknown")
@@ -1249,6 +1252,92 @@ def sas_sql(raw: str) -> str:
         close = skip_parens_text(out, open_at)
         out = out[:open_at] + " " * (close - open_at) + out[close:]
     return out
+
+
+# Procedure statements whose variable lists are kept as detail on the procedure's node, for
+# transform shapes (repo_intel.compile.transforms). Only names are kept, never option values.
+_PROC_LISTS = ("class", "var", "id", "tables", "ranks")
+# Header options that name columns (PROC TRANSPOSE's PREFIX=, NAME=); other values are not copied.
+_PROC_NAMING_OPTIONS = ("prefix", "suffix", "name")
+
+
+def proc_detail(header: list[Tok], statements: list[list[Tok]]) -> dict[str, Any]:
+    """What a procedure's header flags and statements say about the rows it writes: flags such
+    as `nodupkey` and `nway`, BY variables with their order, CLASS, VAR, ID, TABLES and RANKS
+    lists, and the statistics an OUTPUT statement names (`sum(amount)=total`)."""
+    detail: dict[str, Any] = {}
+    flags: set[str] = set()
+    depth = 0
+    for j, t in enumerate(header):
+        depth += {"(": 1, ")": -1}.get(t.text, 0)
+        if depth or t.kind != "word":
+            continue
+        after = header[j + 1].text if j + 1 < len(header) else ""
+        before = header[j - 1].text if j else ""
+        if after == "=" and t.low in _PROC_NAMING_OPTIONS and j + 2 < len(header) and header[j + 2].kind == "word":
+            detail[t.low] = header[j + 2].low
+        elif after != "=" and before != "=":
+            flags.add(t.low)
+    if flags:
+        detail["options"] = sorted(flags)
+    for toks in statements:
+        if not toks or toks[0].kind != "word":
+            continue
+        w = toks[0].low
+        if w == "by":
+            by, desc = [], False
+            for t in toks[1:]:
+                if t.kind != "word" or t.low in ("notsorted", "groupformat"):
+                    continue
+                if t.low == "descending":
+                    desc = True
+                    continue
+                by.append({"column": t.low, "desc": desc})
+                desc = False
+            if by:
+                detail["by"] = by
+        elif w in _PROC_LISTS:
+            stop = next((k for k, t in enumerate(toks) if t.text == "/"), len(toks))
+            names = [t.low for t in toks[1:stop] if t.kind == "word"]
+            if names:
+                detail.setdefault(w, []).extend(names)
+        elif w == "output":
+            stats, autoname = _output_statistics(toks[1:])
+            if stats or autoname:
+                detail.setdefault("output", []).append({"stats": stats, **({"autoname": True} if autoname else {})})
+    return detail
+
+
+def _output_statistics(toks: list[Tok]) -> tuple[list[dict[str, Any]], bool]:
+    """`sum=total mean(amount)=avg_amount / autoname` as [{stat, vars, names}] and the AUTONAME flag."""
+    stats: list[dict[str, Any]] = []
+    autoname = any(t.low == "autoname" for t in toks)
+    j = 0
+    while j < len(toks):
+        t = toks[j]
+        if t.text == "/":
+            break
+        if t.kind != "word" or j + 1 >= len(toks) or toks[j + 1].text not in ("=", "("):
+            j += 1
+            continue
+        if t.low == "out":  # the dataset written, already a named option of the call
+            j += 3
+            if j < len(toks) and toks[j].text == "(":
+                j = skip_parens(toks, j)
+            continue
+        item: dict[str, Any] = {"stat": t.low, "vars": [], "names": []}
+        j += 1
+        if toks[j].text == "(":
+            end = skip_parens(toks, j)
+            item["vars"] = [v.low for v in toks[j + 1 : end - 1] if v.kind == "word"]
+            j = end
+        if j < len(toks) and toks[j].text == "=":
+            j += 1
+            while j < len(toks) and toks[j].kind == "word" and not (j + 1 < len(toks) and toks[j + 1].text in ("=", "(")):
+                item["names"].append(toks[j].low)
+                j += 1
+        stats.append(item)
+    return stats, autoname
 
 
 def skip_parens_text(text: str, i: int) -> int:

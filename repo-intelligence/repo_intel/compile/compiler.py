@@ -83,6 +83,7 @@ class _Shard:
         self.evidence: dict[str, dict] = {}
         self.unknowns: dict[str, dict] = {}
         self.behaviors: dict[str, dict] = {}  # behaviour units (compile.behavior), by row id
+        self.transforms: dict[tuple, dict] = {}  # transform shapes (compile.transforms), by sort key
 
     def entity(self, e: Entity) -> str:
         """Add an entity; a repeated declaration merges attributes and evidence."""
@@ -114,6 +115,8 @@ class _Shard:
         rows = {"unit": self.unit, "entities": ordered(self.entities), "assertions": ordered(self.assertions), "evidence": ordered(self.evidence), "unknowns": ordered(self.unknowns)}
         if self.behaviors:  # only when there are any, so a shard without behaviour keeps its digest
             rows["behaviors"] = ordered(self.behaviors)
+        if self.transforms:  # the same for transform shapes
+            rows["transforms"] = [self.transforms[k] for k in sorted(self.transforms)]
         return rows
 
 
@@ -190,6 +193,9 @@ def _unit_compile(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, An
             shard.entity(Entity.make(repo, EntityKind(end["kind"]), key, end["name"], evidence_ids=[ev]))
         return eid
 
+    # 1b. Web Screens of a unit with several routers gain `app` in their keys (section 8.5).
+    summaries = _screen_apps(summaries, unit_root)
+
     # 2. Declared dependencies, entities and relations.
     for s in summaries:
         for o in s["observations"]:
@@ -214,7 +220,7 @@ def _unit_compile(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, An
     def declaring(o: Mapping[str, Any]) -> bool:
         return all(not isinstance(o["payload"][end], dict) or o["payload"][end].get("declare", True) for end in ("subject", "object"))
 
-    relations = [(s["path"], o) for s in summaries for o in s["observations"] if o["kind"] == "relation"]
+    relations = [(s["path"], o) for s in summaries for o in s["observations"] if o["kind"] == "relation" and not _symbol_end(o)]
     for path, o in [r for r in relations if declaring(r[1])] + [r for r in relations if not declaring(r[1])]:
         p = o["payload"]
         ev = o["evidence"]["id"]
@@ -240,11 +246,17 @@ def _unit_compile(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, An
         evs = [shard.cite(e) for e in o["evidence"]]
         shard.assertion(Assertion.make(subject, Predicate(p["predicate"]), obj, qualifiers=p.get("qualifiers", {}), assertion_kind=AssertionKind.DERIVED_RELATION, epistemic_status=_status(o["evidence_class"]), evidence_class=o["evidence_class"], evidence_ids=evs, resolution=o["resolution"]))
 
+    # 4a. Relations with a "@symbol:<name>" end, now that the linker's Symbols are declared.
+    _symbol_relations(shard, summaries, link.get("symbol_ends", {}), resolve)
+
     # 4b. Behaviour units, now that every entity of the unit is known.
     for s in summaries:
         for o in s["observations"]:
             if o["kind"] == "behavior":
                 _behavior(shard, repo, unit_root, artifact_of[s["path"]][0], o)
+
+    # 4c. Transform shapes: derived from the behaviour units just stored, and emitted by extractors.
+    _transforms(shard, repo, unit_root, packages[0][0] if packages else None, artifact_of, summaries)
 
     # 5. DM05: ORM uses the linker could not resolve, settled by a table decision.
     settled: set[tuple[str, str, str]] = set()
@@ -338,7 +350,173 @@ def _unit_compile(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, An
                     continue
                 feature = shard.entity(Entity.make(repo, EntityKind.FEATURE, {"component": unit_root, "statement": digest(h["statement"])}, h["statement"][:80], attributes={"statement": h["statement"], "trust_label": "untrusted_generated", "decision_ref": behavior["decision_id"]}, evidence_ids=evs))
                 shard.assertion(Assertion.make(comp, Predicate.IMPLEMENTS, feature, qualifiers={"basis": "behavior_candidate"}, assertion_kind=AssertionKind.HYPOTHESIS, epistemic_status=EpistemicStatus.INFERRED, evidence_class=EvidenceClass.E5, evidence_ids=evs, resolution="candidate", decision_ref=behavior["decision_id"]))
+
+    _captured_screens(shard, repo, unit_root, inputs["decisions"].get("captured", []))
     return shard.rows()
+
+
+_FILE_ROUTERS = ("nextjs", "nuxt")  # file-route frameworks: one app directory is one router
+
+
+def _screen_apps(summaries: list[dict[str, Any]], unit_root: str) -> list[dict[str, Any]]:
+    """Step 1b: the Screen key qualifier `app` (docs/solution-ir-contract.md, section 8.5).
+
+    The web extractors put `attributes.router` (`<path>#<label>`) on each Screen they found
+    under a router the file shows: the router's variable or routes name, or, for a Next.js
+    or Nuxt file route, `<app dir>#nextjs` or `<app dir>#nuxt`. With one distinct router in
+    the unit nothing changes, so keys stay `{platform, name}`. With more than one, each
+    routed web Screen's key gains `app`: the router's label, or for a file route the app
+    directory from the unit root ("." for the unit root itself). Routers that share a label
+    get the directory of their file from the unit root instead, and routers that share that
+    too get `<path from the unit root>#<label>`, so no two routers get the same `app`. A
+    Screen with no `router` (routes in a component the router is mounted around elsewhere)
+    keeps its key: which router it belongs to is not known from one file, so it is not
+    guessed.
+
+    Relation ends naming a rekeyed Screen are rekeyed with it. An end is matched by its old
+    key among the unit's Screen declarations: the declaration in the same file whose span
+    holds the relation's span first, else the only declaration with that key in the unit.
+    An end that still matches several Screens, or one whose key some unrouted Screen keeps,
+    is left as written. Summaries are copied where changed, never modified in place.
+    """
+    def routed(o: Mapping[str, Any]) -> bool:
+        p = o["payload"]
+        return (o["kind"] == "entity" and p.get("kind") == EntityKind.SCREEN and "app" not in p["natural_key"]
+                and p.get("attributes", {}).get("platform") == "web" and isinstance(p.get("attributes", {}).get("router"), str))
+
+    routers: dict[str, str | None] = {}  # router id -> framework of its screens
+    for s in summaries:
+        for o in s["observations"]:
+            if routed(o):
+                routers.setdefault(o["payload"]["attributes"]["router"], o["payload"]["attributes"].get("framework"))
+    if len(routers) < 2:
+        return summaries
+
+    def relative(path: str) -> str:
+        if not unit_root:
+            return path
+        return "." if path == unit_root else path[len(unit_root) + 1:] if path.startswith(unit_root + "/") else path
+
+    # The label first; routers that share it get their directory, then their full id.
+    levels: dict[str, list[str]] = {}
+    for router, framework in sorted(routers.items()):
+        where, _, name = router.rpartition("#")
+        if framework in _FILE_ROUTERS and name == framework:
+            levels[router] = [relative(where), f"{relative(where)}#{name}"]
+        else:
+            levels[router] = [name, posixpath.dirname(relative(where)) or ".", f"{relative(where)}#{name}"]
+    level = dict.fromkeys(levels, 0)
+    while True:
+        app = {router: names[level[router]] for router, names in levels.items()}
+        counts: dict[str, int] = {}
+        for v in app.values():
+            counts[v] = counts.get(v, 0) + 1
+        clashing = [r for r in levels if counts[app[r]] > 1 and level[r] < len(levels[r]) - 1]
+        if not clashing:
+            break
+        for router in clashing:
+            level[router] += 1
+
+    def key_of(natural_key: Mapping[str, Any]) -> str:
+        return digest(natural_key)
+
+    # Every web Screen declaration by its key as written: (path, start, end, app or None).
+    declared: dict[str, list[tuple[str, int, int, str | None]]] = {}
+    for s in summaries:
+        for o in s["observations"]:
+            p = o["payload"]
+            if o["kind"] == "entity" and p.get("kind") == EntityKind.SCREEN and p.get("attributes", {}).get("platform") == "web":
+                sp = o["evidence"]["span"]
+                declared.setdefault(key_of(p["natural_key"]), []).append((s["path"], sp["start_byte"], sp["end_byte"], app[p["attributes"]["router"]] if routed(o) else None))
+
+    def end_app(end: Any, path: str, span: Mapping[str, int]) -> str | None:
+        if not isinstance(end, dict) or end.get("kind") != EntityKind.SCREEN or not isinstance(end.get("natural_key"), dict):
+            return None
+        found = declared.get(key_of(end["natural_key"]), [])
+        here = [d for d in found if d[0] == path and d[1] <= span["start_byte"] and span["end_byte"] <= d[2]]
+        if len(here) == 1:
+            return here[0][3]
+        if len({d[3] for d in found}) == 1:
+            return found[0][3]
+        return None
+
+    out = []
+    for s in summaries:
+        observations = []
+        for o in s["observations"]:
+            p = o["payload"]
+            if routed(o):
+                o = {**o, "payload": {**p, "natural_key": {**p["natural_key"], "app": app[p["attributes"]["router"]]}}}
+            elif o["kind"] == "relation":
+                changed = {}
+                for side in ("subject", "object"):
+                    a = end_app(p[side], s["path"], o["evidence"]["span"])
+                    if a is not None:
+                        changed[side] = {**p[side], "natural_key": {**p[side]["natural_key"], "app": a}}
+                if changed:
+                    o = {**o, "payload": {**p, **changed}}
+            observations.append(o)
+        out.append({**s, "observations": observations})
+    return out
+
+
+SYMBOL_END = "@symbol:"  # docs/solution-ir-contract.md, section 8.5
+
+
+def _symbol_end(o: Mapping[str, Any]) -> bool:
+    """A relation observation with an end "@symbol:<name>" (handled in step 4a, not step 3)."""
+    return any(isinstance(o["payload"].get(end), str) and o["payload"][end].startswith(SYMBOL_END) for end in ("subject", "object"))
+
+
+def _symbol_relations(shard: _Shard, summaries: list[dict[str, Any]], symbol_ends: Mapping[str, Mapping[str, Any]], resolve: Any) -> None:
+    """Relations whose subject or object is "@symbol:<name>": the top-level exported symbol
+    `<name>` declared in the same file. The linker resolved each name (`_Linker.symbol_ends`);
+    a name the file does not export falls back to "@package" with qualifier `component: <name>`.
+    Run after step 4, which declares the linker's Symbols, so a resolved end is found and never
+    declared here. Otherwise compiled as step 3 compiles a relation."""
+    for s in summaries:
+        path = s["path"]
+        for o in s["observations"]:
+            if o["kind"] != "relation" or not _symbol_end(o):
+                continue
+            p = o["payload"]
+            qualifiers = dict(p.get("qualifiers", {}))
+            ends = []
+            for end in (p["subject"], p["object"]):
+                if isinstance(end, str) and end.startswith(SYMBOL_END):
+                    name = end[len(SYMBOL_END):]
+                    found = symbol_ends.get(path, {}).get(name)
+                    if found is None:
+                        qualifiers["component"] = name
+                    end = found if found is not None else "@package"
+                ends.append(end)
+            ev = o["evidence"]["id"]
+            subject, obj = resolve(ends[0], path, ev), resolve(ends[1], path, ev)
+            if subject is None or obj is None:
+                continue
+            shard.cite(o["evidence"])
+            shard.assertion(Assertion.make(subject, Predicate(p["predicate"]), obj, qualifiers=qualifiers, assertion_kind=AssertionKind.OBSERVED_FACT, epistemic_status=_status(o["evidence_class"]), evidence_class=o["evidence_class"], evidence_ids=[ev]))
+
+
+def _captured_screens(shard: _Shard, repo: str, unit_root: str, records: list[dict[str, Any]]) -> None:
+    """9. Captured screens (contract 8.2, decisions.screens): the regions of an owner-captured
+    DOM, set on the Screen it shows as `attributes.captured`, with the capture's evidence (E5).
+
+    Captures are matched against the extractors' Screen keys, before step 1b adds `app`. When
+    the key no longer names a Screen, the one Screen whose key is the same apart from `app`
+    takes the capture; when several apps share the route, the capture attaches to none."""
+    for rec in records:
+        key = _bind_unit(rec["screen"]["natural_key"], unit_root)
+        sid = entity_id(repo, EntityKind.SCREEN, key)
+        if sid not in shard.entities:
+            same = [row for row in shard.entities.values()
+                    if row["kind"] == EntityKind.SCREEN and "app" in row["natural_key"]
+                    and {k: v for k, v in row["natural_key"].items() if k != "app"} == key]
+            if len(same) != 1:
+                continue
+            key, sid = same[0]["natural_key"], same[0]["id"]
+        evs = [shard.cite(ev) for ev in rec["evidence"]]
+        shard.entity(Entity.make(repo, EntityKind.SCREEN, key, shard.entities[sid]["name"], attributes={"captured": rec["captured"]}, evidence_ids=evs))
 
 
 BEHAVIOR_OWNER = "behavior_owner"  # the unknown's predicate when a behaviour unit's owner is not declared
@@ -380,6 +558,120 @@ def _behavior(shard: _Shard, repo: str, unit_root: str, artifact: str, o: Mappin
         "evidence_ids": [ev], "evidence_class": o["evidence_class"],
     }
     shard.behaviors[row["id"]] = row
+
+
+TRANSFORM_OWNER = "transform_owner"  # the unknown's predicate when a transform unit's owner is not declared
+
+
+def _transforms(shard: _Shard, repo: str, unit_root: str, package: str | None, artifact_of: Mapping[str, tuple[str, str]], summaries: list[dict[str, Any]]) -> None:
+    """Transform shapes (repo_intel.compile.transforms) as the shard's `transforms` rows, and
+    each owner's `attributes.transforms`: its primitives and the category most of them share.
+
+    Behaviour units stored in 4b are read again through `transforms.from_behavior`; `transform`
+    observations come from extractors. "@package" is the unit's package, or the file's Artifact
+    when the unit has none. A unit whose owner nothing declares, that does not validate, or
+    whose derivation failed, becomes an unknown on its file, counted in `transform_shapes`
+    coverage.
+    """
+    from repo_intel.compile import transforms as tx
+
+    stored = {(b["artifact"], b["evidence_ids"][0], b["owner"]) for b in shard.behaviors.values()}
+    for s in summaries:
+        artifact = artifact_of[s["path"]][0]
+        for o in s["observations"]:
+            p = o["payload"]
+            span = o["evidence"]["span"]
+            at = [span["start_byte"], span["end_byte"]]
+            where = f"bytes {at[0]}-{at[1]}"
+            if o["kind"] == "behavior":
+                owner = p.get("owner") if isinstance(p.get("owner"), dict) else {}
+                try:
+                    owner_id = entity_id(repo, EntityKind(owner["kind"]), _bind_unit(owner["natural_key"], unit_root))
+                except (KeyError, TypeError, ValueError):
+                    continue
+                if (artifact, o["evidence"]["id"], owner_id) not in stored:
+                    continue  # not stored: 4b already recorded why
+                try:
+                    derived = tx.from_behavior(p)
+                except Exception as exc:  # a recognizer fault: the compile goes on, the unit is counted as not derived
+                    # The type only: an exception's text can quote the source it failed on.
+                    row = Unknown.make(artifact, TRANSFORM_OWNER, "unknown", f"transform shapes not derived at {where}: {type(exc).__name__}", f"transform_shapes:{shard.unit}").row()
+                    shard.unknowns[row["id"]] = row
+                    continue
+                if derived is None:
+                    continue  # moves no data
+                language, transforms = derived
+                problems = tx.validate_shape({"owner": owner, "language": language, "transforms": transforms})
+            elif o["kind"] == "transform":
+                owner, language, transforms = p.get("owner"), p.get("language"), p.get("transforms")
+                problems = tx.validate_shape(p)
+                if owner == "@file":
+                    owner_id = artifact
+                elif owner == "@package":
+                    owner_id = package or artifact
+                else:
+                    try:
+                        owner_id = entity_id(repo, EntityKind(owner["kind"]), _bind_unit(owner["natural_key"], unit_root))
+                    except (KeyError, TypeError, ValueError):
+                        owner_id = None
+            else:
+                continue
+            if problems:
+                reason = f"transform unit at {where} is not valid: {problems[0]}"
+            elif owner_id not in shard.entities:
+                reason = f"transform unit at {where} belongs to {owner.get('kind')} {owner.get('name')!r}, which nothing in this unit declares"
+            else:
+                reason = None
+            if reason is not None:
+                row = Unknown.make(artifact, TRANSFORM_OWNER, "unknown", reason, f"transform_shapes:{shard.unit}").row()
+                shard.unknowns[row["id"]] = row
+                continue
+            row = {"owner": owner_id, "path": s["path"], "at": at, "language": language, "transforms": transforms}
+            shard.transforms[(owner_id, s["path"], at[0], at[1], language, digest(transforms))] = row
+
+    by_owner: dict[str, list[dict[str, Any]]] = {}
+    for key in sorted(shard.transforms):
+        by_owner.setdefault(key[0], []).extend(shard.transforms[key]["transforms"])
+    for owner_id, transforms in by_owner.items():
+        primitives, counts = tx.summary(transforms)
+        purpose = tx.purpose(counts)
+        e = shard.entities[owner_id]
+        attributes = {"transforms": {"primitives": primitives, **({"purpose": purpose} if purpose else {})}}
+        shard.entity(Entity.make(repo, EntityKind(e["kind"]), e["natural_key"], e["name"], attributes=attributes))
+
+
+def transform_coverage(shards: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+    """`transform_shapes` coverage per unit that has any: units with at least one recognised
+    (non-`platform`) transform over units that move data, counting those dropped as unknowns.
+
+    `detail.statements` counts statements inside the stored units, so a script with one
+    recognised statement out of ten shows as 1 of 10 although the unit counts as recognised.
+    A statement is a distinct `at` span among a unit's transforms (every transform of one SQL
+    statement carries that statement's span; a SAS clause or PySpark call has its own), and it
+    is recognised when at least one transform with that span is not `platform`. Units dropped
+    as unknowns have no stored transforms, so they add no statements."""
+    from repo_intel.compile.transforms import moves_data
+
+    out = []
+    for name in sorted(shards):
+        shard = shards[name]
+        rows = shard.get("transforms", [])
+        dropped = sum(1 for u in shard.get("unknowns", []) if u["predicate"] == TRANSFORM_OWNER)
+        if rows or dropped:
+            languages: dict[str, int] = {}
+            statements = recognised_statements = 0
+            for r in rows:
+                languages[r["language"]] = languages.get(r["language"], 0) + 1
+                spans: dict[tuple[int, int], bool] = {}
+                for t in r["transforms"]:
+                    key = (t["at"][0], t["at"][1])
+                    spans[key] = spans.get(key, False) or t.get("op") != "platform"
+                statements += len(spans)
+                recognised_statements += sum(spans.values())
+            recognised = sum(1 for r in rows if moves_data(r["transforms"]))
+            detail = {"by_language": dict(sorted(languages.items())), "statements": {"recognised": recognised_statements, "total": statements}}
+            out.append(CoverageEntry(domain="transform_shapes", scope=name, numerator=recognised, denominator=len(rows) + dropped, detail=detail).row())
+    return out
 
 
 def behavior_coverage(shards: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
@@ -525,7 +817,9 @@ def _repo_view(shards: dict[str, dict[str, Any]]) -> dict[str, Any]:
 
 def _http_hits(call: Mapping[str, Any], endpoints: list) -> list:
     hits = [(e, ev) for e, ev, _ in endpoints if match_call(call["call_path"], e["natural_key"]["route"])]
-    # The call's method is not known; a plain fetch is a GET, so prefer GET when one matches.
+    if call.get("method"):  # stated in the source: only an endpoint serving that method fits
+        return [h for h in hits if str(h[0]["natural_key"]["method"]).upper() in (call["method"], "ANY", "ALL")]
+    # The call's method is not stated; a plain fetch is a GET, so prefer GET when one matches.
     return [h for h in hits if h[0]["natural_key"]["method"] == "GET"] or hits
 
 
@@ -666,6 +960,12 @@ def _repo_compile(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, An
         coverage.append(CoverageEntry(domain="parse", scope=name, numerator=sum(v[0] for v in by_lang.values()), denominator=len(files), detail={"by_language": {k: {"parsed": v[0], "files": v[1]} for k, v in sorted(by_lang.items())}}).row())
     coverage += platform_construct_coverage(shards)
     coverage += behavior_coverage(shards)
+    coverage += transform_coverage(shards)
+    # Coverage a platform pack computes itself (`PlatformPack.coverage`), in pack id order.
+    from repo_intel.platforms import packs as platform_packs
+    for _, pack in sorted(platform_packs().items()):
+        if pack.coverage is not None:
+            coverage += pack.coverage(shards)
 
     # Repo-level linking: things that cross unit boundaries.
     links: dict[str, dict[str, Any]] = inputs["links"]
@@ -700,6 +1000,7 @@ def _repo_compile(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, An
             if not hits:
                 workspace_exports["unresolved_calls"].append({
                     "caller": component_of.get(name, caller), "path": call["call_path"],
+                    **({"method": call["method"]} if call.get("method") else {}),
                     "evidence_ids": [g.cite(call["evidence"])],
                 })
             # DM04: several endpoints fit the call. A decision may pick one; if it abstains, every
@@ -759,6 +1060,9 @@ def _repo_compile(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, An
     if loose:
         row = Unknown.make(repo_id, "component_boundary", "unknown", f"{loose} source files belong to no package; no component is derived for them", "decisions:@repo").row()
         g.unknowns[row["id"]] = row
+
+    if "lifted" in inputs.names():  # contract 8.2, only when the compile settings turned it on
+        _lifted_knowledge(repo, g, inputs["lifted"])
 
     # Conflicts: single-valued predicates with two objects, and decisions that disagree.
     every = [a for s in shards.values() for a in s["assertions"]] + list(g.assertions.values())
@@ -852,6 +1156,80 @@ def _architecture(repo: str, repo_id: str, shards: dict[str, dict[str, Any]], g:
         "antipatterns": len(catalogue.antipatterns), "antipatterns_looked_for": sum(1 for a in catalogue.antipatterns if a.detectors),
         "exhibited": sorted(x for x in exhibited if x.startswith("arch-")), "antipatterns_exhibited": sorted(x for x in exhibited if x.startswith("anti-")),
     }).row()
+
+
+def _lifted_knowledge(repo: str, g: _Shard, lifted: Mapping[str, Any]) -> None:
+    """Contract 8.2 results, in the global shard: business rules (decisions.rules), workflows
+    (decisions.workflows), and what became of each screen capture (decisions.screens).
+
+    A rule is model-written: its edges are hypotheses (`E5`, `inferred`) until an owner
+    confirms it, then `supported` on the owner's word. A rule whose owner is a Symbol is also
+    enforced by the Symbol's container (qualifier `via: symbol`). A workflow's states and transitions are
+    facts read from code (`E3`); it stays `inferred` until confirmed. A rejected rule or
+    workflow is left out; its conflict comes from the confirmation decision.
+
+    Lifting is counted in the `decisions` coverage of each unit. What could not be read is an
+    unknown in a domain the snapshot already reports: a state assigned a value that is not a
+    literal in its unit's `behavior` coverage, and a capture that shows no Screen in
+    `decisions` (its labelling abstained).
+    """
+    rules = lifted.get("rules")
+    if rules is not None:
+        for r in rules["rules"]:
+            if r["status"] == "rejected":
+                continue
+            confirmed = r["status"] == "confirmed"
+            evs = [g.cite(ev) for ev in r["evidence"]]
+            attributes = {
+                "statement": r["statement"], "rule_kind": r["rule_kind"], "status": r["status"], "candidates": r["candidates"],
+                "trust_label": "untrusted_generated", "decision_ref": r["decision_ref"],
+                **({"confirmation_ref": r["confirmation_ref"]} if confirmed else {}),
+            }
+            rid = g.entity(Entity.make(repo, EntityKind.BUSINESS_RULE, r["natural_key"], r["natural_key"]["name"], attributes=attributes, evidence_ids=evs))
+            how = dict(
+                assertion_kind=AssertionKind.INFERRED_RELATION if confirmed else AssertionKind.HYPOTHESIS,
+                epistemic_status=EpistemicStatus.SUPPORTED if confirmed else EpistemicStatus.INFERRED,
+                evidence_class=EvidenceClass.E5, evidence_ids=evs, resolution="exact" if confirmed else "candidate",
+                decision_ref=r["confirmation_ref"] if confirmed else r["decision_ref"],
+                verification_ref="owner_override" if confirmed else None,
+            )
+            g.assertion(Assertion.make(r["owner"], Predicate.ENFORCES, rid, qualifiers={"basis": "rule_lifting"}, **how))
+            # A Symbol's Program, Component or Package enforces the rule through it: the
+            # architecture tier leaves Symbols out and would otherwise leave the rule unowned.
+            for container in r.get("containers", []):
+                g.assertion(Assertion.make(container, Predicate.ENFORCES, rid, qualifiers={"basis": "rule_lifting", "via": "symbol"}, **how))
+            for target in r["applies_to"]:
+                g.assertion(Assertion.make(rid, Predicate.APPLIES_TO, target, qualifiers={"basis": "rule_lifting"}, **how))
+
+    workflows = lifted.get("workflows")
+    if workflows is not None:
+        for w in workflows["workflows"]:
+            if w["status"] == "rejected":
+                continue
+            confirmed = w["status"] == "confirmed"
+            evs = [g.cite(ev) for ev in w["evidence"]]
+            attributes = {
+                "states": w["states"], "transitions": w["transitions"], "status": w["status"],
+                "decision_ref": w["naming"]["decision_ref"],
+                **({"label": w["label"], "trust_label": "untrusted_generated"} if w["label"] else {"naming": f"decision abstained: {w['naming']['abstain_reason']}"}),
+                **({"state_labels": w["state_labels"]} if w["state_labels"] else {}),
+                **({"omitted_transitions": w["omitted_transitions"]} if w["omitted_transitions"] else {}),
+                **({"confirmation_ref": w["confirmation_ref"]} if confirmed else {}),
+            }
+            key = w["natural_key"]
+            wid = g.entity(Entity.make(repo, EntityKind.WORKFLOW, key, f"{key['scope']}.{key['name']}", attributes=attributes, evidence_ids=evs))
+            if w["applies_to"]:
+                g.assertion(Assertion.make(wid, Predicate.APPLIES_TO, w["applies_to"], qualifiers={"basis": "state_assignments"}, assertion_kind=AssertionKind.DERIVED_RELATION, epistemic_status=EpistemicStatus.SUPPORTED if confirmed else EpistemicStatus.INFERRED, evidence_class=EvidenceClass.E3, evidence_ids=evs, decision_ref=w["confirmation_ref"] if confirmed else None))
+        for d in workflows["dynamic"]:  # an assignment whose value is not a literal: dynamic, never guessed
+            row = Unknown.make(d["artifact"], "workflow_state", "unknown", f"{d['table']}.{d['column']} is assigned a value that is not a literal at bytes {d['at'][0]}-{d['at'][1]} of {d['path']}", f"behavior:{d['unit']}").row()
+            g.unknowns[row["id"]] = row
+
+    captures = lifted.get("captures")
+    if captures is not None:
+        artifact = Entity.make(repo, EntityKind.ARTIFACT, {"path": captures["artifact"]}, posixpath.basename(captures["artifact"])).id
+        for problem in captures["problems"]:
+            row = Unknown.make(artifact, "captured_screen", "unknown", problem, "decisions:@repo").row()
+            g.unknowns[row["id"]] = row
 
 
 def _preference(overrides: Mapping[str, Any], predicate: str, subject: str) -> str | None:

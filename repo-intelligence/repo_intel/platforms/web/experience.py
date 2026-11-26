@@ -26,7 +26,7 @@ from typing import Any
 
 from repo_intel import platforms
 from repo_intel.compile.ontology import EntityKind, EvidenceClass, Predicate
-from repo_intel.platforms.web import styles
+from repo_intel.platforms.web import accessibility, models, styles
 from repo_intel.platforms.web.markup import Attr, Element
 
 K = EntityKind
@@ -34,7 +34,8 @@ P = Predicate
 PLATFORM = "web"
 REALM = "web"
 _TERM_KIND = {"web:Route": K.SCREEN, "web:Page": K.SCREEN, "web:View": K.SCREEN, "web:Form": K.FORM, "web:Control": K.UI_CONTROL,
-              "web:CssVariable": K.STYLE_TOKEN, "web:ScssVariable": K.STYLE_TOKEN, "web:ThemeToken": K.STYLE_TOKEN, "web:Role": K.ROLE}
+              "web:CssVariable": K.STYLE_TOKEN, "web:ScssVariable": K.STYLE_TOKEN, "web:ThemeToken": K.STYLE_TOKEN, "web:Role": K.ROLE,
+              "web:ModelField": K.FIELD}
 
 
 def _base():
@@ -50,6 +51,14 @@ def screen_ref(name: str, declare: bool = True) -> dict[str, Any]:
 
 def token_ref(system: str, name: str, declare: bool = True) -> dict[str, Any]:
     return _base().ref(K.STYLE_TOKEN, {"system": system, "name": name}, name, declare)
+
+
+FILE = "@file"  # this file's Artifact, as a relation end (repo_intel.extractors.base.FILE)
+
+
+def artifact_ref(path: str) -> dict[str, Any]:
+    """Another file's Artifact, never declared from here: kept only when the unit holds that file."""
+    return _base().ref(K.ARTIFACT, {"path": path}, posixpath.basename(path), declare=False)
 
 
 def endpoint_ref(method: str, route: str) -> dict[str, Any]:
@@ -102,9 +111,21 @@ class Owner:
     ref: dict[str, Any]
 
 
-def renders(out: Out, screen: dict[str, Any], a: int, b: int, component: str | None) -> None:
-    """The unit's package RENDERS a screen. A component is a Symbol the linker declares
-    with a key one file cannot build, so it is named as a qualifier."""
+SYMBOL_END = "@symbol:"  # docs/solution-ir-contract.md, section 8.5
+_IDENTIFIER = re.compile(r"[A-Za-z_$][\w$]*")
+
+
+def renders(out: Out, screen: dict[str, Any], a: int, b: int, component: str | None, symbol: bool = True) -> None:
+    """The component RENDERS a screen. A component is a Symbol the linker declares, with
+    a key one file cannot build, so the relation names it "@symbol:<component>": the
+    linker resolves that to the top-level symbol this file exports under that name, and
+    falls back to the unit's package with qualifier `component: <component>` when the file
+    exports none (a route whose component is imported, say). A component that is not a
+    plain name (a module specifier), or `symbol=False` (a Vue single-file component,
+    which exports no named symbol), keeps the package and the qualifier directly."""
+    if symbol and component and _IDENTIFIER.fullmatch(component):
+        out.relate(SYMBOL_END + component, P.RENDERS, screen, a, b)
+        return
     out.relate(_base().PACKAGE, P.RENDERS, screen, a, b, {"component": component} if component else {})
 
 
@@ -214,11 +235,14 @@ def has_ui(elements: list[Element], path: str) -> bool:
 SubmitResolver = Callable[[Element, Attr], tuple[str | None, list[Any] | None, str | None]]
 
 
-def emit_ui(out: Out, owner: Owner | None, elements: list[Element], resolve: SubmitResolver | None = None, library: str | None = None) -> None:
+def emit_ui(out: Out, owner: Owner | None, elements: list[Element], resolve: SubmitResolver | None = None, library: str | None = None,
+            form_models: models.Models | None = None) -> None:
     """Forms and controls under `owner` (counted but not modelled when there is none)."""
     forms: dict[int, tuple[str, dict[str, Any]]] = {}
     fallbacks: dict[tuple[str, str], int] = {}  # (container, type) -> controls named <type><n> so far
     taken: dict[tuple[str, str], int] = {}  # (container, name) -> controls given that name so far
+    labelled = accessibility.label_targets(elements)
+    reached: list[tuple[dict[str, Any], models.Reach, Element]] = []  # (control, the model field its binding reaches, element)
     order = 0
     for el in elements:
         _element_constructs(out, el)
@@ -233,7 +257,7 @@ def emit_ui(out: Out, owner: Owner | None, elements: list[Element], resolve: Sub
                 forms[id(el)] = _form(out, owner, el, order, resolve, library)
             continue
         form = next((forms[id(a)] for a in el.ancestors() if id(a) in forms), None)
-        binds = _binding(el)
+        binds, how = _binding_source(el)
         validation = _validation(el)
         if binds is not None:
             out.construct("web:binding", el.start, el.end, owner is not None)
@@ -256,7 +280,7 @@ def emit_ui(out: Out, owner: Owner | None, elements: list[Element], resolve: Sub
         attrs = {
             "control_type": kind, "tag": el.tag, "input_type": el.lit("type") if el.tag in ("input", "Input", "TextField", "Field") else None,
             "binds": binds, "validation": validation or None, "label": _label(el, kind),
-            "role": el.lit("role"),
+            "role": el.lit("role"), "accessibility": accessibility.control(el, kind, labelled),
         }
         nav_kind, screens = link_targets(out.path, target) if target is not None else (None, [])
         if target is not None:
@@ -269,6 +293,43 @@ def emit_ui(out: Out, owner: Owner | None, elements: list[Element], resolve: Sub
         out.relate(form[1] if form else owner.ref, P.CONTAINS, control, el.start, el.end)
         for screen in screens:
             out.relate(control, P.NAVIGATES_TO, screen_ref(screen, declare=False), el.start, el.end, cls=EvidenceClass.E3)
+        reach = form_models.reach(el, binds, how) if form_models is not None and binds is not None else None
+        if reach is not None:
+            reached.append((control, reach, el))
+    if reached:
+        emit_model_fields(out, reached)
+
+
+def emit_model_fields(out: Out, reached: list[tuple[dict[str, Any], models.Reach, Element]]) -> None:
+    """BINDS_TO from each control to the field of its form's model (section 8.5): a Field
+    `{table: "<file path>#<model>", name: <field path>}` for every field of a declared
+    schema with literal fields that a control in this file binds. A model the file does
+    not declare, or whose fields are not all literal, binds nothing and says why."""
+    used: dict[str, tuple[models.Reach, list[tuple[dict[str, Any], str, Element]]]] = {}
+    for control, reach, el in reached:
+        used.setdefault(reach.model, (reach, []))[1].append((control, reach.field, el))
+    for model, (first, binds) in sorted(used.items()):
+        schema = first.schema
+        if schema is None:
+            out.diag(f"form model {model} is not declared in this file: its bindings stay attributes")
+            out.construct("web:form-model", first.start, first.end, False)
+            continue
+        if not schema.literal:
+            out.diag(f"form model {model} at byte {schema.start} does not list all its fields literally: its bindings stay attributes")
+            out.construct("web:form-model", schema.start, schema.end, False)
+            continue
+        table = f"{out.path}#{model}"
+        fields = {}
+        for name, (a, b) in sorted(schema.fields.items()):
+            fields[name] = out.entity("web:ModelField", {"table": table, "name": name}, name, a, b, {"model": model, "schema": schema.kind})
+        bound = False
+        for control, path, el in binds:
+            if path in fields:
+                out.relate(control, P.BINDS_TO, fields[path], el.start, el.end)
+                bound = True
+            else:
+                out.diag(f"{control['name']} binds {path}, which form model {model} does not declare")
+        out.construct("web:form-model", schema.start, schema.end, bound)
 
 
 def _form(out: Out, owner: Owner, el: Element, order: int, resolve: SubmitResolver | None, library: str | None) -> tuple[str, dict[str, Any]]:
@@ -356,18 +417,24 @@ def _trimmed(value: str | None) -> str | None:
 
 
 def _binding(el: Element) -> str | None:
+    return _binding_source(el)[0]
+
+
+def _binding_source(el: Element) -> tuple[str | None, str | None]:
+    """(binding path, where it comes from: the attribute key, `register` or `name`)."""
     for key in ("v-model", "ngModel", "formControl", "value-binding"):
         a = el.get(key)
         if a is not None and a.value:
-            return _name_of(a.value)
+            return _name_of(a.value), key
     v = _trimmed(el.lit("formControlName"))
     if v:
-        return v
+        return v, "formControlName"
     for s in el.spreads:
         m = _REGISTER.search(s.value or "")
         if m:
-            return m.group(1)
-    return _trimmed(el.lit("name"))
+            return m.group(1), "register"
+    v = _trimmed(el.lit("name"))
+    return (v, "name") if v else (None, None)
 
 
 def _validation(el: Element) -> list[str]:
@@ -493,14 +560,30 @@ def _element_constructs(out: Out, el: Element) -> None:
 # ------------------------------------------------------------------ style tokens
 
 
-def emit_tokens(out: Out, system: str, scan: styles.StyleScan) -> set[str]:
-    """StyleTokens a stylesheet (or a style block) declares; returns their names."""
+def emit_tokens(out: Out, system: str, scan: styles.StyleScan, imported: list[str] | None = None) -> set[str]:
+    """StyleTokens a stylesheet (or a style block) declares; returns their names.
+
+    A token defined as another token (`--a: var(--b)`, `$a: $b`, `@a: @b`) is ALIAS_OF it:
+    the token this stylesheet declares under that name, else the same name in each
+    stylesheet in `imported` (kept only where that stylesheet declares it). A text token
+    paired with a background token in one rule carries their contrast ratio
+    (`accessibility.contrast_pairs`)."""
+    contrast = accessibility.contrast_pairs(scan)
     for name, t in scan.tokens.items():
         term = "web:CssVariable" if t.dialect == "css" else "web:ScssVariable"
         value = styles.safe_value(t.value)
         attrs = {"category": styles.category(name, value), "value": value, "dialect": t.dialect,
-                 "selectors": t.selectors or None, "declarations": t.declarations if t.declarations > 1 else None}
-        out.entity(term, {"system": system, "name": name}, name, t.start, t.end, attrs)
+                 "selectors": t.selectors or None, "declarations": t.declarations if t.declarations > 1 else None,
+                 "contrast": contrast.get(name)}
+        token = out.entity(term, {"system": system, "name": name}, name, t.start, t.end, attrs)
+        target = styles.alias_of(t.value)
+        if target is None or target == name:
+            continue
+        if target in scan.tokens:
+            out.relate(token, P.ALIAS_OF, token_ref(system, target, declare=False), t.start, t.end, {"basis": "token_reference"})
+            continue
+        for other in imported or []:
+            out.relate(token, P.ALIAS_OF, token_ref(other, target, declare=False), t.start, t.end, {"basis": "token_reference"}, cls=EvidenceClass.E3)
     return set(scan.tokens)
 
 

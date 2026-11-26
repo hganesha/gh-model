@@ -1,8 +1,8 @@
 """The solution layer (docs/solution-ir-contract.md, W5): the manifest, loading member
 bundles, the merged view, identity across members, catalogue dumps and `rkp solution`.
 
-The end-to-end tests use the F23 fixture under tests/fixtures/solution/: two repositories
-(a web front end and the orders service it calls) and the orders database's catalogue.
+The end-to-end tests use the base of the F23 golden fixture, benchmarks/fixtures/F23-solution-multi-repo:
+two repositories (a web front end and the orders service it calls) and the orders database's catalogue.
 """
 
 import hashlib
@@ -16,12 +16,13 @@ import pytest
 
 from repo_intel import platforms
 from repo_intel.compile.contracts import entity_id
+from repo_intel.compile.fixtures import FIXTURES_DIR
 from repo_intel.compile.ontology import EntityKind, Predicate, check_relation
 from repo_intel.solution import MemberData, SolutionError, SolutionView, nsid, parse_manifest, resolve, split
 from repo_intel.solution.identity import call_path, dataset_key, query_method, relational_key
 
-FIXTURE = Path(__file__).parent / "fixtures" / "solution" / "F23-multi-repo-solution"
-CATALOG = FIXTURE / "solution" / ".rkp" / "inputs" / "catalog"
+FIXTURE = FIXTURES_DIR / "F23-solution-multi-repo" / "base"
+CATALOG = FIXTURE / ".rkp" / "inputs" / "catalog"
 _GIT_ENV = {
     "GIT_AUTHOR_NAME": "fixture", "GIT_AUTHOR_EMAIL": "fixture@example.invalid",
     "GIT_COMMITTER_NAME": "fixture", "GIT_COMMITTER_EMAIL": "fixture@example.invalid",
@@ -49,7 +50,7 @@ def shop(tmp_path_factory):
     from repo_intel.knowledge import bundle
 
     root = tmp_path_factory.mktemp("shop") / "solution"
-    shutil.copytree(FIXTURE / "solution", root)
+    shutil.copytree(FIXTURE / ".rkp", root / ".rkp")
     for member in ("web", "service"):
         bundle.compile_bundle(_repository(FIXTURE / member, root / member))
     return root
@@ -72,7 +73,7 @@ def _manifest(**overrides):
 
 
 def test_a_valid_manifest_parses():
-    m = parse_manifest((FIXTURE / "solution" / ".rkp" / "solution.json").read_text())
+    m = parse_manifest((FIXTURE / ".rkp" / "solution.json").read_text())
     assert m.schema_ == "rkp-solution/1" and m.name == "shop"
     assert [(x.id, x.role, x.kind, x.source, x.database) for x in m.members] == [("web", "web", "repository", "web", None), ("orders", "service", "repository", "service", "shopdb")]
     assert m.inputs == [".rkp/inputs/catalog/*.json", ".rkp/inputs/catalog/*.csv"]
@@ -707,6 +708,7 @@ def test_the_f23_links(shop_links):
     links = {(x["rule"], x["from_member"], x["from_name"], x["to_member"], x["to_name"]) for x in r["links"]}
     assert links == {
         ("endpoint_path_unique", "web", "shop-web", "orders", "GET /api/orders/{order_id}"),
+        ("endpoint_method_path", "web", "shop-web", "orders", "POST /api/orders"),
         ("same_table", "orders", "orders", "inputs", "orders"),
         ("same_column", "orders", "id", "inputs", "id"),
         ("same_column", "orders", "customer_id", "inputs", "customer_id"),
@@ -720,10 +722,10 @@ def test_the_f23_links(shop_links):
     config = next(x for x in r["candidates"] if x["rule"] == "config_key_name_only")
     assert (config["from_member"], config["to_member"], config["evidence_class"], config["predicate"]) == ("orders", "web", "E4", "ALIAS_OF")
     listing = next(x for x in r["candidates"] if x["to_name"] == "GET /api/orders")
-    assert len(next(e for e in listing["evidence"] if e["member"] == "web")["evidence_ids"]) == 2, "both calls of /api/orders are cited"
+    assert len(next(e for e in listing["evidence"] if e["member"] == "web")["evidence_ids"]) == 1, "only the call that states no method is a candidate"
     assert [(u["member"], u["kind"], u["reference"], u["reason"]) for u in r["unmatched"]] == [("web", "http_call", "/api/customers", "no_endpoint")]
     coverage = {(c["domain"], c["scope"]): (c["numerator"], c["denominator"]) for c in r["coverage"]}
-    assert coverage == {("solution_http_calls", "web"): (1, 4), ("solution_data_refs", "orders"): (1, 1)}
+    assert coverage == {("solution_http_calls", "web"): (2, 4), ("solution_data_refs", "orders"): (1, 1)}
     groups = {k: v for k, v in r["groups"].items() if k.startswith("inputs:")}
     assert len(groups) == 5 and all(len(v) == 2 for v in groups.values())
 
@@ -744,13 +746,13 @@ def test_a_copied_bundle_is_hydrated_into_the_solution_cache(shop, tmp_path):
     solution = load_solution(root)
     assert solution.problems == []
     web = solution.view.members["web"]
-    assert web.exports is None and web.info["detail"] == "architecture" and web.info["tier"] == "architecture"
-    assert any("member web: its HTTP calls are not in the committed bundle" in w for w in solution.warnings)
+    assert web.exports is not None and web.info["detail"] == "architecture" and web.info["tier"] == "architecture"
+    assert not any("its HTTP calls are not in the committed bundle" in w for w in solution.warnings)
     assert (root / ".rkp" / "cache" / "solution" / "web").is_dir() and not (delivered / "cache").exists()
     assert any(e["kind"] == "Component" for e in solution.view.entities(member="web"))
     r = resolve(solution.view)
-    assert r.links == [] and [x["rule"] for x in r.candidates] == ["config_key_name_only"], "no calls to link; the config key is still a lead"
-    assert [c for c in r.coverage if c["scope"] == "web"][0]["detail"]["available"] is False
+    assert {x["rule"] for x in r.links} >= {"endpoint_path_unique", "endpoint_method_path"}, "the committed exports link the calls"
+    assert [c for c in r.coverage if c["scope"] == "web"][0]["detail"]["available"] is True
 
 
 def test_members_that_cannot_be_read_are_problems(shop, tmp_path):
@@ -810,12 +812,12 @@ def test_cli_check_and_links(shop, capsys):
     event = json.loads(line)
     assert code == 0 and event["event"] == "result" and event["ok"] is True and event["solution"] == "shop"
     code, out, _ = _run(capsys, "solution", "links", str(shop))
-    assert code == 0 and out.startswith("solution shop: 6 links, 3 candidates, 1 unmatched")
+    assert code == 0 and out.startswith("solution shop: 7 links, 3 candidates, 1 unmatched")
     assert "endpoint_path_unique: web:Component shop-web -CONSUMES-> orders:Endpoint GET /api/orders/{order_id}" in out
     assert "web: http_call /api/customers (no_endpoint)" in out
     code, out, _ = _run(capsys, "solution", "links", str(shop), "--json")
     event = json.loads(out)
-    assert code == 0 and event["event"] == "result" and len(event["links"]) == 6 and len(event["candidates"]) == 3
+    assert code == 0 and event["event"] == "result" and len(event["links"]) == 7 and len(event["candidates"]) == 3
 
 
 def test_cli_reports_an_invalid_manifest(tmp_path, capsys):

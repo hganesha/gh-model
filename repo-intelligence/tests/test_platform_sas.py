@@ -93,7 +93,7 @@ def test_pack_is_registered_valid_and_supersedes_legacy():
     assert packs()["sas"] is PACK
     assert validate_pack(PACK) == []
     assert "legacy.sas" in superseded()
-    assert {e.id for e in PACK.extractors} == {"sas.source", "sas.inputs"}
+    assert {e.id for e in PACK.extractors} == {"sas.source", "sas.inputs", "sas.egp"}
     assert PACK.inputs == (".rkp/inputs/sas/**",)
     assert len(PACK.constructs) >= 60
 

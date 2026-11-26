@@ -1,0 +1,12 @@
+@page
+@model Portal.Pages.IndexModel
+@{
+    ViewData["Title"] = "Welcome";
+}
+<h1>Welcome</h1>
+<form method="get" asp-page="/Orders/Index">
+    <input asp-for="Search" />
+    <button type="submit">Find my order</button>
+</form>
+<a asp-page="/Orders/Index">See all orders</a>
+<p>Questions? Write to help@example.com.</p>

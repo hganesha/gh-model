@@ -73,7 +73,8 @@ export const PLANES: PlaneMeta[] = [
     title: "Experience",
     blurb: "What a person sees: screens, the forms and controls on them, the reports they read, and the style tokens that dress them.",
     kinds: ["Screen", "Form", "UIControl", "StyleToken", "Report"],
-    coverage: [],
+    // The construct coverage of each pack with UI terms is added per snapshot (lib/plane-coverage.ts).
+    coverage: ["accessibility"],
   },
   {
     id: "business",
@@ -81,7 +82,8 @@ export const PLANES: PlaneMeta[] = [
     title: "Business",
     blurb: "Business rules, workflows and reference code lists, and the requirements and features they serve.",
     kinds: ["BusinessRule", "Workflow", "CodeList", "Requirement", "Feature"],
-    coverage: [],
+    // Rules and workflows confirmed by an owner are counted in the plane view (lib/plane-coverage.ts).
+    coverage: ["transform_shapes"],
   },
   {
     id: "security",
@@ -127,6 +129,8 @@ export const DOMAIN_LABEL: Record<string, string> = {
   architecture_patterns: "Catalogue patterns looked for",
   platform_constructs: "Platform constructs modelled",
   behavior: "Behaviour units stored",
+  transform_shapes: "Data-moving units with a transform shape",
+  accessibility: "Controls with an accessible name",
 };
 
 export function domainLabel(domain: string): string {

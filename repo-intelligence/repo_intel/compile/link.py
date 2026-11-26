@@ -37,6 +37,7 @@ NODE_BUILTINS = {"assert", "buffer", "child_process", "cluster", "crypto", "dns"
 AI_SDKS = {"anthropic": "anthropic", "openai": "openai", "google.generativeai": "google", "google.genai": "google", "mistralai": "mistral", "cohere": "cohere",
            "@anthropic-ai/sdk": "anthropic", "@google/generative-ai": "google", "@mistralai/mistralai": "mistral", "cohere-ai": "cohere"}
 TS_EXT = (".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs")
+SYMBOL_END = "@symbol:"  # a relation end naming a top-level exported symbol of the same file (section 8.5)
 _TEST_PY = re.compile(r"(^|/)(test_[^/]*|[^/]*_test)\.py$")
 _TEST_TS = re.compile(r"(\.(test|spec)\.[cm]?[jt]sx?$)|(^|/)__tests__/")
 
@@ -682,6 +683,72 @@ class _Linker:
                 if m["payload"]["natural_key"]["provider"] == provider:
                     self.relate(first["path"], component, Predicate.CONSUMES, ref(EntityKind.MODEL_ENDPOINT, m["payload"]["natural_key"], m["payload"]["name"]), [first["evidence"], m["evidence"]], {"basis": "same_package"}, evidence_class=EvidenceClass.E4, resolution="candidate")
 
+    # -- per-file Symbol ends (docs/solution-ir-contract.md, section 8.5)
+
+    def symbol_ends(self) -> dict[str, dict[str, dict[str, Any] | None]]:
+        """What each "@symbol:<name>" relation end of a file resolves to.
+
+        An extractor may name a relation end "@symbol:<name>": the top-level exported symbol
+        `<name>` declared in the same file. One file cannot build that Symbol's key, which
+        needs the unit's package, so the linker resolves it here. The result maps each file
+        that uses such an end to {name: the Symbol ref, as `symbol_ref` builds it, or None
+        when the file exports no symbol of that name}. `unit.compile` then relates the
+        Symbol, or falls back to "@package" with qualifier `component: <name>`.
+
+        Only symbols the extractor marks `exported` count (a Python method symbol, say, is
+        not an export). A name the file declares and exports only as its default
+        (`const X = ...; export default X`, `export { X as default }`) resolves to the
+        `default` Symbol, through the `local` name that symbol records.
+        """
+        out: dict[str, dict[str, dict[str, Any] | None]] = {}
+        for path in sorted(self.files):
+            exported = {n for n, o in self.symbols[path].items() if o["payload"].get("exported") is True}
+            default = self.symbols[path].get("default", {}).get("payload", {})
+            local_default = default.get("local") if "default" in exported else None
+            for o in _of(self.files[path], "relation"):
+                for end in (o["payload"].get("subject"), o["payload"].get("object")):
+                    if isinstance(end, str) and end.startswith(SYMBOL_END):
+                        name = end[len(SYMBOL_END):]
+                        target = name if name in exported else "default" if name == local_default else None
+                        out.setdefault(path, {})[name] = {**self.symbol_ref(path, target), "declare": False} if target else None
+        return out
+
+    # -- routes below an application root (ASP.NET Web Forms, docs/solution-ir-contract.md section 8.6)
+
+    def link_app_relative_routes(self) -> None:
+        """Endpoints for pages served at their path below an application root.
+
+        A Web Forms page answers at its path below the application root, the nearest
+        ancestor directory holding a Web.config, not at its repository path. One file
+        cannot see that, so the extractor emits an `app_relative_route` observation
+        ({subject, path, root_marker, method, attributes, requires_roles, unkeyed_reason})
+        and this pass looks for the marker file among the unit's files, deepest directory
+        first. The Endpoint is keyed by "/" + the page path relative to that directory,
+        with the page and the marker file as evidence (E3). With no marker above the page
+        in this unit, no Endpoint is keyed: the root is not guessed, and an Unknown on the
+        page records why.
+        """
+        markers: dict[str, dict[str, str]] = {}  # lower-cased basename -> {directory: marker path}
+        for path in sorted(self.files):
+            markers.setdefault(posixpath.basename(path).lower(), {}).setdefault(posixpath.dirname(path), path)
+        for path in sorted(self.files):
+            for o in _of(self.files[path], "app_relative_route"):
+                p = o["payload"]
+                found = markers.get(str(p["root_marker"]).lower(), {})
+                parts = posixpath.dirname(p["path"]).split("/") if posixpath.dirname(p["path"]) else []
+                root = next((d for d in ("/".join(parts[:i]) for i in range(len(parts), -1, -1)) if d in found), None)
+                if root is None:
+                    self.unknowns.append({"path": path, "subject": p["subject"], "predicate": str(Predicate.EXPOSES), "status": "unknown", "reason": p["unkeyed_reason"], "coverage_ref": f"app_routes:{self.unit}"})
+                    continue
+                route = "/" + (p["path"][len(root) + 1:] if root else p["path"])
+                marker = self.files[found[root]]
+                evidence = [o["evidence"], *(m["evidence"] for m in _of(marker, "file"))]
+                endpoint = ref(EntityKind.ENDPOINT, {"component_root": "@unit", "protocol": "http", "method": p["method"], "route": route}, f"{p['method']} {route}")
+                self.emit("entity", path, {**endpoint, "attributes": {**p["attributes"], "app_root": root or "."}}, evidence, EvidenceClass.E3)
+                self.relate(path, p["subject"], Predicate.EXPOSES, endpoint, evidence, {"app_root": root or "."})
+                for role in p.get("requires_roles", []):
+                    self.relate(path, endpoint, Predicate.REQUIRES_ROLE, role, evidence, {"via": "Authorize"})
+
     # -- exports for repo-level linking
 
     def exports(self) -> dict[str, Any]:
@@ -693,7 +760,9 @@ class _Linker:
                     i = interfaces[0]["payload"]
                     operations.append({"path": path, "method": o["payload"]["method"], "route": o["payload"]["route"], "interface": ref(EntityKind.INTERFACE, i["natural_key"], i["name"]), "evidence": o["evidence"]})
             for o in _of(self.files[path], "http_call"):
-                calls.append({"path": path, "call_path": o["payload"]["path"], "evidence": o["evidence"]})
+                # `method` only when the source states it (typescript_source); absent otherwise.
+                method = o["payload"].get("method")
+                calls.append({"path": path, "call_path": o["payload"]["path"], **({"method": method} if method else {}), "evidence": o["evidence"]})
         return {"contract_operations": operations, "http_calls": calls, "has_package": self.has_package}
 
 
@@ -712,6 +781,7 @@ def _unit_link(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, Any]:
     linker.link_resolved()
     linker.link_migrations()
     linker.link_model_aliases()
+    linker.link_app_relative_routes()
 
     imp = linker.imports
     total_imports = sum(imp.values())
@@ -730,7 +800,7 @@ def _unit_link(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, Any]:
     if lineage:  # reported only where a unit reads or writes data by name (spec §8.2)
         resolved, unresolved = sum(p["resolved"] for _, p in lineage), sum(p["unresolved"] for _, p in lineage)
         coverage.append(CoverageEntry(domain="data_lineage", scope=unit["name"], numerator=resolved, denominator=resolved + unresolved, detail={"files": len(lineage), "files_with_unresolved": sorted(path for path, p in lineage if p["unresolved"])[:50]}).row())
-    return {"unit": unit["name"], "observations": linker.out, "unknowns": linker.unknowns, "coverage": coverage, "exports": linker.exports()}
+    return {"unit": unit["name"], "observations": linker.out, "unknowns": linker.unknowns, "coverage": coverage, "exports": linker.exports(), "symbol_ends": linker.symbol_ends()}
 
 
 UNIT_LINK = Step("unit.link", "0.12.0", _unit_link)

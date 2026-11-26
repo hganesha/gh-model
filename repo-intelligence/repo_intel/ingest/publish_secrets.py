@@ -63,12 +63,12 @@ def _publisher_scope(path: tuple[str, ...], value: bytes) -> bool:
         return True
     if group == "evidence" and field == ("span", "<key>") and value.decode() in Span.model_fields:
         return True
-    if group in {"entities", "assertions", "evidence", "unknowns", "behaviors", "conflicts", "operations", "unresolved_calls"}:
+    if group in {"entities", "assertions", "evidence", "unknowns", "behaviors", "transforms", "conflicts", "operations", "unresolved_calls"}:
         if field in _ID_FIELDS and _CONTENT_ID.fullmatch(value):
             return True
         if group == "evidence" and field == ("blob_sha256",) and _HASH.fullmatch(value):
             return True
-        if group in {"entities", "operations"} and field in {("method",), ("natural_key", "method")} and value in _METHODS:
+        if group in {"entities", "operations", "unresolved_calls"} and field in {("method",), ("natural_key", "method")} and value in _METHODS:
             return True
     return False
 
@@ -88,11 +88,11 @@ def _records(documents: list[Any]) -> Iterator[tuple[tuple[str, ...], str, dict[
             for key in doc:
                 yield ("<key>",), key, {}
             yield ("unit",), doc["unit"], {}
-            for group in ("entities", "assertions", "evidence", "unknowns", *(g for g in ("behaviors",) if g in doc)):
+            for group in ("entities", "assertions", "evidence", "unknowns", *(g for g in ("behaviors", "transforms") if g in doc)):
                 for row in doc[group]:
                     for path, value in _values(row, (group,)):
                         yield path, value, row
-            for key in doc.keys() - {"unit", "entities", "assertions", "evidence", "unknowns", "behaviors"}:
+            for key in doc.keys() - {"unit", "entities", "assertions", "evidence", "unknowns", "behaviors", "transforms"}:
                 for path, value in _values(doc[key], ("other", key)):
                     yield path, value, {}
         elif isinstance(doc, dict) and doc.keys() == {"operations", "unresolved_calls"}:
@@ -198,6 +198,45 @@ class IdentityEvidence:
                 if route is not None:
                     return route
         return None
+
+
+def export_findings(exports: dict[str, Any]) -> list[str]:
+    """Where a committed exports document (`operations`, `unresolved_calls`) holds something
+    secret-shaped, without the value: `unresolved_calls[2].path: url_credentials`.
+
+    The publish gate already scans the exports against the secrets found in the source
+    (`leaked_secrets`). This check needs no source, so `rkp verify` can run it on a bundle
+    alone: every detector of the admission scan, URL user information, and a query or
+    fragment value in a call path or route, which section 2 rule 7 of the solution IR
+    contract never allows (a query parameter keeps its name only)."""
+    found = []
+    for group in ("operations", "unresolved_calls"):
+        for number, row in enumerate(exports.get(group) or []):
+            if not isinstance(row, dict):
+                continue
+            for path, text in _values(row, (group,)):
+                where = f"{group}[{number}].{'.'.join(path[1:]) or '<value>'}"
+                for finding in secrets.scan(text.encode()):
+                    found.append(f"{where}: {finding['detector']}")
+                if path[1:] in {("path",), ("route",)} and _query_value(text):
+                    found.append(f"{where}: a query or fragment value")
+    return sorted(set(found))
+
+
+_SELECTOR = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _query_value(url: str) -> bool:
+    """True when a URL keeps a query value or a fragment (`?token=abc`, `#x`). `?token=` is
+    fine, and so is a ColdFusion `?method=<name>` selector, which names the endpoint."""
+    if "#" in url:
+        return True
+    query = url.partition("?")[2]
+    for part in (p for p in query.split("&") if p):
+        key, _, value = part.partition("=")
+        if value not in ("", "{}") and not (key.lower() == "method" and _SELECTOR.match(value)):
+            return True
+    return False
 
 
 def leaked_secrets(

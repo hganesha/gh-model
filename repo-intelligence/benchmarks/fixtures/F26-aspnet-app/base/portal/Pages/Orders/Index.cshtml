@@ -1,0 +1,17 @@
+@page
+@model Portal.Pages.Orders.IndexModel
+@inject Portal.Services.IOrderService Orders
+@attribute [Authorize]
+@{
+    ViewData["Title"] = "My orders";
+}
+<h1>My orders</h1>
+<table>
+@foreach (var order in Model.Orders)
+{
+    <tr>
+        <td>@order.Number</td>
+        <td><a asp-page="./Edit" asp-route-id="@order.Id">Change</a></td>
+    </tr>
+}
+</table>

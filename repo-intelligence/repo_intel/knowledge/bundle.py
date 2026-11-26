@@ -13,7 +13,10 @@ reused whenever the repository is opened again. Layout (format `rkp-bundle/2`):
                                         (units of the behavioural IR) only in a full bundle
     .rkp/knowledge/files.jsonl       every path read or excluded, with its blob hash; never content
     .rkp/knowledge/coverage.jsonl, conflicts.jsonl, unknowns.jsonl, decisions.jsonl
-    .rkp/cache/                      object store: blobs, step cache, decision ledger; not committed
+    .rkp/knowledge/exports.json      the repository's exports for linking it to others: contract
+                                        operations it declares and HTTP calls no endpoint of its own
+                                        serves; in every tier, named in manifest.json with its digest
+    .rkp/cache/                     object store: blobs, step cache, decision ledger; not committed
 
 What is committed depends on `"commit"` in config.json. `"architecture"` (the default)
 writes the architecture tier: every entity except function-level ones (DETAIL_KINDS), the
@@ -75,14 +78,21 @@ ROW_DEFAULTS: dict[str, dict[str, Any]] = {
 DETAIL_KINDS = ("Symbol",)
 # Shard tables that are detail whole: the behaviour of functions, pages and steps
 # (repo_intel.compile.behavior), keyed by owner. A shard holds the table only when it has
-# rows, so a snapshot without behaviour hashes as it did before the table existed.
-DETAIL_TABLES = ("behaviors",)
+# rows, so a snapshot without behaviour hashes as it did before the table existed. The
+# transform shapes of those units (repo_intel.compile.transforms) are detail the same way.
+DETAIL_TABLES = ("behaviors", "transforms")
+# Entity attributes that are detail although their entity is not: the regions of an
+# owner-captured screen (contract 8.2, decisions.screens). The architecture tier keeps the
+# Screen and drops the attribute; manifest.json counts the entities it was dropped from in
+# `detail_omitted` as "<kind>.<attribute>".
+DETAIL_ATTRIBUTES: dict[str, tuple[str, ...]] = {"Screen": ("captured",)}
 TIERS = ("architecture", "full")
 DEFAULT_TIER = "architecture"
 BUNDLE = ".rkp"
 TENANT = "local"
 _TABLES = (("entities", "entity"), ("assertions", "assertion"), ("evidence", "evidence"), ("unknowns", "unknown"))
-_OPTIONAL_TABLES = (("behaviors", "behavior"),)  # present in a shard only when it has rows
+# Transform rows are written before behaviour rows, so behaviour rows stay the last in a unit file.
+_OPTIONAL_TABLES = (("transforms", "transform"), ("behaviors", "behavior"))  # present in a shard only when it has rows
 _ALL_TABLES = _TABLES + _OPTIONAL_TABLES
 ROW_TABLES = tuple(table for table, _ in _TABLES)  # in every shard
 OPTIONAL_TABLES = tuple(table for table, _ in _OPTIONAL_TABLES)  # in a shard only when it has rows
@@ -232,13 +242,20 @@ def _slugs(units: list[str]) -> dict[str, str]:
     return named
 
 
-def _architecture_shards(shards: dict[str, dict[str, Any]], conflicts: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
-    """The shards without function-level detail; rows keep the engine's order."""
+def _architecture_shards(shards: dict[str, dict[str, Any]], conflicts: list[dict[str, Any]], keep_evidence: frozenset[str] = frozenset()) -> dict[str, dict[str, Any]]:
+    """The shards without function-level detail; rows keep the engine's order. Evidence in
+    `keep_evidence` (cited by the exports file) is kept like evidence the rows cite. Entities
+    keep every attribute but those DETAIL_ATTRIBUTES names for their kind."""
     detail = {e["id"] for shard in shards.values() for e in shard["entities"] if e["kind"] in DETAIL_KINDS}
     kept: dict[str, dict[str, Any]] = {}
-    cited = {ev for c in conflicts for ev in c.get("evidence_ids", [])}
+    cited = {ev for c in conflicts for ev in c.get("evidence_ids", [])} | set(keep_evidence)
+
+    def without_detail(e: dict[str, Any]) -> dict[str, Any]:
+        names = [n for n in DETAIL_ATTRIBUTES.get(e["kind"], ()) if n in e["attributes"]]
+        return {**e, "attributes": {k: v for k, v in e["attributes"].items() if k not in names}} if names else e
+
     for unit, shard in shards.items():
-        entities = [e for e in shard["entities"] if e["id"] not in detail]
+        entities = [without_detail(e) for e in shard["entities"] if e["id"] not in detail]
         assertions = [a for a in shard["assertions"] if a["subject"] not in detail and a["object"] not in detail]
         unknowns = [u for u in shard["unknowns"] if u["subject"] not in detail]
         for row in (*entities, *assertions):
@@ -248,6 +265,14 @@ def _architecture_shards(shards: dict[str, dict[str, Any]], conflicts: list[dict
     for shard in kept.values():
         shard["evidence"] = [ev for ev in shard["evidence"] if ev["id"] in cited]
     return kept
+
+
+def _omitted_attributes(shards: dict[str, dict[str, Any]]) -> dict[str, int]:
+    """{"<kind>.<attribute>": entities it is dropped from} for `detail_omitted`; only the
+    non-zero counts, so a bundle without such attributes writes the manifest it did before."""
+    counts = {f"{kind}.{name}": sum(1 for s in shards.values() for e in s["entities"] if e["kind"] == kind and name in e["attributes"])
+              for kind, names in sorted(DETAIL_ATTRIBUTES.items()) for name in names}
+    return {k: n for k, n in counts.items() if n}
 
 
 def write_bundle(repo: Path, store: ObjectStore, manifest: Manifest, *, working_tree: bool = False, tier: str = "full") -> dict[str, Any]:
@@ -267,8 +292,9 @@ def write_bundle(repo: Path, store: ObjectStore, manifest: Manifest, *, working_
     shards = load_shards(store, manifest)
     full = shards
     conflicts = store.get_json(manifest.conflicts_ref)
+    exports = compiled_exports(store, manifest)
     if tier == "architecture":
-        shards = _architecture_shards(shards, conflicts)
+        shards = _architecture_shards(shards, conflicts, export_evidence(exports))
     slugs = _slugs(list(shards))
     units, totals = [], {table: 0 for table, _ in _ALL_TABLES}
     for unit, shard in sorted(shards.items()):
@@ -293,6 +319,7 @@ def write_bundle(repo: Path, store: ObjectStore, manifest: Manifest, *, working_
     files += [{"path": x["path"], "excluded": x["reason"]} for x in path_manifest["exclusions"]]
     for name, rows in (("coverage", coverage), ("conflicts", conflicts), ("unknowns", unknowns), ("decisions", decisions), ("files", sorted(files, key=lambda f: f["path"]))):
         _write_jsonl(staging / f"{name}.jsonl", rows)
+    exports_entry = _write_exports(staging, store, exports)
 
     document = {
         "bundle_format": FORMAT,
@@ -302,9 +329,10 @@ def write_bundle(repo: Path, store: ObjectStore, manifest: Manifest, *, working_
         "override_set_hash": manifest.override_set_hash, "rkp_hash": manifest.rkp_hash, "status": manifest.status,
         "row_defaults": ROW_DEFAULTS,
         "tier": tier,
-        **({"detail_kinds": list(DETAIL_KINDS), "detail_tables": list(DETAIL_TABLES), "detail_omitted": {table: sum(len(s.get(table, [])) for s in full.values()) - totals[table] for table, _ in _ALL_TABLES}} if tier == "architecture" else {}),
+        **({"detail_kinds": list(DETAIL_KINDS), "detail_tables": list(DETAIL_TABLES), "detail_omitted": {table: sum(len(s.get(table, [])) for s in full.values()) - totals[table] for table, _ in _ALL_TABLES} | _omitted_attributes(full)} if tier == "architecture" else {}),
         "units": units,
         "counts": {**totals, "coverage": len(coverage), "conflicts": len(conflicts), "repository_unknowns": len(unknowns), "decisions": len(decisions), "files": sum(1 for f in files if "blob_sha256" in f), "excluded_files": sum(1 for f in files if "excluded" in f)},
+        **({"exports": exports_entry} if exports_entry else {}),
         "snapshot": manifest.row(),
     }
     _write_json(staging / "manifest.json", document)
@@ -315,6 +343,84 @@ def write_bundle(repo: Path, store: ObjectStore, manifest: Manifest, *, working_
     staging.rename(target)
     shutil.rmtree(previous, ignore_errors=True)
     return document
+
+
+# ------------------------------------------------------------------ repository exports
+#
+# `workspace_exports`, which the compiler writes beside the snapshot: the contract operations
+# the repository declares and the HTTP calls no endpoint of its own serves, each with the
+# entity it belongs to and the evidence it cites. A solution or a workspace links one
+# repository to another with them. They are small and are needed without a local compile,
+# so they are committed in every tier as one JSON file that manifest.json names with its
+# digest. They are not part of the snapshot's content hash, so the digest in manifest.json
+# is what they are checked against. Bundles written before the file existed do not name it
+# and still read; their exports are simply not known.
+
+EXPORTS_FILE = "exports.json"
+EXPORT_LISTS = ("operations", "unresolved_calls")
+
+
+def compiled_exports(store: ObjectStore, manifest: Manifest) -> dict[str, list[dict[str, Any]]] | None:
+    """The exports the compile of `manifest` stored, or None when the cache does not hold them."""
+    ref = store.index_get("workspace_exports", manifest.rkp_hash)
+    return store.get_json(ref) if ref and store.has(ref) else None
+
+
+def export_evidence(exports: dict[str, Any] | None) -> frozenset[str]:
+    """Every evidence ID the exports cite."""
+    if not exports:
+        return frozenset()
+    return frozenset(ev for name in EXPORT_LISTS for row in exports.get(name, []) for ev in row.get("evidence_ids", []))
+
+
+def exports_problem(value: Any) -> str | None:
+    """Why `value` is not an exports document, or None when it is one."""
+    if not isinstance(value, dict) or set(value) != set(EXPORT_LISTS):
+        return f"does not hold exactly {' and '.join(EXPORT_LISTS)}"
+    for name in EXPORT_LISTS:
+        if not isinstance(value[name], list) or not all(isinstance(row, dict) for row in value[name]):
+            return f"{name} is not a list of objects"
+    return None
+
+
+def _write_exports(staging: Path, store: ObjectStore, exports: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Write exports.json; the manifest.json entry naming it, or None when there are none to write."""
+    if exports is None:
+        return None
+    _write_json(staging / EXPORTS_FILE, exports)
+    return {"file": EXPORTS_FILE, "digest": store.put_json(exports), **{name: len(exports[name]) for name in EXPORT_LISTS}}
+
+
+def _hydrate_exports(knowledge: Path, document: dict[str, Any], problems: list[str]) -> dict[str, Any] | None:
+    """The committed exports, checked against manifest.json; None when the bundle has none."""
+    entry = document.get("exports")
+    if entry is None:
+        return None
+    if not isinstance(entry, dict) or entry.get("file") != EXPORTS_FILE:
+        problems.append("exports")
+        return None
+    try:
+        value = json.loads((knowledge / EXPORTS_FILE).read_text())
+    except (FileNotFoundError, ValueError):
+        problems.append("exports")
+        return None
+    if exports_problem(value) is not None or digest(value) != entry.get("digest"):
+        problems.append("exports")
+        return None
+    return value
+
+
+def read_exports(repo: Path) -> dict[str, Any] | None:
+    """The exports committed in `repo`'s bundle, checked against its manifest; None when the
+    bundle predates them. Raises BundleError when the file does not match its digest."""
+    document = read_manifest(repo)
+    if document is None:
+        return None
+    problems: list[str] = []
+    value = _hydrate_exports(repo / BUNDLE / "knowledge", document, problems)
+    if problems:
+        raise BundleError(f"{EXPORTS_FILE} does not match its manifest; compile again")
+    return value
 
 
 def _read_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -380,8 +486,11 @@ def hydrate(repo: Path, store: ObjectStore | None = None) -> tuple[ObjectStore, 
     for decision in _read_jsonl(knowledge / "decisions.jsonl"):
         entries.append({"decision_id": decision["decision_id"], "digest": store.put_json(decision)})
     put(entries, manifest.ledger_entries_ref, "decisions")
+    exports = _hydrate_exports(knowledge, document, problems)
     if problems:
         raise BundleError("the bundle does not match its manifest (" + ", ".join(problems) + "); compile again")
+    if exports is not None:  # complete in every tier, so indexed as the compile indexes it
+        store.index_put("workspace_exports", manifest.rkp_hash, store.put_json(exports))
     if architecture:
         return store, manifest.model_copy(update={"shards": shard_refs})
     store.index_put("rkp", manifest.rkp_hash, store.put_json(manifest.row()))

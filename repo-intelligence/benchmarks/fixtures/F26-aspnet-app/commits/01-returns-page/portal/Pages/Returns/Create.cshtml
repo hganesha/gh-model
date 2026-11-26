@@ -1,0 +1,14 @@
+@page "{orderId:int}"
+@model Portal.Pages.Returns.CreateModel
+@attribute [Authorize(Roles = "Customer")]
+@{
+    ViewData["Title"] = "Return an order";
+}
+<h1>Return an order</h1>
+<form method="post" id="returnForm">
+    <input asp-for="Return.OrderId" type="hidden" />
+    <select asp-for="Return.Reason" asp-items="Model.Reasons"></select>
+    <textarea asp-for="Return.Comment"></textarea>
+    <button type="submit">Send the request</button>
+</form>
+<a asp-page="/Orders/Index">Back to my orders</a>

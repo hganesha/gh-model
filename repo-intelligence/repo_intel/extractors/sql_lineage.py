@@ -263,9 +263,28 @@ def scrub_commands(text: str) -> str:
     return re.sub(r"(?im)^([ \t]*)go([ \t]*)$", lambda m: m.group(1) + ";" + " " + m.group(2), text)
 
 
+def transform_shapes(blob: str, data: bytes, text: str, a: int, b: int, owner: dict | str, dialect: str | None, to_byte, extractor: str) -> tuple[list, list]:
+    """One `transform` observation (repo_intel.compile.transforms) for the program whose
+    statements are `text[a:b]`: what each statement that moves data does to its rows.
+    Returns (observations, diagnostics)."""
+    from repo_intel.compile.transforms import sql_unit, transform_observation
+
+    statements = [(a + s, a + e, [to_byte(a + s), to_byte(a + e)]) for s, e in split_statements(text[a:b]) if _DML.search(text, a + s, a + e)]
+    if not statements:
+        return [], []
+    try:
+        transforms = sql_unit(text, statements, dialect)
+        if not transforms:
+            return [], []
+        return [transform_observation(blob, span(data, to_byte(a), to_byte(b)), owner, "sql", transforms)], []
+    except Exception as exc:  # a recognizer fault: the lineage stands, the shapes are left out
+        # The type only: an exception's text can quote the SQL it failed on.
+        return [], [diagnostic(extractor, "warning", f"transform shapes not derived: {type(exc).__name__}")]
+
+
 class SqlScripts:
     id = "data.sql_lineage"
-    version = "1.0.0"
+    version = "1.1.0"
     SUFFIXES = (".sql", ".bteq", ".btq", ".tpt")
 
     def matches(self, path: str) -> bool:
@@ -283,6 +302,7 @@ class SqlScripts:
         clean = scrub_commands(text)
         to_byte = byte_offsets(text, data)
         out: list = []
+        diagnostics: list = []
         resolved = unresolved = 0
         procs = list(_PROCEDURE.finditer(clean))
         bounds = [(m, m.start(), procs[i + 1].start() if i + 1 < len(procs) else len(clean)) for i, m in enumerate(procs)]
@@ -315,6 +335,9 @@ class SqlScripts:
                 at = span(data, to_byte(a), to_byte(min(b, script_end)))
                 out.append(entity(blob, at, K.PROGRAM, me["natural_key"], me["name"], {"kind": "script", "language": "sql"}, E2))
             out += lineage_relations(blob, data, clean, found, me, offset=found_offset, to_byte=to_byte)
+            shapes, problems = transform_shapes(blob, data, clean, found_offset, b if m is not None else min(b, script_end), me, dialect, to_byte, self.id)
+            out += shapes
+            diagnostics += problems
             resolved += len(found.writes) + len(found.reads)
             unresolved += found.unresolved
             for call in _CALL.finditer(body):
@@ -332,7 +355,7 @@ class SqlScripts:
             out.append(entity(blob, at, K.DATASET, {"name": dataset}, dataset, {"data_source": source} if source else {}))
             out.append(relation(blob, at, table(name), Predicate.DERIVED_FROM, ref(K.DATASET, {"name": dataset}, dataset)))
         out += lineage_summary(blob, data, resolved, unresolved)
-        return Extraction(out)
+        return Extraction(out, diagnostics=diagnostics)
 
 
 EXTRACTORS = [SqlScripts()]

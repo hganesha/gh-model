@@ -2,9 +2,11 @@
 
 import { ArrowUpRight, FileText, Grid3x3, Minus, Plus } from "lucide-react";
 import { domainLabel, kindsForPlane, PLANES, QUALITY_EYEBROW, unknownDomain, type PlaneMeta } from "@/lib/planes";
+import { planeMeasures } from "@/lib/plane-coverage";
 import { platformCoverage, type PlatformCoverage } from "@/lib/platforms";
 import { kindLabel, measured, percent, plural } from "@/lib/format";
 import type { Summary } from "@/lib/types";
+import { PlaneMeasures, securityFound } from "./plane-coverage";
 import { Coverage, PlaneIcon } from "./ui";
 
 /** Business capabilities this snapshot's components are placed under. */
@@ -33,6 +35,7 @@ function PlaneCard({ plane, summary, index, onOpen }: { plane: PlaneMeta; summar
   const total = summary.planes?.[plane.id]?.total ?? kinds.reduce((n, k) => n + k.count, 0);
   const max = Math.max(1, ...kinds.map((k) => k.count));
   const unknowns = unknownsForPlane(summary, plane);
+  const hasMeasures = planeMeasures(summary, plane).length > 0;
 
   return (
     <button
@@ -74,11 +77,8 @@ function PlaneCard({ plane, summary, index, onOpen }: { plane: PlaneMeta; summar
       )}
 
       <div className="plane-foot">
-        {plane.coverage.length === 0 ? (
-          <span className="plane-foot-quiet">No coverage measure for this plane</span>
-        ) : (
-          plane.coverage.map((d) => <Coverage key={d} compact label={domainLabel(d)} ratio={summary.coverage_totals?.[d]} />)
-        )}
+        {hasMeasures ? <PlaneMeasures summary={summary} plane={plane} compact /> : plane.id !== "security" && <span className="plane-foot-quiet">No coverage measure for this plane</span>}
+        {plane.id === "security" && <span className="plane-foot-quiet">{securityFound(summary)}</span>}
         {unknowns > 0 && <span className="unknown-chip">{plural(unknowns, "unknown")}</span>}
       </div>
     </button>

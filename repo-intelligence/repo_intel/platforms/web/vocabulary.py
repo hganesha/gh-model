@@ -25,6 +25,9 @@ TERMS = (
     Term("web:ThemeToken", K.STYLE_TOKEN, "lossy", "a leaf of an exported theme or design-token object, by its literal key path; system is the module path from the repository root"),
     Term("web:Role", K.ROLE, "exact", "a role name a route (roles, meta.roles, data.roles), route guard or guard component lists literally; "
          "realm is 'web'. The guard itself is not the role: its name stays in the screen's `guards` attribute"),
+    Term("web:ModelField", K.FIELD, "lossy", "a field of a form's model, declared with literal fields in the same file (a TypeScript interface "
+         "or type alias, a Zod or Yup object schema); table is '<file path>#<model name>', name the field's dotted path. "
+         "Types, optionality and validation stay in the source"),
 )
 
 
@@ -63,6 +66,7 @@ CONSTRUCTS = (
     _c("web:form-action", "a form action attribute", "relation:SUBMITS_TO"),
     _c("web:submit-handler", "a submit handler (onSubmit, @submit, (ngSubmit))", "relation:SUBMITS_TO"),
     _c("web:binding", "a control binding (v-model, formControlName, ngModel, register(), name)", "attribute:binds"),
+    _c("web:form-model", "a form's model type or schema (useForm<T>(), zodResolver(schema), validationSchema, a typed v-model or ngModel variable)", "relation:BINDS_TO"),
     _c("web:client-validation", "client-side validation on a control (required, pattern, min, max, Validators)", "attribute:validation"),
     _c("web:programmatic-navigation", "navigation in code (navigate(), router.push(), router.navigate(), <Navigate>)", "relation:NAVIGATES_TO"),
     # Styling
@@ -72,7 +76,8 @@ CONSTRUCTS = (
     _c("web:theme-object", "an exported theme or token object", "entity:StyleToken"),
     _c("web:tailwind-config", "a Tailwind configuration theme", "entity:StyleToken"),
     _c("web:token-reference", "a reference to a style token (var(--x), $x, @x, theme.x)", "relation:STYLED_BY"),
-    _c("web:stylesheet-import", "a stylesheet import or link (import './x.css', <link rel=stylesheet>, @use, @import)", "attribute:stylesheets"),
+    _c("web:stylesheet-import", "a stylesheet import or link (import './x.css', <link rel=stylesheet>, @use, @import); "
+       "an @import, @use or @forward is also Artifact DEPENDS_ON Artifact", "attribute:stylesheets"),
     _c("web:css-module", "a CSS module import (import styles from './x.module.css')", "attribute:stylesheets"),
     _c("web:styled-component", "a CSS-in-JS styled component (styled-components, emotion styled)", "unmapped"),
     _c("web:css-in-js", "a css`` template or css prop (emotion, styled-components, makeStyles)", "unmapped"),

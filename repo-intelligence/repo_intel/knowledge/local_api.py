@@ -17,7 +17,8 @@ overrides are read from and written to `.rkp/overrides.json`.
 
 `snapshots/<hash>/behavior/<entity id>` returns the behaviour units an entity owns, as
 stored (each with its `kind` when the pack gave one), with the facts
-`repo_intel.knowledge.behavior_store` derives from them. Behaviour is detail: on
+`repo_intel.knowledge.behavior_store` derives from them, and the entity's transform shapes
+(contract section 8.1); an entity with shapes and no units still answers. Behaviour is detail: on
 a clone that has only the architecture tier it answers 404 `detail_not_committed`, never
 an empty list.
 """
@@ -95,8 +96,10 @@ class Snapshot:
                 self.evidence.setdefault(row["id"], row)
         for rows in self.entity_rows.values():
             rows.sort(key=lambda pair: pair[0], reverse=True)
-        # owner entity id -> behaviour units; empty when the snapshot holds no detail
+        # owner entity id -> behaviour units, and -> transform-shape rows; empty when the
+        # snapshot holds no detail
         self.behaviors = behavior_store.index(shards)
+        self.transforms = behavior_store.transform_index(shards)
 
     def first(self, entity_id: str) -> dict[str, Any] | None:
         rows = self.entity_rows.get(entity_id)
@@ -315,18 +318,21 @@ class LocalApi:
         return detail
 
     def behavior(self, snap: Snapshot, entity_id: str) -> dict[str, Any]:
-        """The behaviour units an entity owns and what they state (repo_intel.knowledge.behavior_store)."""
+        """The behaviour units an entity owns, what they state, and its transform shapes
+        (repo_intel.knowledge.behavior_store). Shapes alone are an answer: a PySpark notebook
+        has no behaviour units but says what it does to its rows."""
         if snap.detail == "architecture":
             raise HttpError(404, "Behaviour is function-level detail, and this bundle commits only the architecture tier. Run Analyze Repository to compile it on this machine.", "detail_not_committed")
-        units = snap.behaviors.get(entity_id)
+        units = snap.behaviors.get(entity_id, [])
+        transforms = snap.transforms.get(entity_id, [])
         entity = snap.first(entity_id)
         if entity is None:
             raise _not_found()
-        if not units:
+        if not units and not transforms:
             raise HttpError(404, f"No behaviour was recorded for {entity['kind']} {entity['name']}.", "no_behavior")
         return {
             "entity": {"id": entity_id, "kind": entity["kind"], "name": entity["name"]},
-            "units": units, "summary": behavior_store.summarize(units),
+            "units": units, "summary": behavior_store.summarize(units), "transforms": transforms,
         }
 
     def exclusions(self, snap: Snapshot, limit: int) -> dict[str, Any]:

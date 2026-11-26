@@ -25,6 +25,9 @@ from repo_intel.decisions import component as dm_component
 from repo_intel.decisions import dependency as dm_dependency
 from repo_intel.decisions import linking as dm_linking
 from repo_intel.decisions import overrides as override_store
+from repo_intel.decisions import rules as dm_rules
+from repo_intel.decisions import screens as dm_screens
+from repo_intel.decisions import workflows as dm_workflows
 from repo_intel.decisions.gateway import Gateway, pins_hash
 from repo_intel.decisions.overrides import Overrides
 from repo_intel.decisions.runner import Budget, Ledger, evaluate, hypothesize
@@ -39,7 +42,7 @@ from repo_intel.compile.verify import content_leaves, verify_snapshot
 
 POLICY_VERSION = "repo-intelligence-policy-v3"
 EMPTY_OVERRIDES = override_store.EMPTY.set_hash
-SPECS: dict[str, DecisionSpec] = {s.id: s for s in (dm_component.SPEC, dm_component.TOPOLOGY_SPEC, dm_component.STACK_SPEC, *dm_linking.SPECS, dm_behavior.SPEC, dm_architecture.GRANULARITY_SPEC)}
+SPECS: dict[str, DecisionSpec] = {s.id: s for s in (dm_component.SPEC, dm_component.TOPOLOGY_SPEC, dm_component.STACK_SPEC, *dm_linking.SPECS, dm_behavior.SPEC, dm_architecture.GRANULARITY_SPEC, dm_rules.SPEC, dm_workflows.SPEC, dm_screens.SPEC)}
 
 
 class PublishGateError(RuntimeError):
@@ -72,7 +75,7 @@ def _all_steps() -> list[Any]:
     registry = getattr(buildgraph, "registry", None)
     if registry is not None:
         return list(registry().values())
-    return [FILE_EXTRACT, dm_component.FEATURES_BUILD, dm_component.FEATURES_REEXTRACT, dm_linking.TABLE_REQUESTS, dm_behavior.FEATURES_BUILD, *STEPS]
+    return [FILE_EXTRACT, dm_component.FEATURES_BUILD, dm_component.FEATURES_REEXTRACT, dm_linking.TABLE_REQUESTS, dm_behavior.FEATURES_BUILD, dm_rules.FEATURES_BUILD, dm_workflows.FEATURES_BUILD, dm_screens.FEATURES_BUILD, *STEPS]
 
 
 def _toolchain_manifest(gateway: Gateway | None, catalogue_hash: str, policy: CompileSettings | None = None, step_executor: str | None = None) -> dict[str, Any]:
@@ -115,6 +118,70 @@ def stage_snapshot(store: ObjectStore, repo_path: str | os.PathLike[str], commit
     d = store.put_json(pm)
     store.index_put("path_manifests", pm["source_tree_hash"], d)
     return d
+
+
+def _lift_rules_and_workflows(runner: StepRunner, repository_id: str, shard_refs: dict[str, Ref], *, ledger: Ledger, gateway: Gateway | None, budget: Budget, overrides: Overrides) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """Contract 8.2: rule candidates and workflow states from the compiled shards (pure steps),
+    then the model decisions through the ledger. Returns what `repo.compile` writes, and the
+    decision rows for coverage and conflicts."""
+    made: list[dict[str, Any]] = []
+    found = runner.load(runner.run(dm_rules.FEATURES_BUILD, {"shards": shard_refs}))
+    rules: list[dict[str, Any]] = []
+    for group in found["groups"]:
+        decision = dm_rules.lift(group, ledger=ledger, gateway=gateway, budget=budget).row()
+        made.append({**decision, "@unit": group["unit"]})
+        owner_rules, confirmations = dm_rules.lifted_rules(repository_id, group, decision, overrides, ledger)
+        rules += owner_rules
+        made += [{**d, "@unit": group["unit"]} for d in confirmations]
+    states = runner.load(runner.run(dm_workflows.FEATURES_BUILD, {"shards": shard_refs}))
+    workflows, decisions = dm_workflows.lifted_workflows(repository_id, states, ledger=ledger, gateway=gateway, budget=budget, overrides=overrides)
+    made += [{**d, "@unit": "@repo"} for d in decisions]
+    return {"rules": {"rules": rules}, "workflows": {"workflows": workflows, "dynamic": states["dynamic"]}}, made
+
+
+def _captured_screens(runner: StepRunner, repository_id: str, entries: list[dict[str, Any]], summaries: dict[str, Ref], units: list[dict[str, Any]], *, ledger: Ledger, gateway: Gateway | None, budget: Budget) -> tuple[dict[str, list[dict[str, Any]]], list[dict[str, Any]], dict[str, Any] | None]:
+    """Contract 8.2: `.rkp/inputs/screens/capture.json` matched to Screens (a pure step), regions
+    labelled through the ledger. Returns, per unit, what `unit.compile` sets on each Screen; the
+    region decisions; and the capture summary `repo.compile` reports."""
+    by_path = {e["path"]: e for e in entries}
+    capture = by_path.get(dm_screens.CAPTURE_FILE)
+    if capture is None or not capture["parse"]:
+        return {}, [], None
+    inputs = {p: e for p, e in by_path.items() if p.startswith(dm_screens.INPUT_DIR) and e["parse"]}
+    config = {
+        "blobs": {p: e["blob_sha256"] for p, e in sorted(inputs.items())},
+        "secret_findings": {p: e["secret_findings"] for p, e in sorted(inputs.items()) if e.get("secret_findings")},
+    }
+    found = runner.load(runner.run(dm_screens.FEATURES_BUILD, {
+        "capture": Ref("sha256:" + capture["blob_sha256"], "bytes"),
+        "doms": {p: Ref("sha256:" + e["blob_sha256"], "bytes") for p, e in sorted(inputs.items()) if p != dm_screens.CAPTURE_FILE},
+        "summaries": [summaries[p] for p in sorted(summaries)],
+    }, config))
+    unit_of = {p: u["name"] for u in units for p in u["paths"]}
+    artifact = entity_id(repository_id, EntityKind.ARTIFACT, {"path": dm_screens.CAPTURE_FILE})
+    per_screen: dict[tuple[str, str], dict[str, Any]] = {}
+    made: list[dict[str, Any]] = []
+    problems = []
+    if found["problem"]:
+        problems.append(found["problem"])
+        made.append({**dm_screens.unmatched(None, artifact, found["problem"], ledger=ledger).row(), "@unit": "@repo"})
+    for record in found["captures"]:
+        if record["screen"] is None:
+            problems.append(record["problem"])
+            made.append({**dm_screens.unmatched(record, artifact, record["problem"], ledger=ledger).row(), "@unit": "@repo"})
+            continue
+        unit = unit_of.get(record["screen"]["path"], ROOT_UNIT)
+        unit_root = "" if unit in (".", ROOT_UNIT) else unit
+        key = {k: (unit_root if v == "@unit" else v) for k, v in record["screen"]["natural_key"].items()}
+        decisions = dm_screens.label_regions(record, entity_id(repository_id, EntityKind.SCREEN, key), ledger=ledger, gateway=gateway, budget=budget)
+        made += [{**d, "@unit": unit} for d in decisions]
+        slot = per_screen.setdefault((unit, digest(key)), {"screen": {"natural_key": record["screen"]["natural_key"], "name": record["screen"]["name"]}, "captured": [], "evidence": {}})
+        slot["captured"].append(dm_screens.captured_attribute(record, decisions))
+        slot["evidence"].update({ev["id"]: ev for ev in record["evidence"]})
+    captured: dict[str, list[dict[str, Any]]] = {}
+    for (unit, _), slot in sorted(per_screen.items()):
+        captured.setdefault(unit, []).append({**slot, "captured": sorted(slot["captured"], key=lambda c: c["entry"]), "evidence": [slot["evidence"][k] for k in sorted(slot["evidence"])]})
+    return captured, made, {"artifact": dm_screens.CAPTURE_FILE, "problems": problems}
 
 
 def stage_compile(store: ObjectStore, repository_id: str, path_manifest_digest: str, use_cache: bool = True, gateway: Gateway | None = None, budget: Budget | None = None, progress: Any = None, policy: CompileSettings | None = None, overrides: Overrides | None = None) -> CompileResult:
@@ -166,6 +233,12 @@ def stage_compile(store: ObjectStore, repository_id: str, path_manifest_digest: 
     shard_refs: dict[str, Ref] = {}
     link_refs: dict[str, Ref] = {}
     unit_decisions: list[dict[str, Any]] = []
+    # 8.2: owner-captured screens, labelled region by region; off unless the settings turn it on.
+    captured: dict[str, list[dict[str, Any]]] = {}
+    capture_summary: dict[str, Any] | None = None
+    if dm_rules.enabled(policy, "captured_screens"):
+        captured, capture_decisions, capture_summary = _captured_screens(runner, repository_id, entries, summaries, plan["units"], ledger=ledger, gateway=gateway, budget=budget)
+        unit_decisions += capture_decisions
     for n, unit in enumerate(plan["units"]):
         tell("link_and_compile", done=n, total=len(plan["units"]), unit=unit["name"])
         members = [summaries[p] for p in unit["paths"]]
@@ -202,10 +275,22 @@ def stage_compile(store: ObjectStore, repository_id: str, path_manifest_digest: 
             data.append({**req, "decision": decide(dm_linking.TABLE_SPEC, subject, features, dm_linking.rules, evidence, dm_linking.CRITERIA[dm_linking.TABLE_SPEC.id])})
         if data:
             decisions["data"] = data
+        if captured.get(unit["name"]):
+            decisions["captured"] = captured[unit["name"]]  # region decisions are already in unit_decisions
         for key, d in sorted(decisions.items()):
+            if key == "captured":
+                continue
             for row in (d if key == "data" else [d]):
                 unit_decisions.append({**(row["decision"] if key == "data" else row), "@unit": unit["name"]})
         shard_refs[unit["name"]] = runner.run(UNIT_COMPILE, {"repository_id": repository_id, "unit": unit, "summaries": members, "workspace_packages": plan["packages"], "link": link_refs[unit["name"]], "decisions": decisions, "component_features": feat["features"] if feat else None})
+
+    # 8.2: business rules and workflows lifted from the compiled behaviour; off unless the settings turn it on.
+    lifted: dict[str, Any] = {}
+    if dm_rules.enabled(policy):
+        lifted, made = _lift_rules_and_workflows(runner, repository_id, shard_refs, ledger=ledger, gateway=gateway, budget=budget, overrides=overrides)
+        unit_decisions += made
+    if capture_summary is not None:
+        lifted["captures"] = capture_summary
 
     tell("repo_compile", units=len(plan["units"]))
     requests = runner.load(runner.run(REPO_REQUESTS, {"repository_id": repository_id, "shards": shard_refs, "links": link_refs}))["requests"]
@@ -225,6 +310,7 @@ def stage_compile(store: ObjectStore, repository_id: str, path_manifest_digest: 
         "exclusions": pm["exclusions"], "oversize_paths": oversize, "capability_catalogue": catalogue_ref,
         "pattern_catalogue": Ref(store.put_json(load_patterns().row())),
         "decisions": repo_decisions, "unit_decisions": unit_decisions, "overrides": overrides.document,
+        **({"lifted": lifted} if lifted else {}),  # declared only when there is any, so other compiles keep their key
     }))
 
     shard_digests = {name: ref.digest for name, ref in shard_refs.items()}

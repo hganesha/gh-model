@@ -28,6 +28,13 @@ Without the server: `rkp compile` writes a repository's knowledge to `.rkp/knowl
 .venv/bin/rkp compile path/to/repository
 ```
 
+What the bundle holds beside the entities and relations:
+
+- `.rkp/knowledge/exports.json` lists what links the repository to others: the contract `operations` it declares and the HTTP calls no endpoint of its own serves (`unresolved_calls`), each with its HTTP `method` where the source states one. It is committed in every tier, named in `manifest.json` with its digest, and checked by `rkp verify`; `rkp solution` reads it, so members link without a local compile. Bundles written before it existed still read.
+- The `transforms` table says what each unit does to the rows it reads: one row per stand-alone SQL procedure or script, SAS DATA or PROC step, CFML query or PySpark chain, with operations such as deduplicate, join, aggregate or pivot and the primitive matched (`dedupe_by_key`, `apply_scd_type_2`, ...). It is function-level detail, so only the full tier holds it; the owning entity's `transforms` attribute (primitives and purpose) is in every tier. Coverage domain `transform_shapes` counts units with a recognised shape over units that move data, and its `detail.statements` gives `{recognised, total}` statements.
+
+Two compile settings (`CompileSettings`) add knowledge a model writes, and both are `false` by default: `business_rules` (business rules and status workflows lifted from conditions in behaviour units) and `captured_screens` (regions of owner-captured screens under `.rkp/inputs/screens/`). Only when one is on does the compile send repository content (the candidate conditions with their transform shapes, or the captured pages) to the configured model provider. A rule the model writes stays a hypothesis (`E5`) until an owner confirms it.
+
 Three commands read bundles without compiling anything:
 
 - `rkp verify [PATH]` re-checks a committed `.rkp/knowledge/` against itself: every unit's rows (behaviour included in the full tier) hash to their digests, the counts in `manifest.json` match the files, the tier holds only what it should, and the rows pass the publish gate. It reads the files as they are, so it needs neither the cache nor a compile, and it lists every problem it finds. Exit status 1 means the bundle should be compiled again.

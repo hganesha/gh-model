@@ -1,0 +1,111 @@
+{
+ "fixture": "F25-jsp-app",
+ "description": "A JSP order desk with no build file: pages with JSTL core, fmt and sql tags, a Spring form:form, a Struts html:form guarded by logic:present, a tag file, scriptlets with a role check and a computed redirect, and WEB-INF/web.xml with servlet mappings (one a JSP file), security constraints, security roles and a JNDI data source. 'since' names the milestone whose compiler must produce the item.",
+ "entities": [
+  {"kind": "Program", "natural_key": {"platform": "jsp", "name": "src/main/webapp/index.jsp"}, "since": "M2", "attributes": {"kind": "page", "platform_kind": "jsp:Page", "error_page": "src/main/webapp/error.jsp", "web_root": "src/main/webapp"}},
+  {"kind": "Program", "natural_key": {"platform": "jsp", "name": "src/main/webapp/orders/list.jsp"}, "since": "M2"},
+  {"kind": "Program", "natural_key": {"platform": "jsp", "name": "src/main/webapp/orders/edit.jsp"}, "since": "M2"},
+  {"kind": "Program", "natural_key": {"platform": "jsp", "name": "src/main/webapp/admin/purge.jsp"}, "since": "M2"},
+  {"kind": "Program", "natural_key": {"platform": "jsp", "name": "src/main/webapp/reports/sales.jsp"}, "since": "M2", "attributes": {"imports": ["java.util.Date"]}},
+  {"kind": "Program", "natural_key": {"platform": "jsp", "name": "src/main/webapp/common/header.jspf"}, "since": "M2", "attributes": {"kind": "fragment"}},
+  {"kind": "Program", "natural_key": {"platform": "jsp", "name": "src/main/webapp/WEB-INF/tags/money.tag"}, "since": "M2", "attributes": {"kind": "tag", "platform_kind": "jsp:TagFile", "tag_attributes": ["amount"]}},
+  {"kind": "Program", "natural_key": {"platform": "jsp", "name": "src/main/webapp/logout.jsp"}, "since": "M2"},
+  {"kind": "Endpoint", "natural_key": {"component_root": "", "protocol": "http", "method": "ANY", "route": "/index.jsp"}, "since": "M2", "attributes": {"platform_kind": "jsp:PageRequest"}},
+  {"kind": "Endpoint", "natural_key": {"component_root": "", "protocol": "http", "method": "ANY", "route": "/orders/edit.jsp"}, "since": "M2"},
+  {"kind": "Endpoint", "natural_key": {"component_root": "", "protocol": "http", "method": "ANY", "route": "/orders/save"}, "since": "M2", "attributes": {"platform_kind": "jsp:Servlet", "servlet": "orders", "servlet_class": "com.example.desk.OrderServlet"}},
+  {"kind": "Endpoint", "natural_key": {"component_root": "", "protocol": "http", "method": "ANY", "route": "/admin/purge.do"}, "since": "M2"},
+  {"kind": "Endpoint", "natural_key": {"component_root": "", "protocol": "http", "method": "ANY", "route": "/reports/sales"}, "since": "M2", "attributes": {"servlet": "salesReport"}},
+  {"kind": "Screen", "natural_key": {"platform": "jsp", "name": "src/main/webapp/index.jsp"}, "since": "M2", "attributes": {"title": "Order desk", "route": "/index.jsp"}},
+  {"kind": "Screen", "natural_key": {"platform": "jsp", "name": "src/main/webapp/orders/edit.jsp"}, "since": "M2"},
+  {"kind": "Screen", "natural_key": {"platform": "jsp", "name": "src/main/webapp/admin/purge.jsp"}, "since": "M2"},
+  {"kind": "Screen", "natural_key": {"platform": "jsp", "name": "src/main/webapp/common/header.jspf"}, "since": "M2", "attributes": {"fragment": true}},
+  {"kind": "Form", "natural_key": {"screen": "src/main/webapp/index.jsp", "name": "form1"}, "since": "M2", "attributes": {"method": "get"}},
+  {"kind": "Form", "natural_key": {"screen": "src/main/webapp/orders/edit.jsp", "name": "orderForm"}, "since": "M2", "attributes": {"kind": "spring", "model": "order"}},
+  {"kind": "Form", "natural_key": {"screen": "src/main/webapp/admin/purge.jsp", "name": "form1"}, "since": "M2", "attributes": {"kind": "struts", "struts_action": "/admin/purge"}},
+  {"kind": "Form", "natural_key": {"screen": "src/main/webapp/login.jsp", "name": "login"}, "since": "M2"},
+  {"kind": "UIControl", "natural_key": {"container": "src/main/webapp/index.jsp#form1", "name": "customer"}, "since": "M2", "attributes": {"control": "text"}},
+  {"kind": "UIControl", "natural_key": {"container": "src/main/webapp/index.jsp#form1", "name": "status"}, "since": "M2", "attributes": {"control": "select"}},
+  {"kind": "UIControl", "natural_key": {"container": "src/main/webapp/orders/edit.jsp#orderForm", "name": "customer"}, "since": "M2", "attributes": {"binding": "customer", "maxlength": "60", "tag": "form:input"}},
+  {"kind": "UIControl", "natural_key": {"container": "src/main/webapp/orders/edit.jsp#orderForm", "name": "status"}, "since": "M2", "attributes": {"control": "select"}},
+  {"kind": "UIControl", "natural_key": {"container": "src/main/webapp/admin/purge.jsp#form1", "name": "olderThanDays"}, "since": "M2", "attributes": {"tag": "html:text"}},
+  {"kind": "UIControl", "natural_key": {"container": "src/main/webapp/login.jsp#login", "name": "j_password"}, "since": "M2", "attributes": {"control": "password"}},
+  {"kind": "UIControl", "natural_key": {"container": "src/main/webapp/index.jsp", "name": "link:orders/edit.jsp"}, "since": "M2"},
+  {"kind": "UIControl", "natural_key": {"container": "src/main/webapp/index.jsp", "name": "link:https://help.example.com"}, "since": "M2"},
+  {"kind": "UIControl", "natural_key": {"container": "src/main/webapp/common/header.jspf", "name": "link:/admin/purge.jsp"}, "since": "M2"},
+  {"kind": "Role", "natural_key": {"realm": "jsp", "name": "admin"}, "since": "M2"},
+  {"kind": "Role", "natural_key": {"realm": "jsp", "name": "clerk"}, "since": "M2"},
+  {"kind": "Role", "natural_key": {"realm": "jsp", "name": "manager"}, "since": "M2"},
+  {"kind": "Permission", "natural_key": {"realm": "jsp", "name": "/admin/*"}, "since": "M2", "attributes": {"platform_kind": "jsp:SecurityConstraint", "transport": "CONFIDENTIAL", "url_patterns": ["/admin/*"]}},
+  {"kind": "Permission", "natural_key": {"realm": "jsp", "name": "POST /orders/save"}, "since": "M2", "attributes": {"methods": ["POST"]}},
+  {"kind": "Permission", "natural_key": {"realm": "jsp", "name": "/reports/sales.jsp"}, "since": "M2"},
+  {"kind": "ConfigKey", "natural_key": {"name": "datasource:jdbc/OrderDesk"}, "since": "M2", "attributes": {"platform_kind": "jsp:DataSource"}},
+  {"kind": "Table", "natural_key": {"datastore": "default", "name": "orders"}, "since": "M2"},
+  {"kind": "Table", "natural_key": {"datastore": "default", "name": "sales_daily"}, "since": "M2"}
+ ],
+ "edges": [
+  {"subject": {"kind": "Program", "natural_key": {"platform": "jsp", "name": "src/main/webapp/index.jsp"}}, "predicate": "EXPOSES", "object": {"kind": "Endpoint", "natural_key": {"component_root": "", "protocol": "http", "method": "ANY", "route": "/index.jsp"}}, "since": "M2"},
+  {"subject": {"kind": "Program", "natural_key": {"platform": "jsp", "name": "src/main/webapp/reports/sales.jsp"}}, "predicate": "EXPOSES", "object": {"kind": "Endpoint", "natural_key": {"component_root": "", "protocol": "http", "method": "ANY", "route": "/reports/sales"}}, "since": "M2"},
+  {"subject": {"kind": "Program", "natural_key": {"platform": "jsp", "name": "src/main/webapp/index.jsp"}}, "predicate": "RENDERS", "object": {"kind": "Screen", "natural_key": {"platform": "jsp", "name": "src/main/webapp/index.jsp"}}, "since": "M2"},
+  {"subject": {"kind": "Program", "natural_key": {"platform": "jsp", "name": "src/main/webapp/index.jsp"}}, "predicate": "CALLS", "object": {"kind": "Program", "natural_key": {"platform": "jsp", "name": "src/main/webapp/common/header.jspf"}}, "since": "M2"},
+  {"subject": {"kind": "Program", "natural_key": {"platform": "jsp", "name": "src/main/webapp/orders/list.jsp"}}, "predicate": "CALLS", "object": {"kind": "Program", "natural_key": {"platform": "jsp", "name": "src/main/webapp/WEB-INF/tags/money.tag"}}, "since": "M2"},
+  {"subject": {"kind": "Program", "natural_key": {"platform": "jsp", "name": "src/main/webapp/index.jsp"}}, "predicate": "NAVIGATES_TO", "object": {"kind": "Program", "natural_key": {"platform": "jsp", "name": "src/main/webapp/error.jsp"}}, "since": "M2"},
+  {"subject": {"kind": "Screen", "natural_key": {"platform": "jsp", "name": "src/main/webapp/index.jsp"}}, "predicate": "CONTAINS", "object": {"kind": "Form", "natural_key": {"screen": "src/main/webapp/index.jsp", "name": "form1"}}, "since": "M2"},
+  {"subject": {"kind": "Form", "natural_key": {"screen": "src/main/webapp/index.jsp", "name": "form1"}}, "predicate": "SUBMITS_TO", "object": {"kind": "Program", "natural_key": {"platform": "jsp", "name": "src/main/webapp/orders/list.jsp"}}, "since": "M2"},
+  {"subject": {"kind": "Form", "natural_key": {"screen": "src/main/webapp/orders/edit.jsp", "name": "orderForm"}}, "predicate": "SUBMITS_TO", "object": {"kind": "Endpoint", "natural_key": {"component_root": "", "protocol": "http", "method": "ANY", "route": "/orders/save"}}, "since": "M2"},
+  {"subject": {"kind": "Form", "natural_key": {"screen": "src/main/webapp/orders/edit.jsp", "name": "orderForm"}}, "predicate": "CONTAINS", "object": {"kind": "UIControl", "natural_key": {"container": "src/main/webapp/orders/edit.jsp#orderForm", "name": "quantity"}}, "since": "M2"},
+  {"subject": {"kind": "UIControl", "natural_key": {"container": "src/main/webapp/index.jsp", "name": "link:reports/sales"}}, "predicate": "NAVIGATES_TO", "object": {"kind": "Endpoint", "natural_key": {"component_root": "", "protocol": "http", "method": "ANY", "route": "/reports/sales"}}, "since": "M2"},
+  {"subject": {"kind": "UIControl", "natural_key": {"container": "src/main/webapp/orders/list.jsp", "name": "link:edit.jsp"}}, "predicate": "NAVIGATES_TO", "object": {"kind": "Program", "natural_key": {"platform": "jsp", "name": "src/main/webapp/orders/edit.jsp"}}, "since": "M2"},
+  {"subject": {"kind": "UIControl", "natural_key": {"container": "src/main/webapp/common/header.jspf", "name": "link:/admin/purge.jsp"}}, "predicate": "NAVIGATES_TO", "object": {"kind": "Program", "natural_key": {"platform": "jsp", "name": "src/main/webapp/admin/purge.jsp"}}, "since": "M2"},
+  {"subject": {"kind": "Program", "natural_key": {"platform": "jsp", "name": "src/main/webapp/logout.jsp"}}, "predicate": "NAVIGATES_TO", "object": {"kind": "Program", "natural_key": {"platform": "jsp", "name": "src/main/webapp/login.jsp"}}, "since": "M2"},
+  {"subject": {"kind": "Role", "natural_key": {"realm": "jsp", "name": "admin"}}, "predicate": "GRANTS", "object": {"kind": "Permission", "natural_key": {"realm": "jsp", "name": "/admin/*"}}, "since": "M2"},
+  {"subject": {"kind": "Role", "natural_key": {"realm": "jsp", "name": "clerk"}}, "predicate": "GRANTS", "object": {"kind": "Permission", "natural_key": {"realm": "jsp", "name": "POST /orders/save"}}, "since": "M2"},
+  {"subject": {"kind": "Endpoint", "natural_key": {"component_root": "", "protocol": "http", "method": "ANY", "route": "/orders/save"}}, "predicate": "REQUIRES_ROLE", "object": {"kind": "Role", "natural_key": {"realm": "jsp", "name": "clerk"}}, "since": "M2"},
+  {"subject": {"kind": "Endpoint", "natural_key": {"component_root": "", "protocol": "http", "method": "ANY", "route": "/admin/purge.do"}}, "predicate": "REQUIRES_ROLE", "object": {"kind": "Role", "natural_key": {"realm": "jsp", "name": "admin"}}, "since": "M2"},
+  {"subject": {"kind": "Program", "natural_key": {"platform": "jsp", "name": "src/main/webapp/reports/sales.jsp"}}, "predicate": "REQUIRES_ROLE", "object": {"kind": "Role", "natural_key": {"realm": "jsp", "name": "manager"}}, "since": "M2"},
+  {"subject": {"kind": "Screen", "natural_key": {"platform": "jsp", "name": "src/main/webapp/orders/edit.jsp"}}, "predicate": "REQUIRES_ROLE", "object": {"kind": "Role", "natural_key": {"realm": "jsp", "name": "admin"}}, "since": "M2"},
+  {"subject": {"kind": "Screen", "natural_key": {"platform": "jsp", "name": "src/main/webapp/admin/purge.jsp"}}, "predicate": "REQUIRES_ROLE", "object": {"kind": "Role", "natural_key": {"realm": "jsp", "name": "admin"}}, "since": "M2"},
+  {"subject": {"kind": "Program", "natural_key": {"platform": "jsp", "name": "src/main/webapp/common/header.jspf"}}, "predicate": "REQUIRES_ROLE", "object": {"kind": "Role", "natural_key": {"realm": "jsp", "name": "admin"}}, "since": "M2"},
+  {"subject": {"kind": "Program", "natural_key": {"platform": "jsp", "name": "src/main/webapp/orders/list.jsp"}}, "predicate": "READS_FROM", "object": {"kind": "Table", "natural_key": {"datastore": "default", "name": "orders"}}, "since": "M2"},
+  {"subject": {"kind": "Program", "natural_key": {"platform": "jsp", "name": "src/main/webapp/orders/list.jsp"}}, "predicate": "REFERENCES_CONFIG", "object": {"kind": "ConfigKey", "natural_key": {"name": "datasource:jdbc/OrderDesk"}}, "since": "M2"}
+ ],
+ "absent_entities": [
+  {"kind": "Screen", "natural_key": {"platform": "jsp", "name": "src/main/webapp/logout.jsp"}, "why": "logout.jsp only redirects: it renders nothing"},
+  {"kind": "Endpoint", "natural_key": {"component_root": "", "protocol": "http", "method": "ANY", "route": "/WEB-INF/tags/money.tag"}, "why": "nothing under WEB-INF is served by URL"},
+  {"kind": "UIControl", "natural_key": {"container": "src/main/webapp/index.jsp", "name": "link:https://help.example.com/desk?topic=start"}, "why": "a link to another host is named by its scheme and host only: its path and query are not kept"},
+  {"kind": "Role", "natural_key": {"realm": "jsp", "name": "*"}, "why": "'*' in an auth-constraint means any authenticated user, not a role"},
+  {"kind": "Endpoint", "natural_key": {"component_root": "", "protocol": "http", "method": "ANY", "route": "/admin/purge"}, "why": "a Struts html:form names an action mapped in struts-config.xml: it is not followed"}
+ ],
+ "exclusions": [],
+ "forbidden_kinds": ["Package", "Component"],
+ "expected_unknowns": [
+  {"since": "M2", "detail": "reports/sales.jsp includes a page named by param.extra: the target is not resolved and a diagnostic says so"},
+  {"since": "M2", "detail": "reports/sales.jsp redirects to a URL built from the context path: the target is not resolved and a diagnostic says so"}
+ ],
+ "expected_conflicts": [],
+ "secret_probes": [
+  {"path": "src/main/webapp/WEB-INF/web.xml", "must_never_appear": "fixture-not-a-real-password", "since": "M2"}
+ ],
+ "commits": [
+  {"dir": "01-customer-screen", "expect": "A customer screen whose form posts to a new servlet mapping", "added_entities": [
+   {"kind": "Program", "natural_key": {"platform": "jsp", "name": "src/main/webapp/customers/edit.jsp"}, "since": "M2"},
+   {"kind": "Screen", "natural_key": {"platform": "jsp", "name": "src/main/webapp/customers/edit.jsp"}, "since": "M2"},
+   {"kind": "Form", "natural_key": {"screen": "src/main/webapp/customers/edit.jsp", "name": "customerForm"}, "since": "M2"},
+   {"kind": "UIControl", "natural_key": {"container": "src/main/webapp/customers/edit.jsp#customerForm", "name": "email"}, "since": "M2"},
+   {"kind": "Endpoint", "natural_key": {"component_root": "", "protocol": "http", "method": "ANY", "route": "/customers/save"}, "since": "M2"}
+  ], "removed_entities": []},
+  {"dir": "02-auditor-role", "expect": "A security constraint for a new role over a new servlet", "added_entities": [
+   {"kind": "Role", "natural_key": {"realm": "jsp", "name": "auditor"}, "since": "M2"},
+   {"kind": "Permission", "natural_key": {"realm": "jsp", "name": "GET /audit/*"}, "since": "M2"},
+   {"kind": "Endpoint", "natural_key": {"component_root": "", "protocol": "http", "method": "ANY", "route": "/audit/log"}, "since": "M2"}
+  ], "removed_entities": []},
+  {"dir": "03-retire-sales-report", "expect": "The sales report page, its servlet mapping and its constraint are removed", "added_entities": [], "removed_entities": [
+   {"kind": "Program", "natural_key": {"platform": "jsp", "name": "src/main/webapp/reports/sales.jsp"}, "since": "M2"},
+   {"kind": "Screen", "natural_key": {"platform": "jsp", "name": "src/main/webapp/reports/sales.jsp"}, "since": "M2"},
+   {"kind": "Endpoint", "natural_key": {"component_root": "", "protocol": "http", "method": "ANY", "route": "/reports/sales"}, "since": "M2"},
+   {"kind": "Permission", "natural_key": {"realm": "jsp", "name": "/reports/sales.jsp"}, "since": "M2"},
+   {"kind": "Table", "natural_key": {"datastore": "default", "name": "sales_daily"}, "since": "M2"}
+  ]}
+ ],
+ "decision_cases": [],
+ "granularity": {"label": null, "why": "JSP pages and a deployment descriptor with no build file or deployment a repository shows", "source": "fixture design"}
+}

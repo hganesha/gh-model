@@ -104,6 +104,11 @@ class CompileSettings(Model):
     decision_budget: int = Field(200, ge=0, le=2000)
     # DM08 behaviour candidates: an LLM writes hypotheses. Experimental, so off by default.
     behavior_candidates: bool = False
+    # Contract 8.2, each with its own switch and off by default. `business_rules`: rules a model
+    # names from behaviour units, and the workflows read from state assignments (a model names
+    # them). `captured_screens`: regions of owner-captured screens under .rkp/inputs/screens/.
+    business_rules: bool = False
+    captured_screens: bool = False
     # The compile profile: coverage domains the publish gate requires, each with a denominator.
     required_coverage: tuple[str, ...] = DEFAULT_REQUIRED_COVERAGE
     # Per-repository egress narrowing, copied from `Settings.repositories` by `effective_compile`.

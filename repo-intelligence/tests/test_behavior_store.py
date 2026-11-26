@@ -273,7 +273,7 @@ def test_the_full_tier_keeps_behaviour_and_hydrates_it_exactly(full_repo):
 def test_the_architecture_tier_leaves_behaviour_out(arch_repo):
     document = bundle.compile_bundle(arch_repo)
     assert document["tier"] == "architecture"
-    assert document["detail_tables"] == ["behaviors"] and document["detail_kinds"] == ["Symbol"]
+    assert document["detail_tables"] == ["behaviors", "transforms"] and document["detail_kinds"] == ["Symbol"]
     assert document["detail_omitted"]["behaviors"] == 4 and document["counts"]["behaviors"] == 0
     rows = _unit_rows(arch_repo, document)
     assert not [r for r in rows if r["table"] == "behavior"]

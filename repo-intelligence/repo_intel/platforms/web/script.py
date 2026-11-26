@@ -239,6 +239,8 @@ class RouteScreen:
     roles: list[tuple[str, int, int]] = field(default_factory=list)
     component: str | None = None
     module: str | None = None  # import specifier of the component, if the file shows it
+    router: str | None = None  # the label of the router this file shows the route under (section 8.5)
+    root: Any = None  # the router call or element the route is declared under, when the file shows it
 
 
 @dataclass
@@ -331,6 +333,12 @@ class Script:
                 decl = n.child_by_field_name("declaration")
                 if decl is not None and decl.type in ("function_declaration", "class_declaration") and any(c.type == "default" for c in n.children):
                     self.exports["default"] = decl
+                if n.child_by_field_name("source") is None:  # export { X as default }: the default is the local X
+                    for clause in (c for c in n.children if c.type == "export_clause"):
+                        for spec in (s for s in clause.named_children if s.type == "export_specifier"):
+                            alias, local = spec.child_by_field_name("alias"), spec.child_by_field_name("name")
+                            if alias is not None and text(alias) == "default" and local is not None and local.type == "identifier":
+                                self.exports["default"] = local
             elif t == "assignment_expression":  # module.exports = {...}
                 left = n.child_by_field_name("left")
                 if left is not None and text(left) == "module.exports":
@@ -659,6 +667,7 @@ class Script:
         out: list[RouteScreen] = []
         done: set[int] = set()
         root_arrays: dict[int, bool] = {}  # array node id -> whether its call says it is the root
+        router_of: dict[int, Any] = {}  # array node id -> the router call it is given to
         for n in self.calls:
             fn = unwrap(n.child_by_field_name("function"))
             name = tail_name(fn)
@@ -671,6 +680,8 @@ class Script:
                     arr = self._route_array(pairs(arg).get("routes"))
                 if arr is not None:
                     root_arrays[arr.id] = name in _ROUTER_ROOT_CALLS
+                    if name in _ROUTER_ROOT_CALLS:
+                        router_of.setdefault(arr.id, n)
                     if name == "forChild":
                         root_arrays[arr.id] = False
                         self.diagnostics.append(f"RouterModule.forChild routes at byte {self.at(arr)[0]}: their prefix is set by the parent module, so their paths are not screens here")
@@ -698,9 +709,82 @@ class Script:
         for aid, arr in sorted(arrays.items(), key=lambda kv: kv[1].start_byte):
             if aid in done:
                 continue
+            before = len(out)
             self._route_objects(arr, Inherited(), framework, root_arrays[aid], out, done)
+            for r in out[before:]:
+                r.root = router_of.get(aid)
         out += self._jsx_routes(framework)
+        self._name_routers(out)
         return out
+
+    # -- routers (docs/solution-ir-contract.md, section 8.5)
+
+    def _name_routers(self, out: list[RouteScreen]) -> None:
+        """Each route this file shows under a router (a createBrowserRouter call, a
+        RouterModule.forRoot, a <BrowserRouter> tree) gets `router`, that router's label
+        (`router_label`; `router<n>` when nothing names it, `<label>~<n>` when two routers
+        of the file share a label). The extractor stores it as the Screen's `router`
+        attribute, `<path>#<label>`, and the compiler adds `app` to the Screen keys of a
+        unit that holds more than one router. A route under no router this file shows
+        (a <Routes> block in a component, an exported routes array) has no `router`."""
+        roots = sorted({r.root.id: r.root for r in out if r.root is not None}.values(), key=lambda n: n.start_byte)
+        labels: dict[int, str] = {}
+        taken: dict[str, int] = {}
+        for i, node in enumerate(roots, start=1):
+            label = self.router_label(node) or f"router{i}"
+            seen = taken[label] = taken.get(label, 0) + 1
+            labels[node.id] = label if seen == 1 else f"{label}~{seen}"
+        for r in out:
+            r.router = labels.get(r.root.id) if r.root is not None else None
+            r.root = None
+        if len(roots) > 1:
+            self.diagnostics.append(f"this file declares {len(roots)} routers ({', '.join(labels[n.id] for n in roots)})")
+
+    def router_label(self, node) -> str | None:
+        """A router's label: the variable it is assigned to (`const adminRouter = createBrowserRouter(...)`);
+        else, for a call, the routes variable it is given (`RouterModule.forRoot(adminRoutes)`,
+        `createRouter({ routes: shopRoutes })`); else the function, class or variable that
+        encloses it (`function AdminApp() { return <BrowserRouter>...`). None when nothing names it."""
+        p = node.parent
+        while p is not None and (p.type in _WRAPPERS or p.type == "await_expression"):
+            p = p.parent
+        if p is not None and p.type == "variable_declarator":
+            name = p.child_by_field_name("name")
+            if name is not None and name.type == "identifier":
+                return text(name)
+        if node.type == "call_expression":
+            args = node.child_by_field_name("arguments")
+            for arg in (args.named_children if args is not None else []):
+                arg = unwrap(arg)
+                if arg is not None and arg.type == "identifier":
+                    return text(arg)
+                if arg is not None and arg.type == "object":
+                    routes = unwrap(pairs(arg).get("routes"))
+                    if routes is not None and routes.type in ("identifier", "shorthand_property_identifier"):
+                        return text(routes)
+        p = node.parent
+        while p is not None:
+            if p.type in ("function_declaration", "generator_function_declaration", "class_declaration", "method_definition"):
+                name = p.child_by_field_name("name")
+                return text(name) if name is not None else None
+            if p.type == "variable_declarator":
+                name = p.child_by_field_name("name")
+                return text(name) if name is not None and name.type == "identifier" else None
+            p = p.parent
+        return None
+
+    def _jsx_root(self, el: Element):
+        """The router a top-level <Route> sits under: a router element around it, or the
+        router call that wraps its createRoutesFromElements(...). None when the file shows none."""
+        for a in el.ancestors():
+            if a.tag in _ROUTER_ELEMENTS and a.tag != "RouterProvider":
+                return getattr(a, "node", None)
+        node = getattr(el, "node", None)
+        while node is not None:
+            if node.type == "call_expression" and tail_name(node.child_by_field_name("function")) in _ROUTER_ROOT_CALLS:
+                return node
+            node = node.parent
+        return None
 
     def _route_array(self, node):
         node = unwrap(node)
@@ -902,7 +986,10 @@ class Script:
         root = any(el.tag in _ROUTER_ELEMENTS for el in self.elements) or any(tail_name(c.child_by_field_name("function")) == "createRoutesFromElements" for c in self.calls)
         top = [el for el in routes if not any(a.tag in ("Route", "ReactRouter.Route") for a in el.ancestors())]
         for el in top:
+            before = len(out)
             self._jsx_route(el, Inherited(), "react-router" if framework == "unknown" else framework, root, out)
+            for r in out[before:]:
+                r.root = self._jsx_root(el)
         return out
 
     def _jsx_route(self, el: Element, parent: Inherited, framework: str, root: bool, out: list[RouteScreen]) -> list[str]:

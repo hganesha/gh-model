@@ -142,6 +142,56 @@ def test_evidence_endpoint_masks_secrets_and_fails_closed(tmp_path, f01, pg_conn
     assert TestClient(create_app(pg_conninfo, "tenant-a", TOKEN)).get(f"/v1/evidence/{ev}", params=params, headers=AUTH).status_code == 404
 
 
+def _flagged(data: bytes) -> list[tuple[str, bytes]]:
+    return [(f["detector"], data[f["start_byte"]:f["end_byte"]]) for f in secrets.scan(data)]
+
+
+def test_servlet_param_values_named_as_secrets_are_found():
+    web_xml = b"""<context-param>
+    <param-name>mail.password</param-name>
+    <param-value>fixture-not-a-real-password</param-value>
+  </context-param>
+  <init-param><param-name>db.PWD</param-name><!-- set at deploy --><param-value> S3cret!pass </param-value></init-param>
+  <init-param><param-name>clientSecret</param-name><param-value>abcdefghijklmnopqrstu</param-value></init-param>
+  <init-param><param-name>apiKey</param-name><param-value>k-123456789</param-value></init-param>
+"""
+    assert _flagged(web_xml) == [("servlet_param_value", b"fixture-not-a-real-password"), ("servlet_param_value", b"S3cret!pass"),
+                                 ("servlet_param_value", b"abcdefghijklmnopqrstu"), ("servlet_param_value", b"k-123456789")]
+    # names that only mention the word, placeholders, class names, paths and short words are not secrets
+    not_secrets = b"""<init-param><param-name>passwordParameter</param-name><param-value>j_password</param-value></init-param>
+  <init-param><param-name>keyGenerator</param-name><param-value>com.acme.KeyGen</param-value></init-param>
+  <init-param><param-name>apiKey</param-name><param-value>${API_KEY}</param-value></init-param>
+  <init-param><param-name>signingKey</param-name><param-value>/WEB-INF/keys/signing.jks</param-value></init-param>
+  <init-param><param-name>keystorePassword</param-name><param-value>changeit</param-value></init-param>
+  <init-param><param-name>encodingKey</param-name><param-value>true</param-value></init-param>
+  <init-param><param-name>encoding</param-name><param-value>fixture-not-a-real-password</param-value></init-param>
+"""
+    assert secrets.scan(not_secrets) == []
+
+
+def test_connection_string_passwords_are_found():
+    config = b"""<connectionStrings>
+    <add name="DeskDb" connectionString="Server=db.internal;Database=Desk;User Id=desk;Password=fixture-not-a-real-password;" />
+    <add name="Odbc" connectionString="Driver={SQL Server};Uid=u;PWD = Tr0ub4dor&amp;3" />
+  </connectionStrings>
+  <appSettings><add key="Reports" value="Data Source=r;Pwd=r3ports-2024;" /></appSettings>
+"""
+    assert _flagged(config) == [("connection_string_password", b"fixture-not-a-real-password"), ("connection_string_password", b"Tr0ub4dor&amp;3"),
+                                ("connection_string_password", b"r3ports-2024")]
+    assert _flagged(b'{"ConnectionStrings": {"Default": "Server=.;User Id=sa;Password=P@ssw0rd123"}}') == [("connection_string_password", b"P@ssw0rd123")]
+    # a short or placeholder password, a password built in code, and a password input are not flagged
+    for text in (b'connectionString="Server=x;Password=desk;"', b'connectionString="Server=x;Password={0};"', b'connectionString="Server=x;Password=%DB_PASSWORD%"',
+                 b'var s = "Password=" + pwd;', b'<input type="password" value="hunter2hunter2" />', b"https://x/login?user=a&password=s3cret-value"):
+        assert secrets.scan(text) == [], text
+
+
+def test_masked_connection_string_keeps_offsets_and_names():
+    config = b'<add name="DeskDb" connectionString="Server=db;Password=fixture-not-a-real-password;" providerName="System.Data.SqlClient" />'
+    clean = secrets.mask_for_extraction(config, secrets.scan(config))
+    assert len(clean) == len(config) and b"fixture-not-a-real-password" not in clean
+    assert b'name="DeskDb"' in clean and b"Password=" in clean and b'providerName="System.Data.SqlClient"' in clean
+
+
 def test_expressions_are_not_secrets_but_env_lines_are():
     code = b"password_reset_token = generate_password_reset_token(email=email)\nsend(token=password_reset_token)\n"
     assert secrets.scan(code) == [], "an identifier on the right-hand side is an expression, not a value"

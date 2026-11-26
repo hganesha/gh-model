@@ -1,0 +1,13 @@
+@model Portal.Models.ContactRequest
+@{
+    ViewBag.Title = "Contact us";
+}
+<h1>Contact us</h1>
+@using (Html.BeginForm("Send", "Home", FormMethod.Post))
+{
+    @Html.TextBoxFor(m => m.Email)
+    @Html.TextAreaFor(m => m.Message)
+    @Html.ValidationMessageFor(m => m.Message)
+    <input type="submit" value="Send" />
+}
+@Html.ActionLink("Back to the portal", "Index", "Home")
