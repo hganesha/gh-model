@@ -1,0 +1,87 @@
+{
+ "fixture": "F32-datastage-job",
+ "description": "IBM DataStage exports: a parallel job in the text .dsx form (file source, Oracle lookup, Transformer with a constraint and a reject output, sort, remove duplicates, insert-and-update target, a reject file whose path is built from a job parameter), a sequence job that runs a routine and two jobs with OK, failure and custom triggers, and an Information Server archive (.isx, a zip written by make_isx.py) holding a second parallel job in the XML export form. Job parameter defaults, the server name and mail addresses are in the files and must never be copied. 'since' names the milestone whose compiler must produce the item.",
+ "entities": [
+  {"kind": "Job", "natural_key": {"framework": "datastage", "name": "LoadCustomers"}, "since": "M2", "attributes": {"platform": "datastage", "platform_kind": "ds:ParallelJob", "job_type": "parallel", "category": "Jobs/Customers", "parameters": ["DW_PASSWORD", "REJECT_DIR"]}},
+  {"kind": "Job", "natural_key": {"framework": "datastage", "name": "LoadOrders"}, "since": "M2", "attributes": {"platform_kind": "ds:ParallelJob", "parameters": ["RUN_DATE"]}},
+  {"kind": "Job", "natural_key": {"framework": "datastage", "name": "NightlyLoad"}, "since": "M2", "attributes": {"platform_kind": "ds:SequenceJob", "job_type": "sequence"}},
+  {"kind": "Task", "natural_key": {"framework": "datastage", "job": "LoadCustomers", "name": "src_customers"}, "since": "M2", "attributes": {"platform_kind": "ds:Stage", "stage_type": "PxSequentialFile", "family": "file"}},
+  {"kind": "Task", "natural_key": {"framework": "datastage", "job": "LoadCustomers", "name": "ref_country"}, "since": "M2", "attributes": {"stage_type": "OracleConnectorPX", "dialect": "oracle"}},
+  {"kind": "Task", "natural_key": {"framework": "datastage", "job": "LoadCustomers", "name": "lkp_country"}, "since": "M2", "attributes": {"stage_type": "PxLookup", "family": "lookup"}},
+  {"kind": "Task", "natural_key": {"framework": "datastage", "job": "LoadCustomers", "name": "xfm_clean"}, "since": "M2", "attributes": {"stage_type": "CTransformerStage", "family": "transformer"}},
+  {"kind": "Task", "natural_key": {"framework": "datastage", "job": "LoadCustomers", "name": "srt_cust"}, "since": "M2", "attributes": {"stage_type": "PxSort"}},
+  {"kind": "Task", "natural_key": {"framework": "datastage", "job": "LoadCustomers", "name": "rmd_cust"}, "since": "M2", "attributes": {"stage_type": "PxRemDup"}},
+  {"kind": "Task", "natural_key": {"framework": "datastage", "job": "LoadCustomers", "name": "tgt_customers"}, "since": "M2", "attributes": {"stage_type": "OracleConnectorPX"}},
+  {"kind": "Task", "natural_key": {"framework": "datastage", "job": "LoadCustomers", "name": "tgt_rejects"}, "since": "M2"},
+  {"kind": "Task", "natural_key": {"framework": "datastage", "job": "LoadOrders", "name": "src_orders"}, "since": "M2"},
+  {"kind": "Task", "natural_key": {"framework": "datastage", "job": "LoadOrders", "name": "agg_totals"}, "since": "M2", "attributes": {"stage_type": "PxAggregator"}},
+  {"kind": "Task", "natural_key": {"framework": "datastage", "job": "LoadOrders", "name": "tgt_totals"}, "since": "M2", "attributes": {"stage_type": "PxDataSet"}},
+  {"kind": "Task", "natural_key": {"framework": "datastage", "job": "NightlyLoad", "name": "chk_landing"}, "since": "M2", "attributes": {"platform_kind": "ds:Activity", "stage_type": "CJSRoutineActivity"}},
+  {"kind": "Task", "natural_key": {"framework": "datastage", "job": "NightlyLoad", "name": "run_customers"}, "since": "M2", "attributes": {"stage_type": "CJSJobActivity"}},
+  {"kind": "Task", "natural_key": {"framework": "datastage", "job": "NightlyLoad", "name": "run_orders"}, "since": "M2"},
+  {"kind": "Task", "natural_key": {"framework": "datastage", "job": "NightlyLoad", "name": "notify_support"}, "since": "M2", "attributes": {"stage_type": "CJSMailActivity"}},
+  {"kind": "Task", "natural_key": {"framework": "datastage", "job": "NightlyLoad", "name": "stop_sequence"}, "since": "M2"},
+  {"kind": "Program", "natural_key": {"platform": "datastage", "name": "CheckLandingFile"}, "since": "M2", "attributes": {"platform_kind": "ds:Routine"}},
+  {"kind": "Dataset", "natural_key": {"name": "/data/landing/customers.txt"}, "since": "M2", "attributes": {"format": "file"}},
+  {"kind": "Dataset", "natural_key": {"name": "/data/work/order_totals.ds"}, "since": "M2"},
+  {"kind": "Table", "natural_key": {"datastore": "default", "name": "dw.country"}, "since": "M2"},
+  {"kind": "Table", "natural_key": {"datastore": "default", "name": "dw.customers"}, "since": "M2"},
+  {"kind": "Table", "natural_key": {"datastore": "default", "name": "sales.orders"}, "since": "M2"},
+  {"kind": "DataSchema", "natural_key": {"kind": "table_definition", "name": "datastage:Database/DWH/DW.CUSTOMERS"}, "since": "M2", "attributes": {"platform_kind": "ds:TableDefinition", "table_name": "DW.CUSTOMERS"}},
+  {"kind": "Field", "natural_key": {"table": "datastage:Database/DWH/DW.CUSTOMERS", "name": "CUST_ID"}, "since": "M2", "attributes": {"type": "integer", "key": true, "nullable": false, "position": 1}},
+  {"kind": "Field", "natural_key": {"table": "datastage:Database/DWH/DW.CUSTOMERS", "name": "SIGNUP_DATE"}, "since": "M2", "attributes": {"type": "date"}}
+ ],
+ "edges": [
+  {"subject": {"kind": "Job", "natural_key": {"framework": "datastage", "name": "LoadCustomers"}}, "predicate": "CONTAINS", "object": {"kind": "Task", "natural_key": {"framework": "datastage", "job": "LoadCustomers", "name": "xfm_clean"}}, "since": "M2"},
+  {"subject": {"kind": "Job", "natural_key": {"framework": "datastage", "name": "LoadOrders"}}, "predicate": "CONTAINS", "object": {"kind": "Task", "natural_key": {"framework": "datastage", "job": "LoadOrders", "name": "agg_totals"}}, "since": "M2"},
+  {"subject": {"kind": "Job", "natural_key": {"framework": "datastage", "name": "NightlyLoad"}}, "predicate": "CONTAINS", "object": {"kind": "Task", "natural_key": {"framework": "datastage", "job": "NightlyLoad", "name": "run_customers"}}, "since": "M2"},
+  {"subject": {"kind": "Task", "natural_key": {"framework": "datastage", "job": "LoadCustomers", "name": "lkp_country"}}, "predicate": "DEPENDS_ON", "object": {"kind": "Task", "natural_key": {"framework": "datastage", "job": "LoadCustomers", "name": "src_customers"}}, "since": "M2"},
+  {"subject": {"kind": "Task", "natural_key": {"framework": "datastage", "job": "LoadCustomers", "name": "lkp_country"}}, "predicate": "DEPENDS_ON", "object": {"kind": "Task", "natural_key": {"framework": "datastage", "job": "LoadCustomers", "name": "ref_country"}}, "since": "M2"},
+  {"subject": {"kind": "Task", "natural_key": {"framework": "datastage", "job": "LoadCustomers", "name": "xfm_clean"}}, "predicate": "DEPENDS_ON", "object": {"kind": "Task", "natural_key": {"framework": "datastage", "job": "LoadCustomers", "name": "lkp_country"}}, "since": "M2"},
+  {"subject": {"kind": "Task", "natural_key": {"framework": "datastage", "job": "LoadCustomers", "name": "tgt_rejects"}}, "predicate": "DEPENDS_ON", "object": {"kind": "Task", "natural_key": {"framework": "datastage", "job": "LoadCustomers", "name": "xfm_clean"}}, "since": "M2"},
+  {"subject": {"kind": "Task", "natural_key": {"framework": "datastage", "job": "LoadCustomers", "name": "tgt_customers"}}, "predicate": "DEPENDS_ON", "object": {"kind": "Task", "natural_key": {"framework": "datastage", "job": "LoadCustomers", "name": "rmd_cust"}}, "since": "M2"},
+  {"subject": {"kind": "Task", "natural_key": {"framework": "datastage", "job": "LoadCustomers", "name": "src_customers"}}, "predicate": "READS_FROM", "object": {"kind": "Dataset", "natural_key": {"name": "/data/landing/customers.txt"}}, "since": "M2"},
+  {"subject": {"kind": "Task", "natural_key": {"framework": "datastage", "job": "LoadCustomers", "name": "ref_country"}}, "predicate": "READS_FROM", "object": {"kind": "Table", "natural_key": {"datastore": "default", "name": "dw.country"}}, "since": "M2"},
+  {"subject": {"kind": "Task", "natural_key": {"framework": "datastage", "job": "LoadCustomers", "name": "tgt_customers"}}, "predicate": "WRITES_TO", "object": {"kind": "Table", "natural_key": {"datastore": "default", "name": "dw.customers"}}, "since": "M2"},
+  {"subject": {"kind": "Task", "natural_key": {"framework": "datastage", "job": "LoadOrders", "name": "src_orders"}}, "predicate": "READS_FROM", "object": {"kind": "Table", "natural_key": {"datastore": "default", "name": "sales.orders"}}, "since": "M2"},
+  {"subject": {"kind": "Task", "natural_key": {"framework": "datastage", "job": "LoadOrders", "name": "tgt_totals"}}, "predicate": "WRITES_TO", "object": {"kind": "Dataset", "natural_key": {"name": "/data/work/order_totals.ds"}}, "since": "M2"},
+  {"subject": {"kind": "Task", "natural_key": {"framework": "datastage", "job": "NightlyLoad", "name": "run_customers"}}, "predicate": "DEPENDS_ON", "object": {"kind": "Task", "natural_key": {"framework": "datastage", "job": "NightlyLoad", "name": "chk_landing"}}, "since": "M2"},
+  {"subject": {"kind": "Task", "natural_key": {"framework": "datastage", "job": "NightlyLoad", "name": "run_orders"}}, "predicate": "DEPENDS_ON", "object": {"kind": "Task", "natural_key": {"framework": "datastage", "job": "NightlyLoad", "name": "run_customers"}}, "since": "M2"},
+  {"subject": {"kind": "Task", "natural_key": {"framework": "datastage", "job": "NightlyLoad", "name": "notify_support"}}, "predicate": "DEPENDS_ON", "object": {"kind": "Task", "natural_key": {"framework": "datastage", "job": "NightlyLoad", "name": "run_customers"}}, "since": "M2"},
+  {"subject": {"kind": "Task", "natural_key": {"framework": "datastage", "job": "NightlyLoad", "name": "run_customers"}}, "predicate": "RUNS", "object": {"kind": "Job", "natural_key": {"framework": "datastage", "name": "LoadCustomers"}}, "since": "M2"},
+  {"subject": {"kind": "Task", "natural_key": {"framework": "datastage", "job": "NightlyLoad", "name": "run_orders"}}, "predicate": "RUNS", "object": {"kind": "Job", "natural_key": {"framework": "datastage", "name": "LoadOrders"}}, "since": "M2"},
+  {"subject": {"kind": "Task", "natural_key": {"framework": "datastage", "job": "NightlyLoad", "name": "chk_landing"}}, "predicate": "RUNS", "object": {"kind": "Program", "natural_key": {"platform": "datastage", "name": "CheckLandingFile"}}, "since": "M2"},
+  {"subject": {"kind": "DataSchema", "natural_key": {"kind": "table_definition", "name": "datastage:Database/DWH/DW.CUSTOMERS"}}, "predicate": "CONTAINS", "object": {"kind": "Field", "natural_key": {"table": "datastage:Database/DWH/DW.CUSTOMERS", "name": "CUST_ID"}}, "since": "M2"}
+ ],
+ "absent_entities": [
+  {"kind": "Dataset", "natural_key": {"name": "{REJECT_DIR}/customers_rejects.txt"}, "why": "the reject file path is built from a job parameter: it stays dynamic and is not made an entity"},
+  {"kind": "Dataset", "natural_key": {"name": "#REJECT_DIR#/customers_rejects.txt"}, "why": "a path with a parameter reference is not taken as written"},
+  {"kind": "ConfigKey", "natural_key": {"name": "DW_PASSWORD"}, "why": "job parameters are recorded by name on the Job, and their defaults are never copied"},
+  {"kind": "Dataset", "natural_key": {"name": "ps_dw.pst"}, "why": "the parameter set file inside the archive is not read"}
+ ],
+ "exclusions": [],
+ "forbidden_kinds": ["Package", "Component"],
+ "expected_unknowns": [
+  {"since": "M2", "detail": "the reject file name in LoadCustomers is built from #REJECT_DIR#: it is reported as a dynamic name with a diagnostic, not resolved"},
+  {"since": "M2", "detail": "the routine CheckLandingFile carries BASIC source: it is counted as an unmapped construct, not lowered"},
+  {"since": "M2", "detail": "the archive holds a parameter set member the pack does not read: it is counted as an unmapped construct"}
+ ],
+ "expected_conflicts": [],
+ "commits": [
+  {"dir": "01-filter-orders", "expect": "LoadOrders gains a filter stage between the source and the aggregator", "added_entities": [
+   {"kind": "Task", "natural_key": {"framework": "datastage", "job": "LoadOrders", "name": "flt_open"}, "since": "M2"}
+  ], "removed_entities": []},
+  {"dir": "02-product-job", "expect": "A new parallel job loads the product dimension from a file into a DB2 table", "added_entities": [
+   {"kind": "Job", "natural_key": {"framework": "datastage", "name": "LoadProducts"}, "since": "M2"},
+   {"kind": "Task", "natural_key": {"framework": "datastage", "job": "LoadProducts", "name": "mod_products"}, "since": "M2"},
+   {"kind": "Dataset", "natural_key": {"name": "/data/landing/products.csv"}, "since": "M2"},
+   {"kind": "Table", "natural_key": {"datastore": "default", "name": "dw.products"}, "since": "M2"}
+  ], "removed_entities": []},
+  {"dir": "03-retire-sequence", "expect": "The nightly sequence export is deleted", "added_entities": [], "removed_entities": [
+   {"kind": "Job", "natural_key": {"framework": "datastage", "name": "NightlyLoad"}, "since": "M2"},
+   {"kind": "Task", "natural_key": {"framework": "datastage", "job": "NightlyLoad", "name": "run_customers"}, "since": "M2"}
+  ]}
+ ],
+ "decision_cases": [],
+ "granularity": {"label": null, "why": "DataStage exports with no build or deployment the repository shows", "source": "fixture design"}
+}
