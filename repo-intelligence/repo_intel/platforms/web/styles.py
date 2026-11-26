@@ -11,6 +11,10 @@ Tokens:
                        selectors that redeclare it are listed)
   SCSS variable        `$brand: #0a6;` at the top level only (inside a block it is local)
   LESS variable        `@brand: #0a6;` at the top level only
+
+A token whose whole value is another token (`var(--brand)`, `$brand`, `ns.$brand`,
+`@brand`) is an alias of it (`alias_of`). Plain declarations inside a rule are kept per
+rule (`StyleScan.rules`) so that text and background token pairs can be found.
 """
 
 from __future__ import annotations

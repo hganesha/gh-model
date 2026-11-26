@@ -8,13 +8,22 @@ come from CSS custom properties, SCSS and LESS variables and exported theme obje
 and screens are STYLED_BY the tokens their files reference. Literal roles in route
 guards become Roles a screen REQUIRES_ROLE.
 
+Version 1.3.0 (section 8.5) adds: RENDERS from the component Symbol a file exports
+(falling back to the package), the `app` key part when one file declares several
+routers, stylesheet imports as Artifact DEPENDS_ON Artifact, token aliases as
+StyleToken ALIAS_OF StyleToken, Fields (`web:ModelField`) from declared form schemas
+(TypeScript interfaces and object types, Zod and Yup object schemas) that controls
+BIND_TO, and accessibility facts on controls, screens and colour tokens
+(`accessibility.py`, with the `accessibility` coverage entry it computes).
+
 The pack adds only this experience layer. Endpoints, symbols, imports and HTTP calls
 stay with `typescript.source`: a form that posts to a literal URL points at the
 Endpoint key that extractor declares, and is kept only when the same unit declares it.
 It supersedes nothing.
 
 The vocabulary is in `vocabulary.py`, the scanners in `markup.py`, `script.py` and
-`styles.py`, and the shared emission rules in `experience.py`.
+`styles.py`, form models in `models.py`, accessibility facts in `accessibility.py`,
+and the shared emission rules in `experience.py`.
 """
 
 from repo_intel.platforms import PlatformPack

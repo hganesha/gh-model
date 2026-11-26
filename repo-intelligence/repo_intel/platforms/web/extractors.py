@@ -4,16 +4,23 @@ and stylesheets (CSS, SCSS, LESS). Each reads one file's bytes and nothing else.
 What a file contributes:
 
 - A router file: one Screen (`web:Route`) per routed path, named by the full path
-  (`/orders/:id`); the unit's package RENDERS it (the component is a qualifier); it
+  (`/orders/:id`), with `app` in the key only when the file declares several routers;
+  its component RENDERS it (a "@symbol:<name>" end the linker resolves to the Symbol
+  this file exports, else the unit's package with qualifier `component`); it
   REQUIRES_ROLE each literal role its guards name; it CONTAINS the View its component
   module is, when that module is a relative import and declares a View.
 - A Next.js app/ or pages/ file, a Nuxt page: a `web:Route` Screen named by the file route.
 - A static HTML document: a `web:Page` Screen named by its path.
 - Any other component module or template with a form or a link to a screen: a
-  `web:View` Screen named by its path.
+  `web:View` Screen named by its path, RENDERED by the symbol it exports by default.
 - Under the file's Screen: Forms and UIControls (CONTAINS), SUBMITS_TO, NAVIGATES_TO,
-  bindings as attributes, STYLED_BY for the tokens it references.
-- Stylesheets, style blocks and theme modules: StyleTokens.
+  bindings as attributes, STYLED_BY for the tokens it references, `accessibility`
+  facts on the screen and on each control, and BINDS_TO from a control to a Field
+  (`web:ModelField`) of a form model this file declares (`models.py`).
+- Stylesheets, style blocks and theme modules: StyleTokens, ALIAS_OF between a token
+  and the token its whole value names, contrast ratios of text and background token
+  pairs, and Artifact DEPENDS_ON Artifact for each stylesheet `@import`, `@use` or
+  `@forward`.
 
 Test files, stories and type declarations are not read.
 
