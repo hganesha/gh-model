@@ -232,7 +232,9 @@ def _print_diff(result: dict[str, Any]) -> None:
         print(f"  warning: {warning}")
     entities, relations, behaviours, coverage, files = result["entities"], result["relations"], result["behaviors"], result["coverage"], result["files"]
     s = entities["summary"]
-    if not any(s[c] for c in ("added", "removed", "changed", "moved")) and not any(relations["summary"].values()) and not behaviours["rows"] and not coverage["entries"] and not any(files.values()) and not result["counts"]:
+    exports = result.get("exports") or {}
+    export_changes = any((exports.get("summary") or {}).values())
+    if not any(s[c] for c in ("added", "removed", "changed", "moved")) and not any(relations["summary"].values()) and not behaviours["rows"] and not coverage["entries"] and not any(files.values()) and not result["counts"] and not export_changes:
         print("No structural differences." + (f" {s['evidence_only']} entities cite edited files without changing." if s["evidence_only"] else ""))
         return
     width = max([len(k) for k in [*entities["by_kind"], *relations["by_predicate"]]] + [10])
@@ -257,6 +259,16 @@ def _print_diff(result: dict[str, Any]) -> None:
             for construct, change in row.get("constructs", {}).items():
                 before, after = change["before"] or {"seen": 0, "modelled": 0}, change["after"] or {"seen": 0, "modelled": 0}
                 print(f"    {construct}: modelled {before['modelled']} of {before['seen']} -> {after['modelled']} of {after['seen']}")
+    if export_changes:
+        e = exports["summary"]
+        print(f"exports: {e['added']} added, {e['removed']} removed")
+        for group, (entity, method, where) in (("operations", ("interface", "method", "route")), ("unresolved_calls", ("caller", "method", "path"))):
+            for row in exports.get(group, []):
+                owner = row.get(entity) or {}
+                who = f"{owner['kind']} {owner['name']}" if "kind" in owner else owner.get("id", "?")
+                print(f"  {'+' if row['change'] == 'added' else '-'} {group.replace('_', ' ')[:-1]} {row.get(method) or '*'} {row.get(where)} ({who})")
+    elif exports and not exports.get("compared", True):
+        print("exports: not compared (one bundle was written before exports.json)")
     for key, change in result["counts"].items():
         print(f"{key.replace('_', ' ')}: {change['before']} -> {change['after']}")
     print(f"files: {len(files['added'])} added, {len(files['removed'])} removed, {len(files['modified'])} modified")

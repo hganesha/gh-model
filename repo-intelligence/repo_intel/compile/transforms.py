@@ -942,7 +942,11 @@ class SqlRecognizer:
         if distinct is not None:
             on = distinct.args.get("on")
             if on is not None:
-                ref = b.add("deduplicate", at, [ref], keys=_cols(on.expressions if hasattr(on, "expressions") else [on]), order=_order(node.args.get("order")), primitive="dedupe_by_key")
+                keys, order = _cols(on.expressions if hasattr(on, "expressions") else [on]), _order(node.args.get("order"))
+                # The kept row is fixed only when ORDER BY goes past the DISTINCT ON keys
+                # (pipeline-builder rejects a dedup with no order); otherwise it is a candidate.
+                exact = any(o["column"] not in keys for o in order)
+                ref = b.add("deduplicate", at, [ref], keys=keys, order=order, primitive="dedupe_by_key" if exact else None, candidates=None if exact else ["dedupe_by_key"])
             else:
                 ref = b.add("deduplicate", at, [ref], candidates=["dedupe_by_hash"])
         order, limit = node.args.get("order"), node.args.get("limit")

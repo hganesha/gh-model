@@ -655,3 +655,18 @@ def test_captured_screens_attach_to_their_screen(tmp_path):
     assert _coverage(store, result, "decisions", "@repo")["detail"]["abstained_by_reason"]["capture_matches_no_screen"] == 1
     assert ".rkp/inputs/screens/list.html" not in screens, "the web pack does not read the saved DOM under .rkp/ as a page"
     assert "typed-by-a-user" not in json.dumps(shards)
+
+
+def test_a_capture_follows_its_screen_when_the_key_gains_an_app():
+    """Captures are matched before compiler step 1b adds `app`; the one Screen that differs
+    only by `app` takes the capture, and a route two apps share takes none."""
+    from repo_intel.compile import compiler
+
+    shard = compiler._Shard("@repo")
+    for name, app in (("/orders", "shop"), ("/home", "shop"), ("/home", "admin")):
+        shard.entity(Entity.make(REPO_ID, EntityKind.SCREEN, {"platform": "web", "name": name, "app": app}, name))
+    records = [{"screen": {"natural_key": {"platform": "web", "name": n}}, "evidence": [], "captured": [{"capture": n}]}
+               for n in ("/orders", "/home")]
+    compiler._captured_screens(shard, REPO_ID, "", records)
+    captured = {(e["natural_key"]["name"], e["natural_key"]["app"]): e["attributes"].get("captured") for e in shard.entities.values()}
+    assert captured == {("/orders", "shop"): [{"capture": "/orders"}], ("/home", "shop"): None, ("/home", "admin"): None}

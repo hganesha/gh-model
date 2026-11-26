@@ -40,7 +40,7 @@ the solution from those bundles and resolves identity across them
   `{"link": {"rule", "from", "to"}, "since"}`, where `from` and `to` are
   `{"member", "kind", "natural_key"}` and `rule` is a rule of
   `repo_intel/solution/identity.py` (`same_table`, `endpoint_path_unique`,
-  `config_key_name_only`, ...). The rule's name says whether it is exact (E3) or a
+  `endpoint_method_path`, `config_key_name_only`, ...). The rule's name says whether it is exact (E3) or a
   candidate (E4).
 - `absent_links`: links that must not be found, each with `why`, for example a shared
   configuration key name that must stay a candidate rather than an exact link.
@@ -48,18 +48,19 @@ the solution from those bundles and resolves identity across them
   as `rkp solution links` reports them (`http_call`, `no_endpoint`).
 - `solution_coverage`: `{"domain", "scope", "numerator", "denominator", "since"}`, each
   matching the resolution's coverage entry exactly (`solution_data_refs`, `solution_http_calls`).
+  A commit entry may carry its own `solution_coverage`, checked against that commit.
 - A commit entry may also list `added_links`, `removed_links`, `added_unmatched` and
   `removed_unmatched`.
 - A problem the loader reports for a member or input fails the check.
 
-`tests/test_fixtures.py` compiles every fixture's tree as one repository, so a
-multi-repository fixture must also hold for that: its `granularity` and its
-`absent_entities` without a member are checked against the whole tree, and items due at
-`M0` are checked there, so multi-repository goldens use `M2` or later. When that test
-hands `golden_check.check` its one-repository compile, `check` compiles the members
-itself. Entities in `entities` must be unique by kind and natural key across members,
-because that test checks for duplicates without members: list the same key in a second
-member through `links` instead.
+`tests/test_fixtures.py` checks a multi-repository golden against the member-by-member
+compile, made once per test session, so `golden_check.check` does not compile the members
+a second time. Entities in `entities` must be unique by kind and natural key within a
+member; the same key may appear in two members (a table in the service and in the
+catalogue). Granularity is decided per member, so the whole-tree granularity test skips
+these fixtures. The whole tree is still compiled as one repository for replay parity,
+forbidden kinds, `absent_entities` without a member and items due at `M0`, so
+multi-repository goldens use `M2` or later for member entries.
 
 ## Planted test data: nothing here is real
 

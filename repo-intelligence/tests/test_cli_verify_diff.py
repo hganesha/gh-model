@@ -363,6 +363,12 @@ def test_diff_compares_the_exports(tmp_path, capsys):
         ("removed", "POST", "/api/customers"), ("added", "DELETE", "/api/invoices")]
     assert all(r["caller"] and r["caller"]["id"].startswith("ent_") for r in exports["unresolved_calls"])
 
+    # The text output lists the same changes.
+    assert cli.main(["diff", "HEAD~2", "HEAD", "--repo", str(repo)]) == 0
+    text = capsys.readouterr().out
+    assert "exports: 2 added, 2 removed" in text
+    assert "+ operation PUT /orders (Interface " in text and "- unresolved call POST /api/customers (" in text
+
     # The same bundle on both sides: nothing added or removed.
     code, result = _diff(capsys, "HEAD", repo, "--repo", repo)
     assert result["exports"] == {"compared": True, "summary": {"added": 0, "removed": 0}, "operations": [], "unresolved_calls": []}

@@ -650,3 +650,14 @@ def test_compiles_are_deterministic(compiled, tmp_path):
     assert again.rkp_hash == manifests[0].rkp_hash
     text = "insert into a select k, sum(v) as s from b group by k"
     assert sql(text) == sql(text)
+
+
+def test_distinct_on_is_exact_only_with_a_tie_break_order():
+    """DISTINCT ON keeps one row per key; which row is fixed only when ORDER BY goes past the keys."""
+    def dedupe(text):
+        [d] = [t for t in sql(text, dialect="postgres") if t["op"] == "deduplicate"]
+        return d.get("primitive"), d.get("candidates")
+
+    assert dedupe("insert into latest select distinct on (id) id, v from orders order by id, updated_at desc") == ("dedupe_by_key", None)
+    assert dedupe("insert into latest select distinct on (id) id, v from orders order by id") == (None, ["dedupe_by_key"])
+    assert dedupe("insert into latest select distinct on (id) id, v from orders") == (None, ["dedupe_by_key"])

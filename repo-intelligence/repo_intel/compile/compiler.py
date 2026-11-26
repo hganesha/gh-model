@@ -500,12 +500,21 @@ def _symbol_relations(shard: _Shard, summaries: list[dict[str, Any]], symbol_end
 
 def _captured_screens(shard: _Shard, repo: str, unit_root: str, records: list[dict[str, Any]]) -> None:
     """9. Captured screens (contract 8.2, decisions.screens): the regions of an owner-captured
-    DOM, set on the Screen it shows as `attributes.captured`, with the capture's evidence (E5)."""
+    DOM, set on the Screen it shows as `attributes.captured`, with the capture's evidence (E5).
+
+    Captures are matched against the extractors' Screen keys, before step 1b adds `app`. When
+    the key no longer names a Screen, the one Screen whose key is the same apart from `app`
+    takes the capture; when several apps share the route, the capture attaches to none."""
     for rec in records:
         key = _bind_unit(rec["screen"]["natural_key"], unit_root)
         sid = entity_id(repo, EntityKind.SCREEN, key)
         if sid not in shard.entities:
-            continue
+            same = [row for row in shard.entities.values()
+                    if row["kind"] == EntityKind.SCREEN and "app" in row["natural_key"]
+                    and {k: v for k, v in row["natural_key"].items() if k != "app"} == key]
+            if len(same) != 1:
+                continue
+            key, sid = same[0]["natural_key"], same[0]["id"]
         evs = [shard.cite(ev) for ev in rec["evidence"]]
         shard.entity(Entity.make(repo, EntityKind.SCREEN, key, shard.entities[sid]["name"], attributes={"captured": rec["captured"]}, evidence_ids=evs))
 
