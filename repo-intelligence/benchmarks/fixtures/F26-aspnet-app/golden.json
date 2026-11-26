@@ -111,6 +111,9 @@
   {"since": "M2", "detail": "Views/Home/Contact.cshtml posts with Html.BeginForm to a controller action: MVC routes are configured in C# and the target is not resolved"}
  ],
  "expected_conflicts": [],
+ "secret_probes": [
+  {"path": "desk/Web.config", "must_never_appear": "fixture-not-a-real-password", "since": "M2"}
+ ],
  "commits": [
   {"dir": "01-returns-page", "expect": "A Razor page with its own route template and a form bound by asp-for", "added_entities": [
    {"kind": "Program", "natural_key": {"platform": "aspnet", "name": "portal/Pages/Returns/Create.cshtml"}, "since": "M2"},
