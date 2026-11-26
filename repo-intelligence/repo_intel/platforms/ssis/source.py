@@ -96,7 +96,7 @@ def read_parameters(out: Out, data: bytes, place: Place, project: str, label: st
 
 class SsisPackageSource:
     id = "ssis.package"
-    version = "1.0.0"
+    version = "1.1.0"
 
     def matches(self, path: str) -> bool:
         return path.lower().endswith(".dtsx")
@@ -133,7 +133,7 @@ class SsisProjectFiles:
 
 class SsisProjectArchive:
     id = "ssis.ispac"
-    version = "1.0.0"
+    version = "1.1.0"
 
     def matches(self, path: str) -> bool:
         return path.lower().endswith(".ispac")

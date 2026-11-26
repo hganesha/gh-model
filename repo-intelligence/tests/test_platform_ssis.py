@@ -227,7 +227,7 @@ def test_execute_sql_is_a_sql_step_with_bound_parameters():
     rels = relations(out)
     for t in ("stage.orders", "stage.orders_high"):
         assert (prog(f"{LOAD}#Load/Truncate staging"), "WRITES_TO", table(t)) in rels
-        assert (task("Load/Truncate staging"), "WRITES_TO", table(t)) in rels
+        assert (task("Load/Truncate staging"), "WRITES_TO", table(t)) not in rels, "the Task RUNS the Program, which carries the lineage"
     assert any("known only by its id" in m for m in messages(out))
 
 
@@ -249,6 +249,11 @@ def test_data_flow_transform_shapes():
     assert agg["measures"] == [{"fn": "sum", "as": "totalamount", "column": "netamount"}, {"fn": "count_distinct", "as": "orders", "column": "orderid"}]
     sort = summary["transforms"][-1]
     assert sort["op"] == "sort" and sort["order"] == [{"column": "totalamount", "desc": True}] and sort["output"] == "dw.sales_by_region"
+    rels = relations(out)
+    assert (prog(f"{LOAD}#Summarise"), "WRITES_TO", table("dw.sales_by_region")) in rels
+    lineage = [(s, p) for (s, p, o) in rels if p in ("READS_FROM", "WRITES_TO")]
+    assert lineage and all(s[0] == "Program" for s, _ in lineage), "a data flow's Task RUNS its Program; only the Program carries lineage"
+    assert any(s == task("Summarise") and p == "REFERENCES_CONFIG" for (s, p, o) in rels), "the Task still names the connections it uses"
 
 
 def test_data_flow_flow_unit_lowers_derived_columns_and_the_split():
