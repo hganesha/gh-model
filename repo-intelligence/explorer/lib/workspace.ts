@@ -131,6 +131,10 @@ export interface SettingsDocument {
     model_functions: Record<string, ModelSelection>;
     decision_budget: number;
     behavior_candidates?: boolean;
+    /** Business rules and workflows named by a model (contract 8.2), from code and from designated documents (9.1). */
+    business_rules?: boolean;
+    /** Regions of owner-captured screens under .rkp/inputs/screens/, read by a model (8.2). */
+    captured_screens?: boolean;
     required_coverage?: string[];
     repository_egress?: Record<string, string[]>;
   };

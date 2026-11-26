@@ -239,7 +239,7 @@ export interface DecisionsResponse {
   decisions: Decision[];
 }
 
-export type ViewId = "map" | "graph" | "timeline" | "quality" | "decisions";
+export type ViewId = "map" | "graph" | "timeline" | "quality" | "decisions" | "documents";
 
 // ---- knowledge/diff ----
 

@@ -17,6 +17,7 @@ import { FileCode2, GitBranch, RefreshCw, Search } from "lucide-react";
 import { StrictMode, useCallback, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { DecisionsView } from "@/components/decisions-view";
+import { DocumentsView } from "@/components/documents-view";
 import { EntityDrawer } from "@/components/entity-drawer";
 import { DEFAULT_GRAPH_PREFS, GraphView, type GraphPrefs } from "@/components/graph-view";
 import { MapView, type MapPrefs } from "@/components/map-view";
@@ -40,12 +41,13 @@ function followTheme(): void {
 followTheme();
 new MutationObserver(followTheme).observe(document.body, { attributes: true, attributeFilter: ["class"] });
 
-type View = "map" | "graph" | "quality" | "decisions";
+type View = "map" | "graph" | "quality" | "decisions" | "documents";
 const VIEWS: { id: View; label: string }[] = [
   { id: "map", label: "Map" },
   { id: "graph", label: "Graph" },
   { id: "quality", label: "Quality" },
   { id: "decisions", label: "Decisions" },
+  { id: "documents", label: "Documents" },
 ];
 
 interface Local {
@@ -161,6 +163,7 @@ function Snapshot({ local }: { local: Local }) {
               )}
               {view === "quality" && <QualityView hash={hash} summary={summary.data} onOpenEntity={openEntity} />}
               {view === "decisions" && <DecisionsView hash={hash} repositoryId={local.repository_id} onOpenEntity={openEntity} />}
+              {view === "documents" && <DocumentsView hash={hash} summary={summary.data} repositoryId={local.repository_id} />}
             </>
           )}
         </main>
