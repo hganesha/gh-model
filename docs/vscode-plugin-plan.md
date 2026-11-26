@@ -211,6 +211,29 @@ Where the application can be run, a headless browser can capture screenshots and
 
 Behaviour and per-screen layout are large, as Symbol detail is, so they belong in the detail tier that stays in the local cache. Rules, screens, roles and the solution manifest are what review and design need, so they belong in the committed architecture tier.
 
+### Progress: wave 1 (2026-11-25)
+
+Steps 1 to 5 are built against [the solution IR contract](solution-ir-contract.md), which every workstream followed and which records the decisions taken while integrating them.
+
+| Built | Where | Coverage on its fixture |
+|---|---|---|
+| Two-layer ontology (Screen, Form, UIControl, StyleToken, Report, BusinessRule, Workflow, CodeList, Role, Permission and their relations), platform packs, per-construct coverage, the `rkp-behavior/1` behavioural IR | `repo_intel/compile/ontology.py`, `repo_intel/platforms/__init__.py`, `repo_intel/compile/behavior.py` | |
+| ColdFusion pack: a tag and script parser, behaviour for every function and page, `Application.cfc` events, screens, forms, controls, roles, scheduled tasks, Administrator exports; replaces `legacy.cfml` | `repo_intel/platforms/cfml/`, fixture F20 | 190 of 192 construct occurrences modelled |
+| SAS pack: macro expansion, DATA-step and PROC lowering, `PROC FORMAT` as CodeList, ODS reports, stored-process prompts as forms, `autoexec` and metadata exports; replaces `legacy.sas` | `repo_intel/platforms/sas/`, fixture F21 | 89 of 100 |
+| Web experience pack: screens from routers in React, Next.js, Vue and Angular; forms, controls, navigation; style tokens from CSS, SCSS, LESS and theme objects; route guards as roles | `repo_intel/platforms/web/`, fixture F22 | 174 of 216 |
+| Behaviour store: units in each shard's detail-tier `behaviors` table, a summary of calls, queries and redirects, `GET snapshots/{h}/behavior/{entity}` | `repo_intel/knowledge/behavior_store.py` | |
+| Solution manifest `.rkp/solution.json`, identity across members (exact rules, candidates at E4), database catalogue dumps | `repo_intel/solution/`, `repo_intel/platforms/catalog/`, `rkp solution` | |
+| `rkp verify`, `rkp diff`, and the Explorer's experience, business and security planes | `repo_intel/knowledge/bundle_check.py`, `explorer/` | |
+
+Wave 2, in order:
+
+1. Business-rule and workflow lifting with models (step 6), gated by owner confirmation.
+2. Commit HTTP call exports into the bundle and record the HTTP method of client calls, so a solution links members loaded from committed bundles exactly.
+3. Multi-repository golden fixtures, so F23 becomes a golden instead of a test fixture.
+4. A per-file reference to a linker-declared Symbol, so a screen is rendered by its component rather than its package; an app or router qualifier in Screen keys.
+5. Stylesheet imports and token aliases as relations; field keys that front-end bindings can reach, for BINDS_TO.
+6. Coverage per Explorer plane, and the remaining sources in the tables above: Enterprise Guide projects, JSP, ASPX and Razor, accessibility, and screenshots as E5 evidence.
+
 ## Risks
 
 - **Intent lifting.** The claim that N source front ends and M target back ends replace N × M paths rests on the intent level. If lifting is weak, the output is a ColdFusion-shaped application in a new language.

@@ -25,8 +25,8 @@ Every entity has one **core kind** from `repo_intel/compile/ontology.py`. Consum
 **UIControl names.** Both packs that read markup name a control by the first of these that applies, after trimming whitespace (an empty value does not count):
 
 1. its `name` attribute, else its `id`, else its binding path (`v-model`, `formControlName`);
-2. `link:<target>` for a link whose target is literal, with the target's query string and fragment removed (a link to another host keeps only `<scheme>://<host>`);
-3. `submit` for a submit button, `button:<text>` for another button, where text is the button's value or all its descendant text, at most 40 characters, nothing computed;
+2. `link:<target>` for a link whose target is literal, with the target's query string and fragment removed (a link to another host keeps only `<scheme>://<host>`, where host includes a port, as in a URL's origin);
+3. `submit` for a button whose `type` is `submit` (a button with no `type` is not counted as one, so a name never depends on the browser default), `button:<text>` for another button, where text is the button's value or all its descendant text, at most 40 characters, nothing computed;
 4. otherwise `<type><n>`: `type` is an input's `type` attribute (`text` when absent), else the tag (`select`, `textarea`, `button`, and `link` for `<a>`); `n` counts, in document order within the container, only the controls that reach this rule, so naming or adding another control renames nothing.
 
 When two controls in one container would get the same name, the second and later ones get `~2`, `~3`, ... in document order.
@@ -85,7 +85,7 @@ Rules:
 4. **Versioning.** Each extractor's version folds in its code digest and its pack's terms and constructs. Raise `version` on any intended output change.
 5. **Evidence.** Every entity, relation, construct and behaviour node has a span into the file. Classes: `E1` declared (a manifest or declarative config), `E2` parsed, `E3` resolved across files, `E4` heuristic. Extractors never emit `E5`; models do that through the decision runner.
 6. **No guessing.** A dynamic construct whose target cannot be read from the source (a variable `cfinclude`, a macro variable resolved at run time) is modelled as dynamic (a non-literal expression) and reported with a diagnostic, never resolved by guesswork.
-7. **URLs and other values.** Structural output and behaviour literals keep a URL's scheme, host, path and query parameter *names*, never query values, fragments or user information: `login.cfm?token=abc123` is written `login.cfm?token=`. Mail addresses, passwords, keys and connection strings are never copied.
+7. **URLs and other values.** Structural output and behaviour literals keep a URL's scheme, host, path and query parameter *names*, never query values, fragments or user information: `login.cfm?token=abc123` is written `login.cfm?token=`. Mail addresses, passwords, keys and connection strings are never copied. SQL text in a `query` node is kept as written; URL literals inside it are not rewritten yet.
 8. **Size.** Extraction is linear in the file's size. Files over the snapshot's parse limit are not parsed; do not work around it.
 
 ### Construct coverage
