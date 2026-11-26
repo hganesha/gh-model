@@ -221,7 +221,8 @@ def read_csv(data: bytes, path: str) -> list[dict[str, Any]]:
     def feed():
         for n, (_, _, t) in enumerate(lines):
             consumed[0] = n + 1
-            yield t
+            # The newline keeps a quoted line break as a break, which _clean turns into a space.
+            yield t + "\n"
 
     heading = [posixpath.splitext(posixpath.basename(path))[0]]
     blocks: list[dict[str, Any]] = []
@@ -458,7 +459,7 @@ def _heading_level(style: str | None, names: dict[str, str], outline: int | None
     for candidate in (names.get(style, ""), style):
         low = candidate.lower().replace(" ", "")
         if low == "title":
-            return 1
+            return 0  # above every heading, so a Heading 1 keeps it in the path
         m = re.fullmatch(r"heading(\d)", low)
         if m:
             return int(m.group(1))
