@@ -1,0 +1,10 @@
+<%@ Master Language="C#" AutoEventWireup="true" CodeBehind="Site.Master.cs" Inherits="Desk.SiteMaster" %>
+<%@ Register TagPrefix="desk" TagName="Header" Src="~/Controls/Header.ascx" %>
+<!DOCTYPE html>
+<html>
+<head runat="server"><title>Order desk</title></head>
+<body>
+  <desk:Header ID="PageHeader" runat="server" />
+  <asp:ContentPlaceHolder ID="MainContent" runat="server" />
+</body>
+</html>

@@ -1,0 +1,76 @@
+{
+ "fixture": "F27-sas-eg-project",
+ "description": "A SAS Enterprise Guide project file (a zip with a UTF-16 project.xml) holding two process flows: a nightly load of two embedded code tasks and a query task joined by links and data shortcuts, and a monthly flow whose one task runs an external .sas file that is not in the repository. One embedded program carries a database password literal. The .egp files are built by make_egp.py with fixed dates. 'since' names the milestone whose compiler must produce the item.",
+ "entities": [
+  {"kind": "Program", "natural_key": {"platform": "sas", "name": "eg/sales_reporting.egp"}, "since": "M2", "attributes": {"kind": "project", "platform_kind": "sas:EgProject", "format": "egp", "eg_version": "8.3"}},
+  {"kind": "Job", "natural_key": {"framework": "sas_eg", "name": "eg/sales_reporting.egp#Nightly load"}, "since": "M2", "attributes": {"platform_kind": "sas:EgProcessFlow", "label": "Nightly load", "project": "eg/sales_reporting.egp"}},
+  {"kind": "Job", "natural_key": {"framework": "sas_eg", "name": "eg/sales_reporting.egp#Monthly report"}, "since": "M2"},
+  {"kind": "Task", "natural_key": {"framework": "sas_eg", "job": "eg/sales_reporting.egp#Nightly load", "name": "Extract orders"}, "since": "M2", "attributes": {"platform_kind": "sas:EgTask", "type": "code"}},
+  {"kind": "Task", "natural_key": {"framework": "sas_eg", "job": "eg/sales_reporting.egp#Nightly load", "name": "Summarise"}, "since": "M2", "attributes": {"type": "code"}},
+  {"kind": "Task", "natural_key": {"framework": "sas_eg", "job": "eg/sales_reporting.egp#Nightly load", "name": "Top customers"}, "since": "M2", "attributes": {"type": "query", "task_id": "SAS.EG.Query"}},
+  {"kind": "Task", "natural_key": {"framework": "sas_eg", "job": "eg/sales_reporting.egp#Monthly report", "name": "Monthly report"}, "since": "M2", "attributes": {"type": "code", "external_file": "monthly.sas"}},
+  {"kind": "Program", "natural_key": {"platform": "sas", "name": "eg/sales_reporting.egp#Nightly load/Extract orders"}, "since": "M2", "attributes": {"platform_kind": "sas:EgCode", "embedded": true, "project": "eg/sales_reporting.egp", "process_flow": "Nightly load", "task": "Extract orders"}},
+  {"kind": "Program", "natural_key": {"platform": "sas", "name": "eg/sales_reporting.egp#Nightly load/Summarise"}, "since": "M2", "attributes": {"platform_kind": "sas:EgCode"}},
+  {"kind": "Dataset", "natural_key": {"name": "raw.orders"}, "since": "M2"},
+  {"kind": "Dataset", "natural_key": {"name": "stage.orders_clean"}, "since": "M2"},
+  {"kind": "Dataset", "natural_key": {"name": "rpt.sales_summary"}, "since": "M2"},
+  {"kind": "ConfigKey", "natural_key": {"name": "libname:raw"}, "since": "M2"},
+  {"kind": "ConfigKey", "natural_key": {"name": "libname:stage"}, "since": "M2"},
+  {"kind": "ConfigKey", "natural_key": {"name": "libname:rpt"}, "since": "M2"},
+  {"kind": "ConfigKey", "natural_key": {"name": "libname:ora"}, "since": "M2", "attributes": {"engine": "oracle"}}
+ ],
+ "edges": [
+  {"subject": {"kind": "Program", "natural_key": {"platform": "sas", "name": "eg/sales_reporting.egp"}}, "predicate": "CONTAINS", "object": {"kind": "Job", "natural_key": {"framework": "sas_eg", "name": "eg/sales_reporting.egp#Nightly load"}}, "since": "M2"},
+  {"subject": {"kind": "Program", "natural_key": {"platform": "sas", "name": "eg/sales_reporting.egp"}}, "predicate": "CONTAINS", "object": {"kind": "Job", "natural_key": {"framework": "sas_eg", "name": "eg/sales_reporting.egp#Monthly report"}}, "since": "M2"},
+  {"subject": {"kind": "Job", "natural_key": {"framework": "sas_eg", "name": "eg/sales_reporting.egp#Nightly load"}}, "predicate": "CONTAINS", "object": {"kind": "Task", "natural_key": {"framework": "sas_eg", "job": "eg/sales_reporting.egp#Nightly load", "name": "Extract orders"}}, "since": "M2"},
+  {"subject": {"kind": "Job", "natural_key": {"framework": "sas_eg", "name": "eg/sales_reporting.egp#Monthly report"}}, "predicate": "CONTAINS", "object": {"kind": "Task", "natural_key": {"framework": "sas_eg", "job": "eg/sales_reporting.egp#Monthly report", "name": "Monthly report"}}, "since": "M2"},
+  {"subject": {"kind": "Task", "natural_key": {"framework": "sas_eg", "job": "eg/sales_reporting.egp#Nightly load", "name": "Summarise"}}, "predicate": "DEPENDS_ON", "object": {"kind": "Task", "natural_key": {"framework": "sas_eg", "job": "eg/sales_reporting.egp#Nightly load", "name": "Extract orders"}}, "since": "M2"},
+  {"subject": {"kind": "Task", "natural_key": {"framework": "sas_eg", "job": "eg/sales_reporting.egp#Nightly load", "name": "Top customers"}}, "predicate": "DEPENDS_ON", "object": {"kind": "Task", "natural_key": {"framework": "sas_eg", "job": "eg/sales_reporting.egp#Nightly load", "name": "Summarise"}}, "since": "M2"},
+  {"subject": {"kind": "Task", "natural_key": {"framework": "sas_eg", "job": "eg/sales_reporting.egp#Nightly load", "name": "Extract orders"}}, "predicate": "RUNS", "object": {"kind": "Program", "natural_key": {"platform": "sas", "name": "eg/sales_reporting.egp#Nightly load/Extract orders"}}, "since": "M2"},
+  {"subject": {"kind": "Task", "natural_key": {"framework": "sas_eg", "job": "eg/sales_reporting.egp#Nightly load", "name": "Summarise"}}, "predicate": "RUNS", "object": {"kind": "Program", "natural_key": {"platform": "sas", "name": "eg/sales_reporting.egp#Nightly load/Summarise"}}, "since": "M2"},
+  {"subject": {"kind": "Task", "natural_key": {"framework": "sas_eg", "job": "eg/sales_reporting.egp#Nightly load", "name": "Extract orders"}}, "predicate": "READS_FROM", "object": {"kind": "Dataset", "natural_key": {"name": "raw.orders"}}, "since": "M2"},
+  {"subject": {"kind": "Task", "natural_key": {"framework": "sas_eg", "job": "eg/sales_reporting.egp#Nightly load", "name": "Extract orders"}}, "predicate": "WRITES_TO", "object": {"kind": "Dataset", "natural_key": {"name": "stage.orders_clean"}}, "since": "M2"},
+  {"subject": {"kind": "Task", "natural_key": {"framework": "sas_eg", "job": "eg/sales_reporting.egp#Nightly load", "name": "Summarise"}}, "predicate": "READS_FROM", "object": {"kind": "Dataset", "natural_key": {"name": "stage.orders_clean"}}, "since": "M2"},
+  {"subject": {"kind": "Task", "natural_key": {"framework": "sas_eg", "job": "eg/sales_reporting.egp#Nightly load", "name": "Summarise"}}, "predicate": "WRITES_TO", "object": {"kind": "Dataset", "natural_key": {"name": "rpt.sales_summary"}}, "since": "M2"},
+  {"subject": {"kind": "Task", "natural_key": {"framework": "sas_eg", "job": "eg/sales_reporting.egp#Nightly load", "name": "Top customers"}}, "predicate": "READS_FROM", "object": {"kind": "Dataset", "natural_key": {"name": "rpt.sales_summary"}}, "since": "M2"},
+  {"subject": {"kind": "Program", "natural_key": {"platform": "sas", "name": "eg/sales_reporting.egp#Nightly load/Extract orders"}}, "predicate": "READS_FROM", "object": {"kind": "Dataset", "natural_key": {"name": "raw.orders"}}, "since": "M2"},
+  {"subject": {"kind": "Program", "natural_key": {"platform": "sas", "name": "eg/sales_reporting.egp#Nightly load/Summarise"}}, "predicate": "WRITES_TO", "object": {"kind": "Dataset", "natural_key": {"name": "rpt.sales_summary"}}, "since": "M2"},
+  {"subject": {"kind": "Program", "natural_key": {"platform": "sas", "name": "eg/sales_reporting.egp#Nightly load/Extract orders"}}, "predicate": "REFERENCES_CONFIG", "object": {"kind": "ConfigKey", "natural_key": {"name": "libname:ora"}}, "since": "M2"},
+  {"subject": {"kind": "Dataset", "natural_key": {"name": "stage.orders_clean"}}, "predicate": "DERIVED_FROM", "object": {"kind": "Dataset", "natural_key": {"name": "raw.orders"}}, "since": "M2"},
+  {"subject": {"kind": "Dataset", "natural_key": {"name": "rpt.sales_summary"}}, "predicate": "DERIVED_FROM", "object": {"kind": "Dataset", "natural_key": {"name": "stage.orders_clean"}}, "since": "M2"}
+ ],
+ "absent_entities": [
+  {"kind": "Program", "natural_key": {"platform": "sas", "name": "eg/sales_reporting.egp#Monthly report/Monthly report"}, "why": "the monthly task runs an external .sas file that is not in the project: no code is lowered for it"},
+  {"kind": "Program", "natural_key": {"platform": "sas", "name": "monthly.sas"}, "why": "the external file is named by its base name only and is not in the repository: it is not invented"},
+  {"kind": "Dataset", "natural_key": {"name": "work.top10"}, "why": "WORK datasets are temporary and are not modelled"},
+  {"kind": "Program", "natural_key": {"platform": "sas", "name": "eg/sales_reporting.egp#Nightly load/Top customers"}, "why": "a query task has no embedded SAS code to lower"}
+ ],
+ "exclusions": [],
+ "forbidden_kinds": ["Package", "Component"],
+ "expected_unknowns": [
+  {"since": "M2", "detail": "the Monthly report task runs an external file outside the project: its code is not read and a diagnostic says so"},
+  {"since": "M2", "detail": "the project holds an element type the reader does not know (a gauge): it is listed as an unmapped construct, not guessed"}
+ ],
+ "expected_conflicts": [],
+ "secret_probes": [
+  {"path": "eg/sales_reporting.egp", "must_never_appear": "fixture-not-a-real-password-0001", "since": "M2"}
+ ],
+ "commits": [
+  {"dir": "01-region-split", "expect": "A new code task in the nightly flow writes a regional summary", "added_entities": [
+   {"kind": "Task", "natural_key": {"framework": "sas_eg", "job": "eg/sales_reporting.egp#Nightly load", "name": "Region split"}, "since": "M2"},
+   {"kind": "Program", "natural_key": {"platform": "sas", "name": "eg/sales_reporting.egp#Nightly load/Region split"}, "since": "M2"},
+   {"kind": "Dataset", "natural_key": {"name": "rpt.sales_by_region"}, "since": "M2"}
+  ], "removed_entities": []},
+  {"dir": "02-weekly-flow", "expect": "A new process flow with one code task", "added_entities": [
+   {"kind": "Job", "natural_key": {"framework": "sas_eg", "name": "eg/sales_reporting.egp#Weekly check"}, "since": "M2"},
+   {"kind": "Task", "natural_key": {"framework": "sas_eg", "job": "eg/sales_reporting.egp#Weekly check", "name": "Weekly totals"}, "since": "M2"},
+   {"kind": "Program", "natural_key": {"platform": "sas", "name": "eg/sales_reporting.egp#Weekly check/Weekly totals"}, "since": "M2"}
+  ], "removed_entities": []},
+  {"dir": "03-retire-monthly", "expect": "The monthly flow is removed from the project", "added_entities": [], "removed_entities": [
+   {"kind": "Job", "natural_key": {"framework": "sas_eg", "name": "eg/sales_reporting.egp#Monthly report"}, "since": "M2"},
+   {"kind": "Task", "natural_key": {"framework": "sas_eg", "job": "eg/sales_reporting.egp#Monthly report", "name": "Monthly report"}, "since": "M2"}
+  ]}
+ ],
+ "decision_cases": [],
+ "granularity": {"label": null, "why": "an Enterprise Guide project with no build or deployment a repository shows", "source": "fixture design"}
+}

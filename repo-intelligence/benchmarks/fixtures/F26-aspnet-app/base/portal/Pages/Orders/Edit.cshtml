@@ -1,0 +1,27 @@
+@page "{id:int}"
+@model Portal.Pages.Orders.EditModel
+@inject Portal.Services.IOrderService Orders
+@attribute [Authorize(Roles = "Customer,Support")]
+@{
+    ViewData["Title"] = "Change order";
+}
+<h1>Change order</h1>
+<partial name="_OrderSummary" model="Model.Order" />
+<form method="post" asp-page-handler="Save" id="changeForm">
+    <input asp-for="Order.Id" type="hidden" />
+    <input asp-for="Order.Quantity" />
+    <span asp-validation-for="Order.Quantity"></span>
+    <select asp-for="Order.DeliverySlot" asp-items="Model.Slots"></select>
+    <textarea asp-for="Order.Notes"></textarea>
+    <button type="submit">Save changes</button>
+</form>
+@if (User.IsInRole("Support"))
+{
+    <form method="post" asp-page-handler="Cancel" id="cancelForm">
+        <button type="submit">Cancel order</button>
+    </form>
+}
+<a asp-page="./Index">Back to my orders</a>
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

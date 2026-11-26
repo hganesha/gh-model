@@ -1,0 +1,24 @@
+@page "/tracking/{OrderNumber}"
+@inject NavigationManager Navigation
+@attribute [Authorize(Roles = "Customer")]
+
+<h1>Track your order</h1>
+<EditForm Model="@query" OnValidSubmit="Lookup">
+    <InputText @bind-Value="query.Postcode" />
+    <button type="submit">Track</button>
+</EditForm>
+<NavLink href="orders">My orders</NavLink>
+<AuthorizeView Roles="Support">
+    <p>Carrier reference: @carrierReference</p>
+</AuthorizeView>
+
+@code {
+    [Parameter] public string OrderNumber { get; set; } = "";
+    private TrackingQuery query = new();
+    private string carrierReference = "";
+
+    private void Lookup()
+    {
+        Navigation.NavigateTo("/tracking/done");
+    }
+}
