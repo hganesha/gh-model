@@ -1,0 +1,79 @@
+{
+ "fixture": "F33-talend-job",
+ "description": "A Talend project folder as Talend Studio writes it: three job items (.item design and .properties next to each). LoadCustomers reads a delimited file, looks the country up in an Oracle query inside a tMap with a filtered output and a reject output, sorts, de-duplicates and upserts a warehouse table, and writes rejects to a file named from a context variable. LoadOrders aggregates a PostgreSQL query. Nightly runs both with tRunJob under Run if triggers and mails support on failure. A routine's .properties declares it. Context values, connection hosts, users, encrypted passwords and mail addresses are in the files and must never be copied. 'since' names the milestone whose compiler must produce the item.",
+ "entities": [
+  {"kind": "Job", "natural_key": {"framework": "talend", "name": "LoadCustomers"}, "since": "M2", "attributes": {"platform": "talend", "platform_kind": "tal:StandardJob", "version": "0.1", "folder": "Customers", "purpose": "Load the customer dimension", "status": "PROD", "context_parameters": ["dw_password", "reject_dir"]}},
+  {"kind": "Job", "natural_key": {"framework": "talend", "name": "LoadOrders"}, "since": "M2", "attributes": {"platform_kind": "tal:StandardJob", "folder": "Orders", "context_parameters": ["run_date"]}},
+  {"kind": "Job", "natural_key": {"framework": "talend", "name": "Nightly"}, "since": "M2", "attributes": {"platform_kind": "tal:StandardJob", "purpose": "Run the nightly loads: customers, then orders"}},
+  {"kind": "Task", "natural_key": {"framework": "talend", "job": "LoadCustomers", "name": "tFileInputDelimited_1"}, "since": "M2", "attributes": {"platform_kind": "tal:Component", "component": "tFileInputDelimited", "family": "file_input", "label": "read_customers"}},
+  {"kind": "Task", "natural_key": {"framework": "talend", "job": "LoadCustomers", "name": "tOracleInput_1"}, "since": "M2", "attributes": {"component": "tOracleInput", "database": "oracle"}},
+  {"kind": "Task", "natural_key": {"framework": "talend", "job": "LoadCustomers", "name": "tMap_1"}, "since": "M2", "attributes": {"component": "tMap", "family": "map", "label": "clean_customers"}},
+  {"kind": "Task", "natural_key": {"framework": "talend", "job": "LoadCustomers", "name": "tSortRow_1"}, "since": "M2"},
+  {"kind": "Task", "natural_key": {"framework": "talend", "job": "LoadCustomers", "name": "tUniqRow_1"}, "since": "M2"},
+  {"kind": "Task", "natural_key": {"framework": "talend", "job": "LoadCustomers", "name": "tOracleOutput_1"}, "since": "M2", "attributes": {"component": "tOracleOutput", "family": "db_output"}},
+  {"kind": "Task", "natural_key": {"framework": "talend", "job": "LoadCustomers", "name": "tFileOutputDelimited_1"}, "since": "M2"},
+  {"kind": "Task", "natural_key": {"framework": "talend", "job": "LoadCustomers", "name": "tOracleConnection_1"}, "since": "M2", "attributes": {"family": "db_control"}},
+  {"kind": "Task", "natural_key": {"framework": "talend", "job": "LoadOrders", "name": "tPostgresqlInput_1"}, "since": "M2", "attributes": {"database": "postgresql"}},
+  {"kind": "Task", "natural_key": {"framework": "talend", "job": "LoadOrders", "name": "tAggregateRow_1"}, "since": "M2"},
+  {"kind": "Task", "natural_key": {"framework": "talend", "job": "LoadOrders", "name": "tFileOutputDelimited_1"}, "since": "M2"},
+  {"kind": "Task", "natural_key": {"framework": "talend", "job": "Nightly", "name": "tRunJob_1"}, "since": "M2", "attributes": {"component": "tRunJob", "family": "run_job", "label": "customers"}},
+  {"kind": "Task", "natural_key": {"framework": "talend", "job": "Nightly", "name": "tRunJob_2"}, "since": "M2"},
+  {"kind": "Task", "natural_key": {"framework": "talend", "job": "Nightly", "name": "tSendMail_1"}, "since": "M2"},
+  {"kind": "Task", "natural_key": {"framework": "talend", "job": "Nightly", "name": "tDie_1"}, "since": "M2"},
+  {"kind": "Program", "natural_key": {"platform": "talend", "name": "DateUtils"}, "since": "M2", "attributes": {"platform_kind": "tal:Routine", "version": "0.1"}},
+  {"kind": "Dataset", "natural_key": {"name": "/data/landing/customers.csv"}, "since": "M2", "attributes": {"format": "file"}},
+  {"kind": "Dataset", "natural_key": {"name": "/data/work/order_totals.csv"}, "since": "M2"},
+  {"kind": "Table", "natural_key": {"datastore": "default", "name": "dw.country"}, "since": "M2"},
+  {"kind": "Table", "natural_key": {"datastore": "default", "name": "dw.customers"}, "since": "M2"},
+  {"kind": "Table", "natural_key": {"datastore": "default", "name": "sales.orders"}, "since": "M2"}
+ ],
+ "edges": [
+  {"subject": {"kind": "Job", "natural_key": {"framework": "talend", "name": "LoadCustomers"}}, "predicate": "CONTAINS", "object": {"kind": "Task", "natural_key": {"framework": "talend", "job": "LoadCustomers", "name": "tMap_1"}}, "since": "M2"},
+  {"subject": {"kind": "Job", "natural_key": {"framework": "talend", "name": "Nightly"}}, "predicate": "CONTAINS", "object": {"kind": "Task", "natural_key": {"framework": "talend", "job": "Nightly", "name": "tRunJob_1"}}, "since": "M2"},
+  {"subject": {"kind": "Task", "natural_key": {"framework": "talend", "job": "LoadCustomers", "name": "tMap_1"}}, "predicate": "DEPENDS_ON", "object": {"kind": "Task", "natural_key": {"framework": "talend", "job": "LoadCustomers", "name": "tFileInputDelimited_1"}}, "since": "M2"},
+  {"subject": {"kind": "Task", "natural_key": {"framework": "talend", "job": "LoadCustomers", "name": "tMap_1"}}, "predicate": "DEPENDS_ON", "object": {"kind": "Task", "natural_key": {"framework": "talend", "job": "LoadCustomers", "name": "tOracleInput_1"}}, "since": "M2"},
+  {"subject": {"kind": "Task", "natural_key": {"framework": "talend", "job": "LoadCustomers", "name": "tSortRow_1"}}, "predicate": "DEPENDS_ON", "object": {"kind": "Task", "natural_key": {"framework": "talend", "job": "LoadCustomers", "name": "tMap_1"}}, "since": "M2"},
+  {"subject": {"kind": "Task", "natural_key": {"framework": "talend", "job": "LoadCustomers", "name": "tFileOutputDelimited_1"}}, "predicate": "DEPENDS_ON", "object": {"kind": "Task", "natural_key": {"framework": "talend", "job": "LoadCustomers", "name": "tMap_1"}}, "since": "M2"},
+  {"subject": {"kind": "Task", "natural_key": {"framework": "talend", "job": "LoadCustomers", "name": "tOracleOutput_1"}}, "predicate": "DEPENDS_ON", "object": {"kind": "Task", "natural_key": {"framework": "talend", "job": "LoadCustomers", "name": "tUniqRow_1"}}, "since": "M2"},
+  {"subject": {"kind": "Task", "natural_key": {"framework": "talend", "job": "LoadCustomers", "name": "tOracleConnection_1"}}, "predicate": "DEPENDS_ON", "object": {"kind": "Task", "natural_key": {"framework": "talend", "job": "LoadCustomers", "name": "tPrejob_1"}}, "since": "M2"},
+  {"subject": {"kind": "Task", "natural_key": {"framework": "talend", "job": "LoadCustomers", "name": "tFileInputDelimited_1"}}, "predicate": "READS_FROM", "object": {"kind": "Dataset", "natural_key": {"name": "/data/landing/customers.csv"}}, "since": "M2"},
+  {"subject": {"kind": "Task", "natural_key": {"framework": "talend", "job": "LoadCustomers", "name": "tOracleInput_1"}}, "predicate": "READS_FROM", "object": {"kind": "Table", "natural_key": {"datastore": "default", "name": "dw.country"}}, "since": "M2"},
+  {"subject": {"kind": "Task", "natural_key": {"framework": "talend", "job": "LoadCustomers", "name": "tOracleOutput_1"}}, "predicate": "WRITES_TO", "object": {"kind": "Table", "natural_key": {"datastore": "default", "name": "dw.customers"}}, "since": "M2"},
+  {"subject": {"kind": "Task", "natural_key": {"framework": "talend", "job": "LoadOrders", "name": "tPostgresqlInput_1"}}, "predicate": "READS_FROM", "object": {"kind": "Table", "natural_key": {"datastore": "default", "name": "sales.orders"}}, "since": "M2"},
+  {"subject": {"kind": "Task", "natural_key": {"framework": "talend", "job": "LoadOrders", "name": "tFileOutputDelimited_1"}}, "predicate": "WRITES_TO", "object": {"kind": "Dataset", "natural_key": {"name": "/data/work/order_totals.csv"}}, "since": "M2"},
+  {"subject": {"kind": "Task", "natural_key": {"framework": "talend", "job": "Nightly", "name": "tRunJob_2"}}, "predicate": "DEPENDS_ON", "object": {"kind": "Task", "natural_key": {"framework": "talend", "job": "Nightly", "name": "tRunJob_1"}}, "since": "M2"},
+  {"subject": {"kind": "Task", "natural_key": {"framework": "talend", "job": "Nightly", "name": "tSendMail_1"}}, "predicate": "DEPENDS_ON", "object": {"kind": "Task", "natural_key": {"framework": "talend", "job": "Nightly", "name": "tRunJob_1"}}, "since": "M2"},
+  {"subject": {"kind": "Task", "natural_key": {"framework": "talend", "job": "Nightly", "name": "tRunJob_1"}}, "predicate": "RUNS", "object": {"kind": "Job", "natural_key": {"framework": "talend", "name": "LoadCustomers"}}, "since": "M2"},
+  {"subject": {"kind": "Task", "natural_key": {"framework": "talend", "job": "Nightly", "name": "tRunJob_2"}}, "predicate": "RUNS", "object": {"kind": "Job", "natural_key": {"framework": "talend", "name": "LoadOrders"}}, "since": "M2"}
+ ],
+ "absent_entities": [
+  {"kind": "Dataset", "natural_key": {"name": "{context.reject_dir}/customers_rejects.csv"}, "why": "the reject file path is built from a context variable: it stays dynamic and is not made an entity"},
+  {"kind": "Dataset", "natural_key": {"name": "/data/rejects/fixture-not-a-real-dir/customers_rejects.csv"}, "why": "a context variable's value is never substituted"},
+  {"kind": "Table", "natural_key": {"datastore": "default", "name": "country"}, "why": "the Oracle input's query names DW.COUNTRY; its TABLE setting is not a second table"},
+  {"kind": "Program", "natural_key": {"platform": "talend", "name": "DateUtils_0.1"}, "why": "a routine is named by its label, not its file name"}
+ ],
+ "exclusions": [],
+ "forbidden_kinds": ["Package", "Component"],
+ "expected_unknowns": [
+  {"since": "M2", "detail": "the reject file of LoadCustomers is named by context.reject_dir: it is reported as a dynamic name with a diagnostic, not resolved"},
+  {"since": "M2", "detail": "the routine DateUtils carries Java source: its .item is counted as an unmapped construct, not lowered"}
+ ],
+ "expected_conflicts": [],
+ "commits": [
+  {"dir": "01-filter-orders", "expect": "LoadOrders gains a tFilterRow between the query and the aggregate", "added_entities": [
+   {"kind": "Task", "natural_key": {"framework": "talend", "job": "LoadOrders", "name": "tFilterRow_1"}, "since": "M2"}
+  ], "removed_entities": []},
+  {"dir": "02-product-job", "expect": "A new job loads the product dimension from a file into an SQL Server table through a tJavaRow", "added_entities": [
+   {"kind": "Job", "natural_key": {"framework": "talend", "name": "LoadProducts"}, "since": "M2"},
+   {"kind": "Task", "natural_key": {"framework": "talend", "job": "LoadProducts", "name": "tJavaRow_1"}, "since": "M2"},
+   {"kind": "Dataset", "natural_key": {"name": "/data/landing/products.csv"}, "since": "M2"},
+   {"kind": "Table", "natural_key": {"datastore": "default", "name": "dbo.products"}, "since": "M2"}
+  ], "removed_entities": []},
+  {"dir": "03-retire-nightly", "expect": "The nightly job's item and properties are deleted", "added_entities": [], "removed_entities": [
+   {"kind": "Job", "natural_key": {"framework": "talend", "name": "Nightly"}, "since": "M2"},
+   {"kind": "Task", "natural_key": {"framework": "talend", "job": "Nightly", "name": "tRunJob_1"}, "since": "M2"}
+  ]}
+ ],
+ "decision_cases": [],
+ "granularity": {"label": null, "why": "a Talend project folder with no build or deployment the repository shows", "source": "fixture design"}
+}
