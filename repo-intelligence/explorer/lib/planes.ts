@@ -83,7 +83,7 @@ export const PLANES: PlaneMeta[] = [
     blurb: "Business rules, workflows and reference code lists, and the requirements and features they serve.",
     kinds: ["BusinessRule", "Workflow", "CodeList", "Requirement", "Feature"],
     // Rules and workflows confirmed by an owner are counted in the plane view (lib/plane-coverage.ts).
-    coverage: ["transform_shapes"],
+    coverage: ["transform_shapes", "documents"],
   },
   {
     id: "security",
@@ -131,6 +131,7 @@ export const DOMAIN_LABEL: Record<string, string> = {
   behavior: "Behaviour units stored",
   transform_shapes: "Data-moving units with a transform shape",
   accessibility: "Controls with an accessible name",
+  documents: "Designated document blocks used by a feature",
 };
 
 export function domainLabel(domain: string): string {

@@ -1,6 +1,6 @@
 {
   "fixture": "F22-web-frontend",
-  "description": "Three web front ends in one package: a React storefront (React Router, react-hook-form, Formik, a theme object, CSS custom properties and SCSS), a Vue checkout (Vue Router, v-model, vee-validate style controls) and an Angular back office (Routes with guards and role data, reactive and template-driven forms), plus static HTML pages and a small Express mock API. The web pack must find the screens, forms, controls, design tokens and guarded roles, link forms to the mock API's endpoints, and leave redirects and dynamic targets alone. Wave 2 adds: views RENDERED by the exported component Symbol of their file, form controls BOUND_TO the fields of a declared form model, stylesheets that DEPEND_ON the stylesheets they import, style tokens that are ALIAS_OF other tokens, accessibility facts on controls and screens, and an `app` key part on the Screens of the Vue and Angular routers: the package holds two routers that share the label `routes`, so each `app` is its router file's directory (`checkout/src/router`, `backoffice/src/app`). The React routes in src/App.tsx sit under no router that file shows (main.tsx mounts it), so their keys stay {platform, name}.",
+  "description": "Three web front ends in one package: a React storefront (React Router, react-hook-form, Formik, a theme object, CSS custom properties and SCSS), a Vue checkout (Vue Router, v-model, vee-validate style controls) and an Angular back office (Routes with guards and role data, reactive and template-driven forms), plus static HTML pages and a small Express mock API. The web pack must find the screens, forms, controls, design tokens and guarded roles, link forms to the mock API's endpoints, and leave redirects and dynamic targets alone. Wave 2 adds: views RENDERED by the exported component Symbol of their file, form controls BOUND_TO the fields of a declared form model, stylesheets that DEPEND_ON the stylesheets they import, style tokens that are ALIAS_OF other tokens, accessibility facts on controls and screens, and an `app` key part on the Screens of the Vue and Angular routers: the package holds two routers that share the label `routes`, so each `app` is its router file's directory (`checkout/src/router`, `backoffice/src/app`). The React routes in src/App.tsx sit under no router that file shows (main.tsx mounts it), so their keys stay {platform, name}. Wave W7 adds a commit with two Next.js apps that each have a sign-in form at /signin: the Forms and UIControls on a Screen that gains `app` gain it too.",
   "entities": [
     {
       "kind": "Screen",
@@ -2064,6 +2064,85 @@
           "since": "M2"
         }
       ]
+    },
+    {
+      "dir": "04-partner-portals",
+      "expect": "two Next.js apps, each with a sign-in page at /signin: the Screens gain `app` (each app's directory), and so do the Forms and controls on them (contract section 9.2), so the two apps' forms and controls stay apart",
+      "added_entities": [
+        {
+          "kind": "Screen",
+          "natural_key": {
+            "platform": "web",
+            "name": "/signin",
+            "app": "portals/partners"
+          },
+          "since": "M2"
+        },
+        {
+          "kind": "Form",
+          "natural_key": {
+            "screen": "/signin",
+            "name": "form1",
+            "app": "portals/partners"
+          },
+          "since": "M2"
+        },
+        {
+          "kind": "UIControl",
+          "natural_key": {
+            "container": "/signin#form1",
+            "name": "email",
+            "app": "portals/partners"
+          },
+          "since": "M2"
+        },
+        {
+          "kind": "UIControl",
+          "natural_key": {
+            "container": "/signin#form1",
+            "name": "submit",
+            "app": "portals/partners"
+          },
+          "since": "M2"
+        },
+        {
+          "kind": "Screen",
+          "natural_key": {
+            "platform": "web",
+            "name": "/signin",
+            "app": "portals/staff"
+          },
+          "since": "M2"
+        },
+        {
+          "kind": "Form",
+          "natural_key": {
+            "screen": "/signin",
+            "name": "form1",
+            "app": "portals/staff"
+          },
+          "since": "M2"
+        },
+        {
+          "kind": "UIControl",
+          "natural_key": {
+            "container": "/signin#form1",
+            "name": "email",
+            "app": "portals/staff"
+          },
+          "since": "M2"
+        },
+        {
+          "kind": "UIControl",
+          "natural_key": {
+            "container": "/signin#form1",
+            "name": "submit",
+            "app": "portals/staff"
+          },
+          "since": "M2"
+        }
+      ],
+      "removed_entities": []
     }
   ],
   "granularity": {

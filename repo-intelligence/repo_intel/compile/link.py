@@ -723,13 +723,19 @@ class _Linker:
         cannot see that, so the extractor emits an `app_relative_route` observation
         ({subject, path, root_marker, method, attributes, requires_roles, unkeyed_reason})
         and this pass looks for the marker file among the unit's files, deepest directory
-        first. The Endpoint is keyed by "/" + the page path relative to that directory,
-        with the page and the marker file as evidence (E3). With no marker above the page
-        in this unit, no Endpoint is keyed: the root is not guessed, and an Unknown on the
-        page records why.
+        first. A marker file whose extractor says it is no application root (an `app_root`
+        observation with `root: false`, a Web.config that only sets authorization) is passed
+        over; one with no such observation (not parsed) still counts. The Endpoint is keyed
+        by "/" + the page path relative to that directory, with `component_root` that
+        directory from the repository root, so two applications in one unit with a page at
+        the same route stay two Endpoints (contract section 9.2); the page and the marker
+        file are its evidence (E3). With no marker above the page in this unit, no Endpoint
+        is keyed: the root is not guessed, and an Unknown on the page records why.
         """
         markers: dict[str, dict[str, str]] = {}  # lower-cased basename -> {directory: marker path}
         for path in sorted(self.files):
+            if any(o["payload"].get("root") is False for o in _of(self.files[path], "app_root")):
+                continue
             markers.setdefault(posixpath.basename(path).lower(), {}).setdefault(posixpath.dirname(path), path)
         for path in sorted(self.files):
             for o in _of(self.files[path], "app_relative_route"):
@@ -743,7 +749,7 @@ class _Linker:
                 route = "/" + (p["path"][len(root) + 1:] if root else p["path"])
                 marker = self.files[found[root]]
                 evidence = [o["evidence"], *(m["evidence"] for m in _of(marker, "file"))]
-                endpoint = ref(EntityKind.ENDPOINT, {"component_root": "@unit", "protocol": "http", "method": p["method"], "route": route}, f"{p['method']} {route}")
+                endpoint = ref(EntityKind.ENDPOINT, {"component_root": root, "protocol": "http", "method": p["method"], "route": route}, f"{p['method']} {route}")
                 self.emit("entity", path, {**endpoint, "attributes": {**p["attributes"], "app_root": root or "."}}, evidence, EvidenceClass.E3)
                 self.relate(path, p["subject"], Predicate.EXPOSES, endpoint, evidence, {"app_root": root or "."})
                 for role in p.get("requires_roles", []):

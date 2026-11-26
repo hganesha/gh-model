@@ -8,8 +8,9 @@ For each file:
   Artifact the Program DEPENDS_ON, and its base class (`Inherits`) an attribute; the
   master page, layout and registered user controls are Programs it CALLS;
 - an `.aspx` page EXPOSES an Endpoint at its path below the application root, the
-  nearest ancestor directory holding a `Web.config`, so `desk/Orders/Edit.aspx` under
-  `desk/Web.config` answers `/Orders/Edit.aspx`, the path `<location>` rules name.
+  nearest ancestor directory holding a `Web.config` that is more than a folder's
+  authorization rules, so `desk/Orders/Edit.aspx` under `desk/Web.config` answers
+  `/Orders/Edit.aspx`, the path `<location>` rules name, with `component_root` `desk`.
   Finding that file needs the unit's other files: this extractor records the page in
   an `app_relative_route` observation and the unit linker keys the Endpoint. With no
   `Web.config` above the page in the unit, no Endpoint is keyed and an Unknown says so;
@@ -798,7 +799,8 @@ class _Reader:
 
     def app_relative_route(self, prog: dict[str, Any]) -> None:
         """A Web Forms page is served at its path below the application root, the nearest
-        ancestor directory holding a Web.config. That is another file, so this file only
+        ancestor directory holding a Web.config that marks one (`config.application_root`).
+        That is another file, so this file only
         records what the unit linker needs (an `app_relative_route` observation): the page
         path, the file that marks the root, the Endpoint's attributes and the roles an
         `[Authorize]` in the page requires. The linker keys the Endpoint and relates it

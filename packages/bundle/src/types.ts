@@ -177,10 +177,126 @@ export interface BundleManifest {
   detail_kinds?: string[];
   /** Architecture tier: the tables left out whole (behaviour). */
   detail_tables?: string[];
-  /** Architecture tier: how many rows of each table were left out. */
-  detail_omitted?: Record<"entities" | "assertions" | "evidence" | "unknowns", number> & { behaviors?: number };
+  /** Architecture tier: how many rows of each table were left out, and of each entity attribute left out. */
+  detail_omitted?: DetailOmitted;
   /** The exports file; absent in bundles written before it existed. */
   exports?: ExportsEntry;
+}
+
+/**
+ * `detail_omitted` of an architecture-tier manifest (repo_intel.knowledge.bundle): rows left
+ * out per table, and entities an attribute was dropped from, keyed "<kind>.<attribute>"
+ * (bundle.DETAIL_ATTRIBUTES). An attribute key is written only when its count is not zero,
+ * and a newer engine may add keys, so read unknown ones as counts too.
+ */
+export type DetailOmitted = Record<"entities" | "assertions" | "evidence" | "unknowns", number> & {
+  behaviors?: number;
+  transforms?: number;
+  /** Screens whose `captured` regions (owner-captured DOM, contract 8.2) were left out. */
+  "Screen.captured"?: number;
+} & Record<string, number | undefined>;
+
+// ------------------------------------------------------------------ entity attributes
+// The attributes readers use of the kinds the solution IR's rules, requirements and
+// documents produce (contract 8.2 and 9.1). Entity.attributes stays a plain record: cast
+// it to one of these after checking `kind`. Every field is optional where an older engine,
+// or another source of the same kind (a SAS format is a CodeList too), may leave it out.
+
+/** Whether an owner confirmed a model-written rule or workflow; rejected ones are never in a bundle. */
+export type LiftedStatus = "hypothesis" | "confirmed";
+
+/** A deterministic candidate a lifted rule cites: a condition or computed value in code, or a block of a designated document. */
+export interface RuleCandidate {
+  id: string;
+  kind: string;
+  path: string;
+  /** Byte span [start, end) in the file at `path`. */
+  at: [number, number];
+}
+
+/** `BusinessRule` (key `{scope, name}`): a validation, calculation or decision lifted from code or a designated document. */
+export interface BusinessRuleAttributes {
+  /** At most 280 characters, written by a model: untrusted text. */
+  statement: string;
+  rule_kind: "validation" | "calculation" | "decision";
+  status: LiftedStatus;
+  candidates?: RuleCandidate[];
+  trust_label?: string;
+  decision_ref?: string;
+  /** Present when `status` is "confirmed": the owner's decision. */
+  confirmation_ref?: string;
+}
+
+/** `Requirement` (key `{scope: <document path>, name}`): an identified or modal statement of a designated document. */
+export interface RequirementAttributes {
+  /** At most 280 characters, as the document words it. */
+  statement: string;
+  /** The modal verb that made it a requirement ("shall", "must", "must not", "should"), when one did. */
+  modality?: string;
+  /** The identifier it carries ("REQ-12"), as written, when it has one. */
+  identifier?: string;
+  /** The headings it sits under, outermost first (one string when the engine joined them). */
+  section?: string[] | string;
+}
+
+/** `DataSchema` (key `{name: "<document path>#<entity>"}`): a table of fields a designated document declares. */
+export interface DataSchemaAttributes {
+  /** The entity id of the one Table in the unit with the schema's entity name, when exactly one exists. */
+  documents_table?: string;
+}
+
+/** One code of a `CodeList` read from a designated document. */
+export interface CodeValue {
+  code: string;
+  label: string;
+}
+
+/** `CodeList` (key `{platform, name}`): reference data from a document table, a SAS format, an enum. */
+export interface CodeListAttributes {
+  /** Codes and meanings read from a designated document (platform "document"), at most 500. */
+  values?: CodeValue[];
+  /** A SAS format's kind ("value", "invalue", "picture") and how many entries it has. */
+  format_type?: string;
+  entry_count?: number;
+  library?: string;
+}
+
+/** A control a captured region holds, named by the UIControl naming rule (contract section 1). */
+export interface CapturedControl {
+  container: string;
+  name: string;
+  kind: string;
+}
+
+/** One landmark region of a captured DOM, labelled by a model or by its landmark. */
+export interface CapturedRegion {
+  id: string;
+  landmark: string;
+  tag: string;
+  heading?: string;
+  aria_label?: string;
+  form?: string;
+  at: [number, number];
+  controls: CapturedControl[];
+  label: string | null;
+  label_status: string;
+  decision_ref: string;
+}
+
+/** One owner capture of a Screen (`.rkp/inputs/screens/capture.json`). Detail: only a full bundle keeps it. */
+export interface CapturedScreen {
+  capture: string;
+  entry: number;
+  dom: string;
+  image?: string;
+  evidence_class: "E5";
+  evidence_ids: string[];
+  regions: CapturedRegion[];
+}
+
+/** The Screen attribute the architecture tier drops (counted as "Screen.captured" in `detail_omitted`). */
+export interface ScreenCapturedAttributes {
+  captured?: CapturedScreen[];
 }
 
 /** One row of a unit file: a contract row tagged with its table. */

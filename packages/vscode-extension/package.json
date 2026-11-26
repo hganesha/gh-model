@@ -61,6 +61,10 @@
         "command": "rkp.showOutput",
         "title": "Show Engine Output",
         "category": "Repository Intelligence"
+      },
+      {
+        "command": "rkp.useDocument",
+        "title": "RKP: Use this document for..."
       }
     ],
     "menus": {
@@ -68,6 +72,24 @@
         {
           "command": "rkp.openEvidence",
           "when": "false"
+        },
+        {
+          "command": "rkp.useDocument",
+          "when": "isWorkspaceTrusted && resourceScheme == file && resourceExtname =~ /^\\.(md|txt|csv|html?|docx|xlsx|pdf)$/i"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "rkp.useDocument",
+          "when": "isWorkspaceTrusted && !explorerResourceIsFolder && resourceScheme == file && resourceExtname =~ /^\\.(md|txt|csv|html?|docx|xlsx|pdf)$/i",
+          "group": "7_rkp@1"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "rkp.useDocument",
+          "when": "isWorkspaceTrusted && resourceScheme == file && resourceExtname =~ /^\\.(md|txt|csv|html?|docx|xlsx|pdf)$/i",
+          "group": "7_rkp@1"
         }
       ],
       "view/title": [

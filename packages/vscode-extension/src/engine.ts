@@ -125,6 +125,35 @@ export function runEngine(
   });
 }
 
+/**
+ * Run one engine command that takes no `--json` (`rkp documents set`, which only writes a
+ * file): success is exit status 0. Its output goes to the output channel; a failure is an
+ * EngineError with the last line it wrote to stderr. Never runs through a shell.
+ */
+export function runEngineCommand(args: string[], cwd: string, output: vscode.OutputChannel): Promise<void> {
+  const engine = engineCommand();
+  output.appendLine(`$ ${engine.describe} ${args.join(" ")}`);
+  return new Promise((resolve, reject) => {
+    const child = spawn(engine.command, [...engine.prefix, ...args], { cwd, env: process.env, stdio: ["ignore", "pipe", "pipe"] });
+    let errors = "";
+    child.stdout.setEncoding("utf8");
+    child.stdout.on("data", (chunk: string) => output.append(chunk));
+    child.stderr.setEncoding("utf8");
+    child.stderr.on("data", (chunk: string) => {
+      errors += chunk;
+      output.append(chunk);
+    });
+    child.on("error", (error: NodeJS.ErrnoException) =>
+      reject(error.code === "ENOENT" ? new EngineError(`The engine was not found (${engine.describe}). ${NOT_FOUND}`, true) : new EngineError(`The engine could not start: ${error.message}`)),
+    );
+    child.on("close", (code, signal) => {
+      if (code === 0) return resolve();
+      const last = errors.trim().split("\n").pop()?.trim();
+      reject(new EngineError(last || `The engine stopped (${signal ?? `exit ${code}`}). See the Repository Intelligence output.`));
+    });
+  });
+}
+
 export interface ServeReply {
   status: number;
   body: unknown;

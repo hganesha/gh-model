@@ -37,6 +37,12 @@ export function CompileProfile({ view, draft, update }: { view: SettingsResponse
     </>}
     <label className="work-check"><input type="checkbox" checked={Boolean(draft.compile.behavior_candidates)} onChange={(e) => patch({ behavior_candidates: e.target.checked })} />
       Behaviour candidates (experimental): an LLM proposes features a component implements. They are stored as untrusted hypotheses and need an allowed LLM provider.</label>
+    <label className="work-check"><input type="checkbox" checked={Boolean(draft.compile.business_rules)} onChange={(e) => patch({ business_rules: e.target.checked })} />
+      <span>Business rules: a model names the rules that behaviour units enforce and that documents designated for rules state, and the workflows that state assignments follow. Rules stay hypotheses until an owner confirms them.
+        <small>Sends repository content (source excerpts and designated document text) to the configured model provider.</small></span></label>
+    <label className="work-check"><input type="checkbox" checked={Boolean(draft.compile.captured_screens)} onChange={(e) => patch({ captured_screens: e.target.checked })} />
+      <span>Captured screens: a model reads the regions and controls of screens captured under <code>.rkp/inputs/screens/</code> and matches them to the screens in the code.
+        <small>Sends repository content (the captured screens) to the configured model provider.</small></span></label>
   </section>;
 }
 

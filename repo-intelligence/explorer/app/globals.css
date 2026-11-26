@@ -500,6 +500,10 @@ button.neighbour:hover { background: var(--green-soft); }
 .data-table thead th { font-family: var(--font-mono); font-size: 10px; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); border-bottom: 1px solid var(--line-strong); }
 .data-table .num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .data-table tbody tr { border-bottom: 1px solid var(--line); }
+.documents-table .check { width: 92px; text-align: center; }
+.documents-table .document-path { font-weight: 400; overflow-wrap: anywhere; }
+.documents-table .document-path .badge { margin-left: 6px; }
+.documents-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; font-size: 12.5px; }
 .domain-row th { font-weight: 650; font-size: 13px; }
 .domain-row th code { display: block; font-weight: 400; color: var(--muted); font-size: 10.5px; }
 .domain-row td { font-weight: 600; }
