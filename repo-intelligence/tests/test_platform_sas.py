@@ -369,13 +369,46 @@ def test_unresolved_macro_text_in_proc_sql_is_an_inline_parameter():
     assert behavior.validate_unit(sql) == []
 
 
-def test_pass_through_sql_is_counted_unmodelled_with_a_diagnostic():
+def store_rows(out) -> list[dict]:
+    """Behaviour units as the behaviour store holds them (each row has an id)."""
+    return [{**u, "id": f"b{i}"} for i, u in enumerate(units(out))]
+
+
+def test_each_procedure_is_stated_once_for_the_behaviour_store():
+    # Open code and a macro refer to a procedure's own unit, as they do for DATA steps and
+    # PROC SQL, rather than repeating its call: sort and print are each called once, not twice.
+    from repo_intel.knowledge.behavior_store import summarize
+
     text = (
-        "proc sql;\n  connect to oracle (user=scott password=tiger path=db);\n"
-        "  create table rpt.local as select * from connection to oracle (select id from dbo.remote_tbl);\n"
-        "  execute (delete from dbo.stale) by oracle;\n  disconnect from oracle;\nquit;\n"
+        "proc sort data=rpt.a out=rpt.b; by id; run;\nproc print data=rpt.b; run;\n"
+        "%macro stats; proc means data=rpt.b; var x; run; %mend stats;\n%stats\n"
+        "proc format; value $r 'N' = 'North'; run;\nproc fcmp; function f(x); return(x); endsub; run;\n"
     )
-    out = run(text)
+    us = units(run(text))
+    calls = {(c["callee"], c["kind"]): c["count"] for c in summarize(store_rows(run(text)))["calls"]}
+    assert calls == {("sort", "procedure"): 1, ("print", "procedure"): 1, ("means", "procedure"): 1, ("format", "procedure"): 1, ("stats", "macro"): 1}
+    assert summarize(store_rows(run(text)))["platform_constructs"]["sas:proc_fcmp"] == 1  # the unmapped procedure's own unit only
+    steps = [u for u in us if u["kind"] == "proc_step"]
+    for container in (u for u in us if u["kind"] in ("open_code", "macro")):
+        for node in walk_nodes(container["body"]):
+            assert node.get("op") != "call" or node["call"]["callee"].get("kind") != "procedure", node
+            assert node.get("construct") not in ("sas:proc_fcmp",), node
+    refs = [n for u in us if u["kind"] in ("open_code", "macro") for n in u["body"] if n.get("construct") == "sas:proc_step"]
+    assert sorted(n["detail"]["proc"] for n in refs) == ["fcmp", "format", "means", "print", "sort"]
+    assert sorted(tuple(n["detail"]["unit"]) for n in refs) == sorted(tuple(n["at"]) for u in steps for n in u["body"])
+    for u in us:
+        assert behavior.validate_unit(u) == [], behavior.validate_unit(u)
+
+
+PASS_THROUGH = (
+    "proc sql;\n  connect to oracle (user=scott password=tiger path=db);\n"
+    "  create table rpt.local as select * from connection to oracle (select id from dbo.remote_tbl);\n"
+    "  execute (delete from dbo.stale) by oracle;\n  disconnect from oracle;\nquit;\n"
+)
+
+
+def test_pass_through_sql_is_counted_unmodelled_with_a_diagnostic():
+    out = run(PASS_THROUGH)
     counts = constructs(out)
     assert counts.get(("sas:sql_passthrough", False)) == 4  # CONNECT, CONNECTION TO, EXECUTE BY, DISCONNECT
     assert not counts.get(("sas:sql_passthrough", True))
@@ -386,6 +419,33 @@ def test_pass_through_sql_is_counted_unmodelled_with_a_diagnostic():
     assert (prog("sas/prog.sas"), "WRITES_TO", ds("rpt.local")) in rels
     assert not any("remote_tbl" in r[2][1] or "stale" in r[2][1] for r in rels)
     assert "tiger" not in json.dumps([o.payload for o in out.observations])
+
+
+def test_pass_through_query_is_remote_and_execute_by_is_not_a_query():
+    from repo_intel.knowledge.behavior_store import summarize
+
+    out = run(PASS_THROUGH)
+    (sql,) = [u for u in units(out) if u["kind"] == "sql_step"]
+    assert behavior.validate_unit(sql) == []
+    (query,) = [n for n in sql["body"] if n["op"] == "query"]
+    assert query["remote"] == "oracle" and "connection to oracle" in query["sql"]
+    platform = [n for n in sql["body"] if n["op"] == "platform"]
+    assert [n["construct"] for n in platform] == ["sas:sql_passthrough"] * 3
+    assert [n["detail"] for n in platform] == [
+        {"action": "connect", "engine": "oracle"}, {"action": "execute", "engine": "oracle"}, {"action": "disconnect", "engine": "oracle"},
+    ]
+    assert not any("stale" in json.dumps(n) for n in sql["body"])  # EXECUTE's text is the database's
+    summary = summarize(store_rows(out))
+    assert summary["tables"] == {"reads": [], "writes": ["rpt.local"], "dynamic": []}  # no dbo.remote_tbl, no dbo.stale
+    assert [q["statement"] for q in summary["queries"]] == ["create"]
+    # CONNECT options hold credentials: never copied anywhere.
+    blob = json.dumps([o.payload for o in out.observations]) + json.dumps([d.message for d in out.diagnostics])
+    for secret in ("scott", "tiger", "path=db"):
+        assert secret not in blob, secret
+    # Two pass-through queries in one statement: both are masked from lineage.
+    text = "proc sql; create table rpt.j as select * from connection to a (select * from x.t1) join connection to a (select * from x.t2) on 1=1; quit;\n"
+    rels = relations(run(text))
+    assert not any("x.t" in r[2][1] for r in rels)
 
 
 def test_constructs_from_declarative_inputs_are_e1():
@@ -532,6 +592,63 @@ proc http url="https://user:pass@example.com/api" out=resp; run;
     assert found[ck("libname:db")]["engine"] == "oracle"
     assert found[ck("filename:pw")]["device"] == "pipe"
     assert ds("hidden.t") not in found and ds("rpt.r") in found
+
+
+def test_urls_keep_parameter_names_never_values():
+    # Contract rule 7: scheme, host, path and parameter names; never query values,
+    # fragments, user information or mail addresses.
+    text = '''filename api url "https://user:pw@api.example.com/v1/data?key=SECRET1&fmt=json#frag";
+filename boss email "boss@corp.example";
+%let endpoint = https://svc.example.com/run?token=SECRET2&mode=full;
+proc http url="https://svc.example.com/x?apikey=SECRET3" method="GET" out=api; headers "Authorization"="Bearer SECRET4"; run;
+data rpt.links; set rpt.a;
+  link = "https://h.example.com/r?id=SECRET5#top"; to = 'boss@corp.example'; u = cats("&endpoint", "x");
+  stp = '/SASStoredProcess/do?_program=SECRET6&region=N';
+  infile "https://h.example.com/f.csv?sig=SECRET7";
+run;
+proc sql; create table rpt.q as select * from rpt.a where url = 'https://h.example.com/p?q=SECRET8&r=x' and k = &dyn; quit;
+title "See https://h.example.com/t?k=SECRET9";
+proc print data=rpt.q; run;
+ods html file="https://h.example.com/out/report.html?sig=SECRETA";
+proc print data=rpt.q; run;
+ods html close;
+'''
+    out = run(text)
+    for u in units(out):
+        assert behavior.validate_unit(u) == [], behavior.validate_unit(u)
+    blob = json.dumps([o.payload for o in out.observations]) + json.dumps([d.message for d in out.diagnostics])
+    import re
+
+    assert not re.findall(r"SECRET\w|user:pw|boss@corp|#frag|#top|Bearer", blob)
+    lits = {n.get("value") for u in units(out) for n in walk_nodes(u["body"]) if n.get("e") == "lit"}
+    assert "https://h.example.com/r?id=" in lits
+    assert "/SASStoredProcess/do?_program=&region=" in lits
+    assert "<email>" in lits
+    (let,) = [n for u in units(out) if u["kind"] == "open_code" for n in u["body"] if n.get("op") == "assign"]
+    # `&mode` is a macro reference SAS resolves inside the value of `token`: dropped with it.
+    assert let["value"] == {"e": "lit", "value": "https://svc.example.com/run?token=", "type": "string"}
+    (query,) = [n for u in units(out) if u["kind"] == "sql_step" for n in u["body"]]
+    # Scrubbed before parameters are made: `&r` in the URL is a parameter name (its value
+    # dropped) and becomes the inline parameter :r, kept in the text as in `params`.
+    assert query["sql"].endswith("where url = 'https://h.example.com/p?q=:r=' and k = :dyn")
+    assert [p["name"] for p in query["params"]] == ["r", "dyn"]
+    found = entities(out)
+    assert found[ck("filename:api")]["device"] == "url"
+    assert found[rep("sas/prog.sas#print1")]["title"] == "See https://h.example.com/t?k="
+    assert rep("report.html?sig=") in found
+
+
+def test_entities_and_relations_from_declarative_inputs_are_e1():
+    path = ".rkp/inputs/sas/autoexec.sas"
+    out = run((FIXTURES / "F21-sas-analytics" / "base" / path).read_text(), path=path)
+    declared = [o for o in out.observations if o.kind in ("entity", "relation")]
+    kinds = {o.payload.get("attributes", {}).get("platform_kind") for o in declared if o.kind == "entity"}
+    assert {"sas:Library", "sas:Fileref", "sas:Program"} <= kinds
+    assert any(o.kind == "relation" and o.payload["predicate"] == "REFERENCES_CONFIG" for o in declared)
+    assert {o.evidence_class for o in declared} == {EvidenceClass.E1}
+    # The same statements in a program of the application are parsed, not declared.
+    out = run("libname mart base '/x';\nfilename rptdir '/y';\ndata mart.a; set mart.b; run;\n")
+    assert {o.evidence_class for o in out.observations if o.kind in ("entity", "relation")} == {EvidenceClass.E2}
 
 
 def test_includes_and_environment_variables():

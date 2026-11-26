@@ -28,6 +28,7 @@ import re
 from dataclasses import dataclass
 
 from repo_intel.platforms.sas.catalog import QUOTING, is_automatic
+from repo_intel.platforms.sas.values import scrub
 from repo_intel.platforms.sas.parse import Program
 
 SENTINEL = "\x00"  # an unresolved reference inside expanded text: \x00name\x00
@@ -272,7 +273,11 @@ def unresolved_names(expanded: str) -> list[str]:
 
 
 def template(expanded: str) -> dict:
-    """A behaviour expression: a literal when nothing is dynamic, else a template."""
+    """A behaviour expression: a literal when nothing is dynamic, else a template.
+
+    URLs and mail addresses are scrubbed first (`values.scrub`), while unresolved
+    references are still sentinels, so a query value made of a reference is dropped too."""
+    expanded = scrub(expanded)
     parts: list = []
     pos = 0
     for m in _UNRESOLVED.finditer(expanded):

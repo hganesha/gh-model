@@ -17,9 +17,9 @@ procedure (proc_step), macro definition (macro) and for a program's open code
   node for procedures no core kind carries).
 - A macro or open code is the list of its macro statements (`%LET` as `assign`,
   `%IF` as `if`, `%DO` as `loop`, `%INCLUDE` as `include`, macro calls as `call`) and
-  one node per step: a `platform` node for a DATA step or PROC SQL step (which have
-  units of their own), the `call` of the procedure for the others (the invocation, in
-  order; its own unit repeats it).
+  one node per step: a `platform` node referring to the step's own unit (`sas:data_step`,
+  `sas:proc_sql`, or `sas:proc_step` for any other procedure, with the unit's span and the
+  procedure's name), so each step's statements and calls are stated once, in its unit.
 
 The lowering reports what it finds (datasets read and written, formats applied,
 constructs seen) back to the analysis through `self.a`, so a statement is read once.
