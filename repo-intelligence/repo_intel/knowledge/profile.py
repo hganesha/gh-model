@@ -92,6 +92,8 @@ def language_name(language: str) -> str:
     """The display name of a file language: a source language, a document format, or the
     language id itself when neither names it."""
     return LANGUAGES.get(language) or DOCUMENT_LANGUAGES.get(language) or language
+
+
 # The language an ecosystem implies when the primary-language decision abstained.
 ECOSYSTEM_LANGUAGE = {"maven": "Java or Kotlin", "nuget": ".NET", "rubygems": "Ruby", "swiftpm": "Swift", "go": "Go", "dbt": "SQL (dbt)"}
 
@@ -191,7 +193,7 @@ def _stack(component: Mapping[str, Any]) -> str:
     """`Python · FastAPI`: a component's language and the frameworks it was classified by."""
     a = _attrs(component)
     language = a.get("primary_language")
-    parts = [LANGUAGES.get(language, language)] if language and language != "unknown" else []
+    parts = [language_name(language)] if language and language != "unknown" else []
     if not parts and a.get("ecosystem") in ECOSYSTEM_LANGUAGE:
         parts = [ECOSYSTEM_LANGUAGE[a["ecosystem"]]]
     seen = set(parts)
@@ -253,7 +255,7 @@ def _languages(coverage: Iterable[Mapping[str, Any]]) -> tuple[list[dict[str, An
                 files[language] += counted["files"] if isinstance(counted, Mapping) else int(counted)
     total = sum(files.values())
     ranked = sorted(((n, lang) for lang, n in files.items() if n > 0), key=lambda item: (-item[0], item[1]))
-    return [_value(LANGUAGES.get(lang, lang), (), f"{round(100 * n / total)}% of source files") for n, lang in ranked], "supported"
+    return [_value(language_name(lang), (), f"{round(100 * n / total)}% of source files") for n, lang in ranked], "supported"
 
 
 def _platforms(coverage: Iterable[Mapping[str, Any]]) -> list[str]:

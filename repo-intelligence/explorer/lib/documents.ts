@@ -35,6 +35,23 @@ export interface DocumentsResponse {
   documents: DocumentEntry[];
   candidates: DocumentCandidate[];
   problems: unknown[];
+  /** A digest of .rkp/documents.json as read (0 when there is none). Absent from an engine
+   * older than W7.7; a save then carries no expected_version and is not checked. */
+  version?: number;
+}
+
+/** The body of PUT repositories/{id}/documents: the entries, and the version they were edited from. */
+export function saveBody(entries: readonly DocumentEntry[], base: Pick<DocumentsResponse, "version">): { documents: DocumentEntry[]; expected_version?: number } {
+  return typeof base.version === "number" ? { documents: [...entries], expected_version: base.version } : { documents: [...entries] };
+}
+
+/** Shown when the engine answers 409: the file changed since the view read it. */
+export const STALE_DESIGNATIONS = "These designations changed since you opened them. Reload and try again.";
+
+/** The message for a failed save, from the HTTP status and the engine's message. */
+export function saveFailureText(status: number | undefined, message: string | undefined): string {
+  if (status === 409) return STALE_DESIGNATIONS;
+  return message || "The designations could not be saved.";
 }
 
 /** The kinds a designated document produces, with the feature that produces each. */
