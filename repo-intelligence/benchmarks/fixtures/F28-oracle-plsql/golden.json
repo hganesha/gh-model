@@ -1,0 +1,120 @@
+{
+  "fixture": "F28-oracle-plsql",
+  "description": "An Oracle order desk database kept as source files: a package spec and body (a package cursor, an autonomous logging procedure, SELECT INTO, INSERT with RETURNING, a cursor FOR loop, a function called from SQL, MERGE over a synonym for a table across a database link, BULK COLLECT, FORALL and dynamic SQL built at run time), a standalone procedure in a .prc file beside a JCL .prc, a function, a row trigger with a WHEN clause, and a SQL*Plus install script with a database link, a synonym, object, system and role grants, two DBMS_SCHEDULER jobs and a DBMS_JOB job. 'since' names the milestone whose compiler must produce the item.",
+  "entities": [
+    {"kind": "Program", "natural_key": {"platform": "oracle", "name": "order_api"}, "since": "M2", "attributes": {"kind": "package", "platform": "plsql", "platform_kind": "ora:Package", "specification": "db/packages/order_api.pks", "body": "db/packages/order_api.pkb", "options": ["authid definer"]}},
+    {"kind": "Symbol", "natural_key": {"platform": "oracle", "program": "order_api", "name": "place_order"}, "since": "M2", "attributes": {"symbol_kind": "procedure", "public": true, "platform_kind": "ora:PackageProcedure"}},
+    {"kind": "Symbol", "natural_key": {"platform": "oracle", "program": "order_api", "name": "order_total"}, "since": "M2", "attributes": {"symbol_kind": "function", "returns": "NUMBER", "platform_kind": "ora:PackageFunction"}},
+    {"kind": "Symbol", "natural_key": {"platform": "oracle", "program": "order_api", "name": "close_order"}, "since": "M2"},
+    {"kind": "Symbol", "natural_key": {"platform": "oracle", "program": "order_api", "name": "load_remote_customers"}, "since": "M2"},
+    {"kind": "Symbol", "natural_key": {"platform": "oracle", "program": "order_api", "name": "archive_orders"}, "since": "M2"},
+    {"kind": "Symbol", "natural_key": {"platform": "oracle", "program": "order_api", "name": "log_event"}, "since": "M2", "attributes": {"autonomous_transaction": true}},
+    {"kind": "Program", "natural_key": {"platform": "oracle", "name": "purge_stale_carts"}, "since": "M2", "attributes": {"kind": "procedure", "params": ["p_days"], "platform_kind": "ora:Procedure"}},
+    {"kind": "Program", "natural_key": {"platform": "oracle", "name": "customer_tier"}, "since": "M2", "attributes": {"kind": "function", "returns": "VARCHAR2", "platform_kind": "ora:Function"}},
+    {"kind": "Program", "natural_key": {"platform": "oracle", "name": "trg_orders_status"}, "since": "M2", "attributes": {"kind": "trigger", "level": "row", "on": {"table": "orders", "events": ["update"], "timing": "before", "columns": ["status"]}, "platform_kind": "ora:Trigger"}},
+    {"kind": "Table", "natural_key": {"datastore": "default", "name": "orders"}, "since": "M2"},
+    {"kind": "Table", "natural_key": {"datastore": "default", "name": "order_lines"}, "since": "M2"},
+    {"kind": "Table", "natural_key": {"datastore": "default", "name": "order_events"}, "since": "M2"},
+    {"kind": "Table", "natural_key": {"datastore": "default", "name": "order_status_history"}, "since": "M2"},
+    {"kind": "Table", "natural_key": {"datastore": "default", "name": "customers"}, "since": "M2"},
+    {"kind": "Table", "natural_key": {"datastore": "default", "name": "items"}, "since": "M2"},
+    {"kind": "Table", "natural_key": {"datastore": "default", "name": "carts"}, "since": "M2"},
+    {"kind": "Table", "natural_key": {"datastore": "default", "name": "crm_customers"}, "since": "M2"},
+    {"kind": "Table", "natural_key": {"datastore": "crm", "name": "customers"}, "since": "M2", "attributes": {"db_link": "crm"}},
+    {"kind": "ConfigKey", "natural_key": {"name": "dblink:crm"}, "since": "M2", "attributes": {"authentication": "current_user", "platform_kind": "ora:DatabaseLink"}},
+    {"kind": "Role", "natural_key": {"realm": "oracle", "name": "order_desk_role"}, "since": "M2"},
+    {"kind": "Role", "natural_key": {"realm": "oracle", "name": "auditor_role"}, "since": "M2"},
+    {"kind": "Role", "natural_key": {"realm": "oracle", "name": "desk_app"}, "since": "M2"},
+    {"kind": "Permission", "natural_key": {"realm": "oracle", "name": "EXECUTE on order_api"}, "since": "M2", "attributes": {"privilege": "EXECUTE", "object": "order_api"}},
+    {"kind": "Permission", "natural_key": {"realm": "oracle", "name": "SELECT on orders"}, "since": "M2"},
+    {"kind": "Permission", "natural_key": {"realm": "oracle", "name": "INSERT on orders"}, "since": "M2"},
+    {"kind": "Permission", "natural_key": {"realm": "oracle", "name": "UPDATE on orders"}, "since": "M2"},
+    {"kind": "Permission", "natural_key": {"realm": "oracle", "name": "SELECT on order_events"}, "since": "M2"},
+    {"kind": "Permission", "natural_key": {"realm": "oracle", "name": "CREATE SESSION"}, "since": "M2", "attributes": {"privilege": "CREATE SESSION"}},
+    {"kind": "Job", "natural_key": {"framework": "dbms_scheduler", "name": "nightly_customer_sync"}, "since": "M2", "attributes": {"job_type": "stored_procedure", "schedule": "FREQ=DAILY;BYHOUR=2", "enabled": true, "platform_kind": "ora:SchedulerJob"}},
+    {"kind": "Job", "natural_key": {"framework": "dbms_scheduler", "name": "weekly_cart_purge"}, "since": "M2", "attributes": {"job_type": "plsql_block", "schedule": "FREQ=WEEKLY;BYDAY=SUN"}},
+    {"kind": "Job", "natural_key": {"framework": "dbms_job", "name": "order_api.archive_orders"}, "since": "M2", "attributes": {"schedule": "TRUNC(SYSDATE) + 1", "platform_kind": "ora:Job"}},
+    {"kind": "Job", "natural_key": {"framework": "jcl", "name": "NIGHTLY"}, "since": "M2"},
+    {"kind": "Artifact", "natural_key": {"path": "db/install/grants_and_jobs.sql"}, "since": "M2", "attributes": {"parsed": true}},
+    {"kind": "Artifact", "natural_key": {"path": "jcl/NIGHTLY.prc"}, "since": "M2", "attributes": {"language": "jcl"}}
+  ],
+  "edges": [
+    {"subject": {"kind": "Program", "natural_key": {"platform": "oracle", "name": "order_api"}}, "predicate": "CONTAINS", "object": {"kind": "Symbol", "natural_key": {"platform": "oracle", "program": "order_api", "name": "place_order"}}, "since": "M2"},
+    {"subject": {"kind": "Program", "natural_key": {"platform": "oracle", "name": "order_api"}}, "predicate": "CONTAINS", "object": {"kind": "Symbol", "natural_key": {"platform": "oracle", "program": "order_api", "name": "order_total"}}, "since": "M2"},
+    {"subject": {"kind": "Program", "natural_key": {"platform": "oracle", "name": "order_api"}}, "predicate": "CONTAINS", "object": {"kind": "Symbol", "natural_key": {"platform": "oracle", "program": "order_api", "name": "log_event"}}, "since": "M2"},
+    {"subject": {"kind": "Symbol", "natural_key": {"platform": "oracle", "program": "order_api", "name": "place_order"}}, "predicate": "READS_FROM", "object": {"kind": "Table", "natural_key": {"datastore": "default", "name": "customers"}}, "since": "M2"},
+    {"subject": {"kind": "Symbol", "natural_key": {"platform": "oracle", "program": "order_api", "name": "place_order"}}, "predicate": "READS_FROM", "object": {"kind": "Table", "natural_key": {"datastore": "default", "name": "items"}}, "since": "M2"},
+    {"subject": {"kind": "Symbol", "natural_key": {"platform": "oracle", "program": "order_api", "name": "place_order"}}, "predicate": "WRITES_TO", "object": {"kind": "Table", "natural_key": {"datastore": "default", "name": "orders"}}, "since": "M2"},
+    {"subject": {"kind": "Symbol", "natural_key": {"platform": "oracle", "program": "order_api", "name": "place_order"}}, "predicate": "WRITES_TO", "object": {"kind": "Table", "natural_key": {"datastore": "default", "name": "order_lines"}}, "since": "M2"},
+    {"subject": {"kind": "Symbol", "natural_key": {"platform": "oracle", "program": "order_api", "name": "place_order"}}, "predicate": "CALLS", "object": {"kind": "Symbol", "natural_key": {"platform": "oracle", "program": "order_api", "name": "log_event"}}, "since": "M2"},
+    {"subject": {"kind": "Symbol", "natural_key": {"platform": "oracle", "program": "order_api", "name": "log_event"}}, "predicate": "WRITES_TO", "object": {"kind": "Table", "natural_key": {"datastore": "default", "name": "order_events"}}, "since": "M2"},
+    {"subject": {"kind": "Symbol", "natural_key": {"platform": "oracle", "program": "order_api", "name": "order_total"}}, "predicate": "READS_FROM", "object": {"kind": "Table", "natural_key": {"datastore": "default", "name": "order_lines"}}, "since": "M2"},
+    {"subject": {"kind": "Symbol", "natural_key": {"platform": "oracle", "program": "order_api", "name": "close_order"}}, "predicate": "CALLS", "object": {"kind": "Symbol", "natural_key": {"platform": "oracle", "program": "order_api", "name": "order_total"}}, "since": "M2"},
+    {"subject": {"kind": "Symbol", "natural_key": {"platform": "oracle", "program": "order_api", "name": "close_order"}}, "predicate": "WRITES_TO", "object": {"kind": "Table", "natural_key": {"datastore": "default", "name": "orders"}}, "since": "M2"},
+    {"subject": {"kind": "Symbol", "natural_key": {"platform": "oracle", "program": "order_api", "name": "load_remote_customers"}}, "predicate": "READS_FROM", "object": {"kind": "Table", "natural_key": {"datastore": "crm", "name": "customers"}}, "since": "M2"},
+    {"subject": {"kind": "Symbol", "natural_key": {"platform": "oracle", "program": "order_api", "name": "load_remote_customers"}}, "predicate": "READS_FROM", "object": {"kind": "Table", "natural_key": {"datastore": "default", "name": "crm_customers"}}, "since": "M2"},
+    {"subject": {"kind": "Symbol", "natural_key": {"platform": "oracle", "program": "order_api", "name": "load_remote_customers"}}, "predicate": "WRITES_TO", "object": {"kind": "Table", "natural_key": {"datastore": "default", "name": "customers"}}, "since": "M2"},
+    {"subject": {"kind": "Symbol", "natural_key": {"platform": "oracle", "program": "order_api", "name": "load_remote_customers"}}, "predicate": "REFERENCES_CONFIG", "object": {"kind": "ConfigKey", "natural_key": {"name": "dblink:crm"}}, "since": "M2"},
+    {"subject": {"kind": "Symbol", "natural_key": {"platform": "oracle", "program": "order_api", "name": "archive_orders"}}, "predicate": "READS_FROM", "object": {"kind": "Table", "natural_key": {"datastore": "default", "name": "orders"}}, "since": "M2"},
+    {"subject": {"kind": "Symbol", "natural_key": {"platform": "oracle", "program": "order_api", "name": "archive_orders"}}, "predicate": "WRITES_TO", "object": {"kind": "Table", "natural_key": {"datastore": "default", "name": "orders"}}, "since": "M2"},
+    {"subject": {"kind": "Program", "natural_key": {"platform": "oracle", "name": "purge_stale_carts"}}, "predicate": "WRITES_TO", "object": {"kind": "Table", "natural_key": {"datastore": "default", "name": "carts"}}, "since": "M2"},
+    {"subject": {"kind": "Program", "natural_key": {"platform": "oracle", "name": "customer_tier"}}, "predicate": "READS_FROM", "object": {"kind": "Table", "natural_key": {"datastore": "default", "name": "orders"}}, "since": "M2"},
+    {"subject": {"kind": "Program", "natural_key": {"platform": "oracle", "name": "trg_orders_status"}}, "predicate": "WRITES_TO", "object": {"kind": "Table", "natural_key": {"datastore": "default", "name": "order_status_history"}}, "since": "M2"},
+    {"subject": {"kind": "Table", "natural_key": {"datastore": "default", "name": "crm_customers"}}, "predicate": "ALIAS_OF", "object": {"kind": "Table", "natural_key": {"datastore": "crm", "name": "customers"}}, "since": "M2"},
+    {"subject": {"kind": "Role", "natural_key": {"realm": "oracle", "name": "order_desk_role"}}, "predicate": "GRANTS", "object": {"kind": "Permission", "natural_key": {"realm": "oracle", "name": "EXECUTE on order_api"}}, "since": "M2"},
+    {"subject": {"kind": "Role", "natural_key": {"realm": "oracle", "name": "order_desk_role"}}, "predicate": "GRANTS", "object": {"kind": "Permission", "natural_key": {"realm": "oracle", "name": "UPDATE on orders"}}, "since": "M2"},
+    {"subject": {"kind": "Role", "natural_key": {"realm": "oracle", "name": "auditor_role"}}, "predicate": "GRANTS", "object": {"kind": "Permission", "natural_key": {"realm": "oracle", "name": "SELECT on order_events"}}, "since": "M2"},
+    {"subject": {"kind": "Role", "natural_key": {"realm": "oracle", "name": "desk_app"}}, "predicate": "GRANTS", "object": {"kind": "Role", "natural_key": {"realm": "oracle", "name": "order_desk_role"}}, "since": "M2"},
+    {"subject": {"kind": "Role", "natural_key": {"realm": "oracle", "name": "desk_app"}}, "predicate": "GRANTS", "object": {"kind": "Permission", "natural_key": {"realm": "oracle", "name": "CREATE SESSION"}}, "since": "M2"},
+    {"subject": {"kind": "Job", "natural_key": {"framework": "dbms_scheduler", "name": "nightly_customer_sync"}}, "predicate": "RUNS", "object": {"kind": "Symbol", "natural_key": {"platform": "oracle", "program": "order_api", "name": "load_remote_customers"}}, "since": "M2"},
+    {"subject": {"kind": "Job", "natural_key": {"framework": "dbms_scheduler", "name": "weekly_cart_purge"}}, "predicate": "RUNS", "object": {"kind": "Program", "natural_key": {"platform": "oracle", "name": "purge_stale_carts"}}, "since": "M2"},
+    {"subject": {"kind": "Job", "natural_key": {"framework": "dbms_job", "name": "order_api.archive_orders"}}, "predicate": "RUNS", "object": {"kind": "Symbol", "natural_key": {"platform": "oracle", "program": "order_api", "name": "archive_orders"}}, "since": "M2"}
+  ],
+  "absent_entities": [
+    {"kind": "Program", "natural_key": {"platform": "oracle", "name": "nightly"}, "why": "jcl/NIGHTLY.prc is a JCL procedure: the .prc suffix alone does not make a file Oracle"},
+    {"kind": "Table", "natural_key": {"datastore": "default", "name": "orders_archive_"}, "why": "archive_orders names its archive table at run time: dynamic SQL is counted, not read for tables"},
+    {"kind": "Table", "natural_key": {"datastore": "default", "name": "customers@crm"}, "why": "a name across a database link is the table in the link's datastore, not a local table named with the link"},
+    {"kind": "Program", "natural_key": {"platform": "oracle", "name": "order_api.load_remote_customers"}, "why": "a scheduler job's action names a package member: the reading as a schema-qualified procedure is not declared without a procedure of that name"},
+    {"kind": "Symbol", "natural_key": {"platform": "oracle", "program": "order_api", "name": "c_lines"}, "why": "a package cursor is a query the package opens, not a procedure or function"},
+    {"kind": "Program", "natural_key": {"platform": "sql", "name": "order_api"}, "why": "the plsql pack reads Oracle units; nothing else declares a second Program for them"}
+  ],
+  "exclusions": [],
+  "forbidden_kinds": ["Package", "Component"],
+  "expected_unknowns": [
+    {"since": "M2", "detail": "archive_orders builds CREATE TABLE and INSERT statements from a variable: the tables are not read and a diagnostic says so"}
+  ],
+  "expected_conflicts": [],
+  "secret_probes": [],
+  "commits": [
+    {
+      "dir": "01-refund-order",
+      "expect": "A new package procedure that writes refunds",
+      "added_entities": [
+        {"kind": "Symbol", "natural_key": {"platform": "oracle", "program": "order_api", "name": "refund_order"}, "since": "M2"},
+        {"kind": "Table", "natural_key": {"datastore": "default", "name": "refunds"}, "since": "M2"}
+      ],
+      "removed_entities": []
+    },
+    {
+      "dir": "02-line-audit-trigger",
+      "expect": "A row trigger on order_lines that writes an audit table",
+      "added_entities": [
+        {"kind": "Program", "natural_key": {"platform": "oracle", "name": "trg_order_lines_audit"}, "since": "M2"},
+        {"kind": "Table", "natural_key": {"datastore": "default", "name": "order_line_audit"}, "since": "M2"}
+      ],
+      "removed_entities": []
+    },
+    {
+      "dir": "03-retire-cart-purge",
+      "expect": "The cart purge procedure, its weekly job and the carts table it alone wrote are removed",
+      "added_entities": [],
+      "removed_entities": [
+        {"kind": "Program", "natural_key": {"platform": "oracle", "name": "purge_stale_carts"}, "since": "M2"},
+        {"kind": "Job", "natural_key": {"framework": "dbms_scheduler", "name": "weekly_cart_purge"}, "since": "M2"},
+        {"kind": "Table", "natural_key": {"datastore": "default", "name": "carts"}, "since": "M2"}
+      ]
+    }
+  ],
+  "decision_cases": [],
+  "granularity": {"label": null, "why": "database source files and an install script with no build file or deployment a repository shows", "source": "fixture design"}
+}

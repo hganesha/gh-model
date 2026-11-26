@@ -1,0 +1,1 @@
+{"message": "Carts expire in the web tier now: retire the cart purge procedure and its weekly job", "delete": ["db/procedures/purge_stale_carts.prc"]}
