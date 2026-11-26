@@ -1,8 +1,8 @@
 """The solution layer (docs/solution-ir-contract.md, W5): the manifest, loading member
 bundles, the merged view, identity across members, catalogue dumps and `rkp solution`.
 
-The end-to-end tests use the F23 fixture under tests/fixtures/solution/: two repositories
-(a web front end and the orders service it calls) and the orders database's catalogue.
+The end-to-end tests use the base of the F23 golden fixture, benchmarks/fixtures/F23-solution-multi-repo:
+two repositories (a web front end and the orders service it calls) and the orders database's catalogue.
 """
 
 import hashlib
@@ -16,12 +16,13 @@ import pytest
 
 from repo_intel import platforms
 from repo_intel.compile.contracts import entity_id
+from repo_intel.compile.fixtures import FIXTURES_DIR
 from repo_intel.compile.ontology import EntityKind, Predicate, check_relation
 from repo_intel.solution import MemberData, SolutionError, SolutionView, nsid, parse_manifest, resolve, split
 from repo_intel.solution.identity import call_path, dataset_key, query_method, relational_key
 
-FIXTURE = Path(__file__).parent / "fixtures" / "solution" / "F23-multi-repo-solution"
-CATALOG = FIXTURE / "solution" / ".rkp" / "inputs" / "catalog"
+FIXTURE = FIXTURES_DIR / "F23-solution-multi-repo" / "base"
+CATALOG = FIXTURE / ".rkp" / "inputs" / "catalog"
 _GIT_ENV = {
     "GIT_AUTHOR_NAME": "fixture", "GIT_AUTHOR_EMAIL": "fixture@example.invalid",
     "GIT_COMMITTER_NAME": "fixture", "GIT_COMMITTER_EMAIL": "fixture@example.invalid",
@@ -49,7 +50,7 @@ def shop(tmp_path_factory):
     from repo_intel.knowledge import bundle
 
     root = tmp_path_factory.mktemp("shop") / "solution"
-    shutil.copytree(FIXTURE / "solution", root)
+    shutil.copytree(FIXTURE / ".rkp", root / ".rkp")
     for member in ("web", "service"):
         bundle.compile_bundle(_repository(FIXTURE / member, root / member))
     return root
@@ -72,7 +73,7 @@ def _manifest(**overrides):
 
 
 def test_a_valid_manifest_parses():
-    m = parse_manifest((FIXTURE / "solution" / ".rkp" / "solution.json").read_text())
+    m = parse_manifest((FIXTURE / ".rkp" / "solution.json").read_text())
     assert m.schema_ == "rkp-solution/1" and m.name == "shop"
     assert [(x.id, x.role, x.kind, x.source, x.database) for x in m.members] == [("web", "web", "repository", "web", None), ("orders", "service", "repository", "service", "shopdb")]
     assert m.inputs == [".rkp/inputs/catalog/*.json", ".rkp/inputs/catalog/*.csv"]

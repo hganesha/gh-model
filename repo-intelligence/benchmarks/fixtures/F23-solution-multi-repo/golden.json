@@ -1,0 +1,925 @@
+{
+  "fixture": "F23-solution-multi-repo",
+  "description": "A multi-repository solution: a TypeScript front end (member web) calling a FastAPI orders service (member orders) that reads the orders table through SQLAlchemy, and the orders database's catalogue dump as the solution's inputs. golden_check compiles each member in its own repository, loads .rkp/solution.json and checks the identity links across members: the one call path a single endpoint serves links exactly, a call whose method is unstated stays a candidate, the service's tables and columns link to the catalogue's, a configuration key both members read is only a lead, and a path no member serves is unmatched. The commits make the service serve that path, map a second table, and drop the front end's configuration read.",
+  "entities": [
+    {
+      "member": "web",
+      "kind": "Component",
+      "natural_key": {
+        "root": ""
+      },
+      "since": "M2"
+    },
+    {
+      "member": "web",
+      "kind": "Package",
+      "natural_key": {
+        "ecosystem": "npm",
+        "manifest_dir": "",
+        "name": "shop-web"
+      },
+      "since": "M2"
+    },
+    {
+      "member": "orders",
+      "kind": "Package",
+      "natural_key": {
+        "ecosystem": "pypi",
+        "manifest_dir": "",
+        "name": "orders-service"
+      },
+      "since": "M2"
+    },
+    {
+      "member": "orders",
+      "kind": "Endpoint",
+      "natural_key": {
+        "component_root": "",
+        "method": "GET",
+        "protocol": "http",
+        "route": "/api/orders"
+      },
+      "attributes": {
+        "framework": "fastapi",
+        "handler": "list_orders"
+      },
+      "since": "M2"
+    },
+    {
+      "member": "orders",
+      "kind": "Endpoint",
+      "natural_key": {
+        "component_root": "",
+        "method": "POST",
+        "protocol": "http",
+        "route": "/api/orders"
+      },
+      "attributes": {
+        "framework": "fastapi",
+        "handler": "place_order"
+      },
+      "since": "M2"
+    },
+    {
+      "member": "orders",
+      "kind": "Endpoint",
+      "natural_key": {
+        "component_root": "",
+        "method": "GET",
+        "protocol": "http",
+        "route": "/api/orders/{order_id}"
+      },
+      "attributes": {
+        "framework": "fastapi",
+        "handler": "get_order"
+      },
+      "since": "M2"
+    },
+    {
+      "member": "orders",
+      "kind": "Table",
+      "natural_key": {
+        "datastore": "default",
+        "name": "orders"
+      },
+      "attributes": {
+        "orm": "sqlalchemy",
+        "model": "Order"
+      },
+      "since": "M2"
+    },
+    {
+      "member": "orders",
+      "kind": "Field",
+      "natural_key": {
+        "table": "orders",
+        "name": "id"
+      },
+      "since": "M2"
+    },
+    {
+      "member": "orders",
+      "kind": "Field",
+      "natural_key": {
+        "table": "orders",
+        "name": "customer_id"
+      },
+      "since": "M2"
+    },
+    {
+      "member": "orders",
+      "kind": "Field",
+      "natural_key": {
+        "table": "orders",
+        "name": "status"
+      },
+      "since": "M2"
+    },
+    {
+      "member": "orders",
+      "kind": "Field",
+      "natural_key": {
+        "table": "orders",
+        "name": "total"
+      },
+      "since": "M2"
+    },
+    {
+      "member": "orders",
+      "kind": "ConfigKey",
+      "natural_key": {
+        "name": "LOG_LEVEL"
+      },
+      "since": "M2"
+    },
+    {
+      "member": "orders",
+      "kind": "ConfigKey",
+      "natural_key": {
+        "name": "DATABASE_URL"
+      },
+      "since": "M2"
+    },
+    {
+      "member": "inputs",
+      "kind": "Table",
+      "natural_key": {
+        "datastore": "default",
+        "name": "customers"
+      },
+      "attributes": {
+        "database": "shopdb",
+        "schema": "public",
+        "platform_kind": "db:Table"
+      },
+      "since": "M2"
+    },
+    {
+      "member": "inputs",
+      "kind": "Table",
+      "natural_key": {
+        "datastore": "default",
+        "name": "audit.order_events"
+      },
+      "attributes": {
+        "database": "shopdb",
+        "schema": "audit",
+        "platform_kind": "db:Table"
+      },
+      "since": "M2"
+    },
+    {
+      "member": "inputs",
+      "kind": "Field",
+      "natural_key": {
+        "table": "customers",
+        "name": "email"
+      },
+      "since": "M2"
+    },
+    {
+      "member": "inputs",
+      "kind": "DataSchema",
+      "natural_key": {
+        "kind": "view",
+        "name": "order_summary"
+      },
+      "attributes": {
+        "platform_kind": "db:View"
+      },
+      "since": "M2"
+    },
+    {
+      "member": "inputs",
+      "kind": "Program",
+      "natural_key": {
+        "platform": "sql",
+        "name": "close_stale_orders"
+      },
+      "attributes": {
+        "platform_kind": "db:Routine"
+      },
+      "since": "M2"
+    },
+    {
+      "member": "inputs",
+      "kind": "Role",
+      "natural_key": {
+        "realm": "shopdb",
+        "name": "orders_writer"
+      },
+      "attributes": {
+        "platform_kind": "db:Role"
+      },
+      "since": "M2"
+    },
+    {
+      "member": "inputs",
+      "kind": "Role",
+      "natural_key": {
+        "realm": "shopdb",
+        "name": "PUBLIC"
+      },
+      "attributes": {
+        "pseudo": true
+      },
+      "since": "M2"
+    },
+    {
+      "member": "inputs",
+      "kind": "Permission",
+      "natural_key": {
+        "realm": "shopdb",
+        "name": "UPDATE on orders"
+      },
+      "attributes": {
+        "platform_kind": "db:Grant"
+      },
+      "since": "M2"
+    }
+  ],
+  "edges": [
+    {
+      "member": "orders",
+      "subject": {
+        "kind": "Component",
+        "natural_key": {
+          "root": ""
+        }
+      },
+      "predicate": "EXPOSES",
+      "object": {
+        "kind": "Endpoint",
+        "natural_key": {
+          "component_root": "",
+          "method": "GET",
+          "protocol": "http",
+          "route": "/api/orders"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "member": "orders",
+      "subject": {
+        "kind": "Component",
+        "natural_key": {
+          "root": ""
+        }
+      },
+      "predicate": "EXPOSES",
+      "object": {
+        "kind": "Endpoint",
+        "natural_key": {
+          "component_root": "",
+          "method": "POST",
+          "protocol": "http",
+          "route": "/api/orders"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "member": "orders",
+      "subject": {
+        "kind": "Component",
+        "natural_key": {
+          "root": ""
+        }
+      },
+      "predicate": "EXPOSES",
+      "object": {
+        "kind": "Endpoint",
+        "natural_key": {
+          "component_root": "",
+          "method": "GET",
+          "protocol": "http",
+          "route": "/api/orders/{order_id}"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "member": "orders",
+      "subject": {
+        "kind": "Component",
+        "natural_key": {
+          "root": ""
+        }
+      },
+      "predicate": "READS_FROM",
+      "object": {
+        "kind": "Table",
+        "natural_key": {
+          "datastore": "default",
+          "name": "orders"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "member": "orders",
+      "subject": {
+        "kind": "Component",
+        "natural_key": {
+          "root": ""
+        }
+      },
+      "predicate": "WRITES_TO",
+      "object": {
+        "kind": "Table",
+        "natural_key": {
+          "datastore": "default",
+          "name": "orders"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "member": "orders",
+      "subject": {
+        "kind": "Table",
+        "natural_key": {
+          "datastore": "default",
+          "name": "orders"
+        }
+      },
+      "predicate": "CONTAINS",
+      "object": {
+        "kind": "Field",
+        "natural_key": {
+          "table": "orders",
+          "name": "status"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "member": "orders",
+      "subject": {
+        "kind": "Package",
+        "natural_key": {
+          "ecosystem": "pypi",
+          "manifest_dir": "",
+          "name": "orders-service"
+        }
+      },
+      "predicate": "REFERENCES_CONFIG",
+      "object": {
+        "kind": "ConfigKey",
+        "natural_key": {
+          "name": "LOG_LEVEL"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "member": "web",
+      "subject": {
+        "kind": "Package",
+        "natural_key": {
+          "ecosystem": "npm",
+          "manifest_dir": "",
+          "name": "shop-web"
+        }
+      },
+      "predicate": "REFERENCES_CONFIG",
+      "object": {
+        "kind": "ConfigKey",
+        "natural_key": {
+          "name": "LOG_LEVEL"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "member": "inputs",
+      "subject": {
+        "kind": "Table",
+        "natural_key": {
+          "datastore": "default",
+          "name": "orders"
+        }
+      },
+      "predicate": "CONTAINS",
+      "object": {
+        "kind": "Field",
+        "natural_key": {
+          "table": "orders",
+          "name": "status"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "member": "inputs",
+      "subject": {
+        "kind": "Role",
+        "natural_key": {
+          "realm": "shopdb",
+          "name": "orders_service"
+        }
+      },
+      "predicate": "GRANTS",
+      "object": {
+        "kind": "Role",
+        "natural_key": {
+          "realm": "shopdb",
+          "name": "orders_writer"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "member": "inputs",
+      "subject": {
+        "kind": "Role",
+        "natural_key": {
+          "realm": "shopdb",
+          "name": "orders_writer"
+        }
+      },
+      "predicate": "GRANTS",
+      "object": {
+        "kind": "Permission",
+        "natural_key": {
+          "realm": "shopdb",
+          "name": "UPDATE on orders"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "member": "inputs",
+      "subject": {
+        "kind": "Program",
+        "natural_key": {
+          "platform": "sql",
+          "name": "close_stale_orders"
+        }
+      },
+      "predicate": "WRITES_TO",
+      "object": {
+        "kind": "Table",
+        "natural_key": {
+          "datastore": "default",
+          "name": "audit.order_events"
+        }
+      },
+      "since": "M2"
+    }
+  ],
+  "links": [
+    {
+      "link": {
+        "rule": "endpoint_path_unique",
+        "from": {
+          "member": "web",
+          "kind": "Component",
+          "natural_key": {
+            "root": ""
+          }
+        },
+        "to": {
+          "member": "orders",
+          "kind": "Endpoint",
+          "natural_key": {
+            "component_root": "",
+            "method": "GET",
+            "protocol": "http",
+            "route": "/api/orders/{order_id}"
+          }
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "link": {
+        "rule": "endpoint_method_unstated",
+        "from": {
+          "member": "web",
+          "kind": "Component",
+          "natural_key": {
+            "root": ""
+          }
+        },
+        "to": {
+          "member": "orders",
+          "kind": "Endpoint",
+          "natural_key": {
+            "component_root": "",
+            "method": "GET",
+            "protocol": "http",
+            "route": "/api/orders"
+          }
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "link": {
+        "rule": "endpoint_method_unstated",
+        "from": {
+          "member": "web",
+          "kind": "Component",
+          "natural_key": {
+            "root": ""
+          }
+        },
+        "to": {
+          "member": "orders",
+          "kind": "Endpoint",
+          "natural_key": {
+            "component_root": "",
+            "method": "POST",
+            "protocol": "http",
+            "route": "/api/orders"
+          }
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "link": {
+        "rule": "same_table",
+        "from": {
+          "member": "orders",
+          "kind": "Table",
+          "natural_key": {
+            "datastore": "default",
+            "name": "orders"
+          }
+        },
+        "to": {
+          "member": "inputs",
+          "kind": "Table",
+          "natural_key": {
+            "datastore": "default",
+            "name": "orders"
+          }
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "link": {
+        "rule": "same_column",
+        "from": {
+          "member": "orders",
+          "kind": "Field",
+          "natural_key": {
+            "table": "orders",
+            "name": "id"
+          }
+        },
+        "to": {
+          "member": "inputs",
+          "kind": "Field",
+          "natural_key": {
+            "table": "orders",
+            "name": "id"
+          }
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "link": {
+        "rule": "same_column",
+        "from": {
+          "member": "orders",
+          "kind": "Field",
+          "natural_key": {
+            "table": "orders",
+            "name": "customer_id"
+          }
+        },
+        "to": {
+          "member": "inputs",
+          "kind": "Field",
+          "natural_key": {
+            "table": "orders",
+            "name": "customer_id"
+          }
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "link": {
+        "rule": "same_column",
+        "from": {
+          "member": "orders",
+          "kind": "Field",
+          "natural_key": {
+            "table": "orders",
+            "name": "status"
+          }
+        },
+        "to": {
+          "member": "inputs",
+          "kind": "Field",
+          "natural_key": {
+            "table": "orders",
+            "name": "status"
+          }
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "link": {
+        "rule": "same_column",
+        "from": {
+          "member": "orders",
+          "kind": "Field",
+          "natural_key": {
+            "table": "orders",
+            "name": "total"
+          }
+        },
+        "to": {
+          "member": "inputs",
+          "kind": "Field",
+          "natural_key": {
+            "table": "orders",
+            "name": "total"
+          }
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "link": {
+        "rule": "config_key_name_only",
+        "from": {
+          "member": "orders",
+          "kind": "ConfigKey",
+          "natural_key": {
+            "name": "LOG_LEVEL"
+          }
+        },
+        "to": {
+          "member": "web",
+          "kind": "ConfigKey",
+          "natural_key": {
+            "name": "LOG_LEVEL"
+          }
+        }
+      },
+      "since": "M2"
+    }
+  ],
+  "absent_links": [
+    {
+      "link": {
+        "rule": "same_config_key",
+        "from": {
+          "member": "orders",
+          "kind": "ConfigKey",
+          "natural_key": {
+            "name": "LOG_LEVEL"
+          }
+        },
+        "to": {
+          "member": "web",
+          "kind": "ConfigKey",
+          "natural_key": {
+            "name": "LOG_LEVEL"
+          }
+        }
+      },
+      "why": "both members read LOG_LEVEL from the environment and neither declares it for the solution: a shared name is a lead, never an exact link"
+    },
+    {
+      "link": {
+        "rule": "endpoint_path_unique",
+        "from": {
+          "member": "web",
+          "kind": "Component",
+          "natural_key": {
+            "root": ""
+          }
+        },
+        "to": {
+          "member": "orders",
+          "kind": "Endpoint",
+          "natural_key": {
+            "component_root": "",
+            "method": "GET",
+            "protocol": "http",
+            "route": "/api/orders"
+          }
+        }
+      },
+      "why": "two endpoints serve /api/orders and the listing call does not state its method"
+    }
+  ],
+  "unmatched": [
+    {
+      "member": "web",
+      "kind": "http_call",
+      "reference": "/api/customers",
+      "reason": "no_endpoint",
+      "since": "M2"
+    }
+  ],
+  "solution_coverage": [
+    {
+      "domain": "solution_data_refs",
+      "scope": "orders",
+      "numerator": 1,
+      "denominator": 1,
+      "since": "M2"
+    }
+  ],
+  "absent_entities": [
+    {
+      "kind": "Endpoint",
+      "natural_key": {
+        "component_root": "",
+        "method": "GET",
+        "protocol": "http",
+        "route": "/api/customers"
+      },
+      "why": "the front end calls /api/customers, but at the base no member serves it"
+    },
+    {
+      "member": "web",
+      "kind": "Endpoint",
+      "natural_key": {
+        "component_root": "",
+        "method": "GET",
+        "protocol": "http",
+        "route": "/api/orders"
+      },
+      "why": "the front end calls /api/orders; the orders service serves it"
+    }
+  ],
+  "exclusions": [],
+  "forbidden_kinds": [],
+  "expected_unknowns": [],
+  "expected_conflicts": [],
+  "commits": [
+    {
+      "dir": "01-service-serves-customers",
+      "expect": "the service serves /api/customers, so the front end's call to it links exactly and is no longer unmatched",
+      "added_entities": [
+        {
+          "member": "orders",
+          "kind": "Endpoint",
+          "natural_key": {
+            "component_root": "",
+            "method": "GET",
+            "protocol": "http",
+            "route": "/api/customers"
+          },
+          "since": "M2"
+        }
+      ],
+      "removed_entities": [],
+      "added_links": [
+        {
+          "link": {
+            "rule": "endpoint_path_unique",
+            "from": {
+              "member": "web",
+              "kind": "Component",
+              "natural_key": {
+                "root": ""
+              }
+            },
+            "to": {
+              "member": "orders",
+              "kind": "Endpoint",
+              "natural_key": {
+                "component_root": "",
+                "method": "GET",
+                "protocol": "http",
+                "route": "/api/customers"
+              }
+            }
+          },
+          "since": "M2"
+        }
+      ],
+      "removed_unmatched": [
+        {
+          "member": "web",
+          "kind": "http_call",
+          "reference": "/api/customers",
+          "reason": "no_endpoint",
+          "since": "M2"
+        }
+      ]
+    },
+    {
+      "dir": "02-service-maps-customers",
+      "expect": "the service maps the customers table, which links to the catalogue's table and columns",
+      "added_entities": [
+        {
+          "member": "orders",
+          "kind": "Table",
+          "natural_key": {
+            "datastore": "default",
+            "name": "customers"
+          },
+          "attributes": {
+            "orm": "sqlalchemy",
+            "model": "Customer"
+          },
+          "since": "M2"
+        }
+      ],
+      "removed_entities": [],
+      "added_links": [
+        {
+          "link": {
+            "rule": "same_table",
+            "from": {
+              "member": "orders",
+              "kind": "Table",
+              "natural_key": {
+                "datastore": "default",
+                "name": "customers"
+              }
+            },
+            "to": {
+              "member": "inputs",
+              "kind": "Table",
+              "natural_key": {
+                "datastore": "default",
+                "name": "customers"
+              }
+            }
+          },
+          "since": "M2"
+        },
+        {
+          "link": {
+            "rule": "same_column",
+            "from": {
+              "member": "orders",
+              "kind": "Field",
+              "natural_key": {
+                "table": "customers",
+                "name": "email"
+              }
+            },
+            "to": {
+              "member": "inputs",
+              "kind": "Field",
+              "natural_key": {
+                "table": "customers",
+                "name": "email"
+              }
+            }
+          },
+          "since": "M2"
+        }
+      ]
+    },
+    {
+      "dir": "03-web-drops-log-level",
+      "expect": "the front end stops reading LOG_LEVEL, so the configuration lead between the members goes",
+      "added_entities": [],
+      "removed_entities": [
+        {
+          "member": "web",
+          "kind": "ConfigKey",
+          "natural_key": {
+            "name": "LOG_LEVEL"
+          },
+          "since": "M2"
+        }
+      ],
+      "removed_links": [
+        {
+          "link": {
+            "rule": "config_key_name_only",
+            "from": {
+              "member": "orders",
+              "kind": "ConfigKey",
+              "natural_key": {
+                "name": "LOG_LEVEL"
+              }
+            },
+            "to": {
+              "member": "web",
+              "kind": "ConfigKey",
+              "natural_key": {
+                "name": "LOG_LEVEL"
+              }
+            }
+          },
+          "since": "M2"
+        }
+      ]
+    }
+  ],
+  "granularity": {
+    "label": "monolithic",
+    "why": "compiled as one tree (tests/test_fixtures.py does that for every fixture), the only deployable backend is the orders service; the front end is its client",
+    "source": "fixture design"
+  }
+}
