@@ -1,0 +1,96 @@
+{
+ "fixture": "F31-informatica-export",
+ "description": "A PowerCenter XML export of one repository folder: relational and flat file definitions, a mapping of a source qualifier with a source filter, a connected lookup, an expression with a variable port, a filter and a router into two targets, a mapping with a SQL override, an aggregator and a sorter, and the workflow that runs them through a reusable and a non-reusable session, a decision, a command task (whose command line carries a credential in a URL) and an email task, with its scheduler and parameter file. The parameter file sets mapping and session parameters. 'since' names the milestone whose compiler must produce the item.",
+ "entities": [
+  {"kind": "Job", "natural_key": {"framework": "informatica", "name": "SALES/wf_daily_sales"}, "since": "M2", "attributes": {"platform_kind": "infa:Workflow", "kind": "workflow", "folder": "SALES", "entry": ["s_m_load_sales"], "schedule": "custom", "parameter_file": "wf_daily_sales.par", "variables": ["$$RUN_COUNT"]}},
+  {"kind": "Task", "natural_key": {"framework": "informatica", "job": "SALES/wf_daily_sales", "name": "s_m_load_sales"}, "since": "M2", "attributes": {"platform_kind": "infa:Session", "type": "session", "reusable": true, "mapping": "SALES/m_load_sales"}},
+  {"kind": "Task", "natural_key": {"framework": "informatica", "job": "SALES/wf_daily_sales", "name": "s_m_summarise"}, "since": "M2", "attributes": {"platform_kind": "infa:Session", "type": "session", "mapping": "SALES/m_summarise"}},
+  {"kind": "Task", "natural_key": {"framework": "informatica", "job": "SALES/wf_daily_sales", "name": "dec_any_rows"}, "since": "M2", "attributes": {"platform_kind": "infa:Task", "type": "decision"}},
+  {"kind": "Task", "natural_key": {"framework": "informatica", "job": "SALES/wf_daily_sales", "name": "cmd_push_extract"}, "since": "M2", "attributes": {"type": "command"}},
+  {"kind": "Task", "natural_key": {"framework": "informatica", "job": "SALES/wf_daily_sales", "name": "em_failure"}, "since": "M2", "attributes": {"type": "email"}},
+  {"kind": "Program", "natural_key": {"platform": "informatica", "name": "SALES/m_load_sales"}, "since": "M2", "attributes": {"platform_kind": "infa:Mapping", "kind": "mapping", "folder": "SALES", "mapping": "m_load_sales", "parameters": ["$$LOAD_DATE"], "variables": ["$$ROWS_LOADED"]}},
+  {"kind": "Program", "natural_key": {"platform": "informatica", "name": "SALES/m_summarise"}, "since": "M2", "attributes": {"platform_kind": "infa:Mapping", "parameters": ["$$LOAD_DATE"]}},
+  {"kind": "ConfigKey", "natural_key": {"name": "connection:ORA_SRC"}, "since": "M2", "attributes": {"platform_kind": "infa:Connection"}},
+  {"kind": "ConfigKey", "natural_key": {"name": "connection:ORA_MART"}, "since": "M2", "attributes": {"platform_kind": "infa:Connection"}},
+  {"kind": "ConfigKey", "natural_key": {"name": "parameter:$$LOAD_DATE"}, "since": "M2", "attributes": {"platform_kind": "infa:Parameter", "kind": "mapping_parameter"}},
+  {"kind": "ConfigKey", "natural_key": {"name": "parameter:$$REGION_FILTER"}, "since": "M2", "attributes": {"kind": "mapping_parameter"}},
+  {"kind": "ConfigKey", "natural_key": {"name": "parameter:$DBConnection_DW"}, "since": "M2", "attributes": {"kind": "session_parameter"}},
+  {"kind": "DataSchema", "natural_key": {"kind": "record_layout", "name": "informatica:SALES/unknown_customers"}, "since": "M2", "attributes": {"platform_kind": "infa:FlatFile", "role": "target", "fields": 2}},
+  {"kind": "Field", "natural_key": {"table": "informatica:SALES/unknown_customers", "name": "ORDER_ID"}, "since": "M2", "attributes": {"position": 1}},
+  {"kind": "Table", "natural_key": {"datastore": "default", "name": "src.orders"}, "since": "M2"},
+  {"kind": "Table", "natural_key": {"datastore": "default", "name": "src.customers"}, "since": "M2"},
+  {"kind": "Table", "natural_key": {"datastore": "default", "name": "dw_sales"}, "since": "M2"},
+  {"kind": "Table", "natural_key": {"datastore": "default", "name": "dw_high_value"}, "since": "M2"},
+  {"kind": "Table", "natural_key": {"datastore": "default", "name": "sales_summary"}, "since": "M2"}
+ ],
+ "edges": [
+  {"subject": {"kind": "Job", "natural_key": {"framework": "informatica", "name": "SALES/wf_daily_sales"}}, "predicate": "CONTAINS", "object": {"kind": "Task", "natural_key": {"framework": "informatica", "job": "SALES/wf_daily_sales", "name": "s_m_load_sales"}}, "since": "M2"},
+  {"subject": {"kind": "Job", "natural_key": {"framework": "informatica", "name": "SALES/wf_daily_sales"}}, "predicate": "CONTAINS", "object": {"kind": "Task", "natural_key": {"framework": "informatica", "job": "SALES/wf_daily_sales", "name": "s_m_summarise"}}, "since": "M2"},
+  {"subject": {"kind": "Job", "natural_key": {"framework": "informatica", "name": "SALES/wf_daily_sales"}}, "predicate": "CONTAINS", "object": {"kind": "Task", "natural_key": {"framework": "informatica", "job": "SALES/wf_daily_sales", "name": "dec_any_rows"}}, "since": "M2"},
+  {"subject": {"kind": "Job", "natural_key": {"framework": "informatica", "name": "SALES/wf_daily_sales"}}, "predicate": "CONTAINS", "object": {"kind": "Task", "natural_key": {"framework": "informatica", "job": "SALES/wf_daily_sales", "name": "cmd_push_extract"}}, "since": "M2"},
+  {"subject": {"kind": "Job", "natural_key": {"framework": "informatica", "name": "SALES/wf_daily_sales"}}, "predicate": "CONTAINS", "object": {"kind": "Task", "natural_key": {"framework": "informatica", "job": "SALES/wf_daily_sales", "name": "em_failure"}}, "since": "M2"},
+  {"subject": {"kind": "Task", "natural_key": {"framework": "informatica", "job": "SALES/wf_daily_sales", "name": "dec_any_rows"}}, "predicate": "DEPENDS_ON", "object": {"kind": "Task", "natural_key": {"framework": "informatica", "job": "SALES/wf_daily_sales", "name": "s_m_load_sales"}}, "since": "M2"},
+  {"subject": {"kind": "Task", "natural_key": {"framework": "informatica", "job": "SALES/wf_daily_sales", "name": "em_failure"}}, "predicate": "DEPENDS_ON", "object": {"kind": "Task", "natural_key": {"framework": "informatica", "job": "SALES/wf_daily_sales", "name": "s_m_load_sales"}}, "since": "M2"},
+  {"subject": {"kind": "Task", "natural_key": {"framework": "informatica", "job": "SALES/wf_daily_sales", "name": "s_m_summarise"}}, "predicate": "DEPENDS_ON", "object": {"kind": "Task", "natural_key": {"framework": "informatica", "job": "SALES/wf_daily_sales", "name": "dec_any_rows"}}, "since": "M2"},
+  {"subject": {"kind": "Task", "natural_key": {"framework": "informatica", "job": "SALES/wf_daily_sales", "name": "cmd_push_extract"}}, "predicate": "DEPENDS_ON", "object": {"kind": "Task", "natural_key": {"framework": "informatica", "job": "SALES/wf_daily_sales", "name": "s_m_summarise"}}, "since": "M2"},
+  {"subject": {"kind": "Task", "natural_key": {"framework": "informatica", "job": "SALES/wf_daily_sales", "name": "s_m_load_sales"}}, "predicate": "RUNS", "object": {"kind": "Program", "natural_key": {"platform": "informatica", "name": "SALES/m_load_sales"}}, "since": "M2"},
+  {"subject": {"kind": "Task", "natural_key": {"framework": "informatica", "job": "SALES/wf_daily_sales", "name": "s_m_summarise"}}, "predicate": "RUNS", "object": {"kind": "Program", "natural_key": {"platform": "informatica", "name": "SALES/m_summarise"}}, "since": "M2"},
+  {"subject": {"kind": "Task", "natural_key": {"framework": "informatica", "job": "SALES/wf_daily_sales", "name": "s_m_load_sales"}}, "predicate": "REFERENCES_CONFIG", "object": {"kind": "ConfigKey", "natural_key": {"name": "connection:ORA_SRC"}}, "since": "M2"},
+  {"subject": {"kind": "Task", "natural_key": {"framework": "informatica", "job": "SALES/wf_daily_sales", "name": "s_m_load_sales"}}, "predicate": "REFERENCES_CONFIG", "object": {"kind": "ConfigKey", "natural_key": {"name": "parameter:$DBConnection_DW"}}, "since": "M2"},
+  {"subject": {"kind": "Task", "natural_key": {"framework": "informatica", "job": "SALES/wf_daily_sales", "name": "s_m_summarise"}}, "predicate": "REFERENCES_CONFIG", "object": {"kind": "ConfigKey", "natural_key": {"name": "connection:ORA_MART"}}, "since": "M2"},
+  {"subject": {"kind": "Program", "natural_key": {"platform": "informatica", "name": "SALES/m_load_sales"}}, "predicate": "READS_FROM", "object": {"kind": "Table", "natural_key": {"datastore": "default", "name": "src.orders"}}, "since": "M2"},
+  {"subject": {"kind": "Program", "natural_key": {"platform": "informatica", "name": "SALES/m_load_sales"}}, "predicate": "READS_FROM", "object": {"kind": "Table", "natural_key": {"datastore": "default", "name": "src.customers"}}, "since": "M2"},
+  {"subject": {"kind": "Program", "natural_key": {"platform": "informatica", "name": "SALES/m_load_sales"}}, "predicate": "WRITES_TO", "object": {"kind": "Table", "natural_key": {"datastore": "default", "name": "dw_sales"}}, "since": "M2"},
+  {"subject": {"kind": "Program", "natural_key": {"platform": "informatica", "name": "SALES/m_load_sales"}}, "predicate": "WRITES_TO", "object": {"kind": "Table", "natural_key": {"datastore": "default", "name": "dw_high_value"}}, "since": "M2"},
+  {"subject": {"kind": "Program", "natural_key": {"platform": "informatica", "name": "SALES/m_load_sales"}}, "predicate": "REFERENCES_CONFIG", "object": {"kind": "ConfigKey", "natural_key": {"name": "parameter:$$LOAD_DATE"}}, "since": "M2"},
+  {"subject": {"kind": "Program", "natural_key": {"platform": "informatica", "name": "SALES/m_load_sales"}}, "predicate": "REFERENCES_CONFIG", "object": {"kind": "ConfigKey", "natural_key": {"name": "connection:ORA_SRC"}}, "since": "M2"},
+  {"subject": {"kind": "Program", "natural_key": {"platform": "informatica", "name": "SALES/m_summarise"}}, "predicate": "READS_FROM", "object": {"kind": "Table", "natural_key": {"datastore": "default", "name": "dw_sales"}}, "since": "M2"},
+  {"subject": {"kind": "Program", "natural_key": {"platform": "informatica", "name": "SALES/m_summarise"}}, "predicate": "WRITES_TO", "object": {"kind": "Table", "natural_key": {"datastore": "default", "name": "sales_summary"}}, "since": "M2"},
+  {"subject": {"kind": "Job", "natural_key": {"framework": "informatica", "name": "SALES/wf_daily_sales"}}, "predicate": "REFERENCES_CONFIG", "object": {"kind": "ConfigKey", "natural_key": {"name": "parameter:$$LOAD_DATE"}}, "since": "M2"},
+  {"subject": {"kind": "Job", "natural_key": {"framework": "informatica", "name": "SALES/wf_daily_sales"}}, "predicate": "REFERENCES_CONFIG", "object": {"kind": "ConfigKey", "natural_key": {"name": "parameter:$$REGION_FILTER"}}, "since": "M2"},
+  {"subject": {"kind": "DataSchema", "natural_key": {"kind": "record_layout", "name": "informatica:SALES/unknown_customers"}}, "predicate": "CONTAINS", "object": {"kind": "Field", "natural_key": {"table": "informatica:SALES/unknown_customers", "name": "CUSTOMER_ID"}}, "since": "M2"}
+ ],
+ "absent_entities": [
+  {"kind": "ConfigKey", "natural_key": {"name": "connection:$Source"}, "why": "$Source and $Target are placeholders for the session's connections, not connections"},
+  {"kind": "ConfigKey", "natural_key": {"name": "parameter:$PMSessionLogFile"}, "why": "built-in session parameters set in a parameter file are counted, not modelled"},
+  {"kind": "ConfigKey", "natural_key": {"name": "parameter:$PMSessionLogCount"}, "why": "built-in session parameters set in a parameter file are counted, not modelled"},
+  {"kind": "ConfigKey", "natural_key": {"name": "connection:ORA_DW"}, "why": "ORA_DW is the value the parameter file gives $DBConnection_DW; values are never read"},
+  {"kind": "Table", "natural_key": {"datastore": "default", "name": "orders"}, "why": "a relational source is named with its owner (src.orders)"},
+  {"kind": "Program", "natural_key": {"platform": "informatica", "name": "SALES/cmd_push_extract"}, "why": "a command task's commands are not read"}
+ ],
+ "exclusions": [],
+ "forbidden_kinds": ["Endpoint", "Component"],
+ "expected_unknowns": [
+  {"since": "M2", "detail": "the sessions' writers name their connection through $DBConnection_DW: the session parameter is linked, the connection it stands for is not resolved"},
+  {"since": "M2", "detail": "the m_summarise SQL override reads $$LOAD_DATE as a bind parameter; the table it reads is the source definition's"},
+  {"since": "M2", "detail": "the command and email tasks, the session configuration object and the built-in parameters are counted as unmapped constructs"}
+ ],
+ "expected_conflicts": [],
+ "secret_probes": [
+  {"path": "informatica/exports/sales_folder.xml", "must_never_appear": "fixture-not-a-real-password-0003", "since": "M2"}
+ ],
+ "commits": [
+  {"dir": "01-returns-mapping", "expect": "A second export of the folder adds the returns mapping (a joiner, a sorter with distinct, an unconnected lookup, a reusable expression, an update strategy) and its workflow", "added_entities": [
+   {"kind": "Program", "natural_key": {"platform": "informatica", "name": "SALES/m_load_returns"}, "since": "M2"},
+   {"kind": "Job", "natural_key": {"framework": "informatica", "name": "SALES/wf_returns"}, "since": "M2"},
+   {"kind": "Task", "natural_key": {"framework": "informatica", "job": "SALES/wf_returns", "name": "s_m_load_returns"}, "since": "M2"},
+   {"kind": "Task", "natural_key": {"framework": "informatica", "job": "SALES/wf_returns", "name": "ew_returns_file"}, "since": "M2"},
+   {"kind": "Table", "natural_key": {"datastore": "default", "name": "dw_returns"}, "since": "M2"},
+   {"kind": "Table", "natural_key": {"datastore": "default", "name": "ref.return_reasons"}, "since": "M2"},
+   {"kind": "DataSchema", "natural_key": {"kind": "record_layout", "name": "informatica:SALES/returns_file"}, "since": "M2"}
+  ], "removed_entities": []},
+  {"dir": "02-quality-worklet", "expect": "A worklet of quality checks runs after the load", "added_entities": [
+   {"kind": "Job", "natural_key": {"framework": "informatica", "name": "SALES/wl_quality"}, "since": "M2"},
+   {"kind": "Task", "natural_key": {"framework": "informatica", "job": "SALES/wl_quality", "name": "cmd_count_rows"}, "since": "M2"},
+   {"kind": "Task", "natural_key": {"framework": "informatica", "job": "SALES/wl_quality", "name": "asg_quality_flag"}, "since": "M2"},
+   {"kind": "Task", "natural_key": {"framework": "informatica", "job": "SALES/wf_daily_sales", "name": "wl_quality"}, "since": "M2"}
+  ], "removed_entities": []},
+  {"dir": "03-retire-summary", "expect": "The summary mapping and its session are removed", "added_entities": [], "removed_entities": [
+   {"kind": "Program", "natural_key": {"platform": "informatica", "name": "SALES/m_summarise"}, "since": "M2"},
+   {"kind": "Task", "natural_key": {"framework": "informatica", "job": "SALES/wf_daily_sales", "name": "s_m_summarise"}, "since": "M2"},
+   {"kind": "ConfigKey", "natural_key": {"name": "connection:ORA_MART"}, "since": "M2"}
+  ]}
+ ],
+ "decision_cases": [],
+ "granularity": {"label": null, "why": "a repository folder export with no build or deployment pipeline the repository shows", "source": "fixture design"}
+}

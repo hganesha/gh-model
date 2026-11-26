@@ -1,0 +1,10 @@
+[Global]
+$PMSessionLogCount=5
+[SALES.WF:wf_daily_sales]
+$$LOAD_DATE=2026-01-05
+$$REGION_FILTER=EMEA
+[SALES.WF:wf_daily_sales.ST:s_m_load_sales]
+$DBConnection_DW=ORA_DW
+$PMSessionLogFile=s_m_load_sales.log
+[SALES.WF:wf_daily_sales.ST:s_m_summarise]
+$DBConnection_DW=ORA_DW
