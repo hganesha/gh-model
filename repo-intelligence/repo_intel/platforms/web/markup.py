@@ -5,8 +5,9 @@ It reads tags and attributes in one pass, keeps the content of `<script>` and
 `/>` close themselves; an unmatched closing tag is ignored, an unclosed element
 ends at its parent's end). It never runs anything.
 
-Text is decoded as Latin-1, so a character offset is a byte offset into the file;
-values are re-decoded as UTF-8 when they are read out.
+`decode` reads a file as UTF-8, or as Latin-1 when it is not valid UTF-8, and gives a
+function from a character position to the byte offset it starts at; `scan` takes that
+function, so every offset it reports is a byte offset into the file.
 
 Attribute names are normalised so that one lookup serves every template syntax:
 
@@ -22,6 +23,8 @@ Attribute names are normalised so that one lookup serves every template syntax:
 from __future__ import annotations
 
 import re
+from bisect import bisect_left
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 VOID = frozenset({"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"})
@@ -29,11 +32,38 @@ RAW = frozenset({"script", "style"})
 _RAW_END = {name: re.compile("</" + name, re.I) for name in RAW}
 _NAME_START = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
 _SPACE = frozenset(" \t\r\n\f")
+_NON_ASCII = re.compile(r"[^\x00-\x7f]")
+TEXT_CAP = 120
+
+ByteOf = Callable[[int], int]
 
 
-def utf8(text: str) -> str:
-    """A Latin-1 decoded slice back to the text it is."""
-    return text.encode("latin-1").decode("utf-8", "replace")
+def _same(i: int) -> int:
+    return i
+
+
+def decode(data: bytes) -> tuple[str, ByteOf]:
+    """(text, byte_of): the bytes as UTF-8, or as Latin-1 when they are not valid UTF-8,
+    and a function from a character position in the text to its byte offset in `data`."""
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError:
+        return data.decode("latin-1"), _same  # one byte per character
+    if len(text) == len(data):
+        return text, _same
+    starts: list[int] = []  # positions of the characters that take more than one byte
+    extra: list[int] = []  # bytes beyond one per character, up to and including that one
+    total = 0
+    for m in _NON_ASCII.finditer(text):
+        starts.append(m.start())
+        total += len(m.group().encode("utf-8")) - 1
+        extra.append(total)
+
+    def byte_of(i: int) -> int:
+        k = bisect_left(starts, i)  # wide characters before position i
+        return i + (extra[k - 1] if k else 0)
+
+    return text, byte_of
 
 
 @dataclass
@@ -57,8 +87,10 @@ class Element:
     parent: "Element | None" = None
     children: list["Element"] = field(default_factory=list)
     text: str = ""  # direct static text, collapsed and capped
+    deep_text: str = ""  # all descendant static text in document order, collapsed and capped
     raw: str | None = None  # the content of <script> and <style>
     raw_start: int = 0
+    raw_end: int = 0
     spreads: list[Attr] = field(default_factory=list)  # JSX {...props}
 
     def get(self, *keys: str) -> Attr | None:
@@ -107,22 +139,39 @@ def normalise(raw: str) -> tuple[str, bool]:
     return raw, True
 
 
-def scan(text: str, base: int = 0, lower: bool = False) -> list[Element]:
+def scan(text: str, base: int = 0, lower: bool = False, byte_of: ByteOf | None = None) -> list[Element]:
     """Every element of `text` in document order, linked into a tree. Offsets are
-    `base` plus the position in `text`. `lower` lower-cases tag names (plain HTML)."""
+    `base` plus `byte_of(position in text)` (the position itself when `byte_of` is not
+    given). `lower` lower-cases tag names (plain HTML)."""
     out: list[Element] = []
     stack: list[Element] = []
     n = len(text)
     i = 0
     text_start = 0
+    to_byte = byte_of or _same
+
+    def at(pos: int) -> int:
+        return base + to_byte(pos)
 
     def add_text(a: int, b: int) -> None:
-        if stack and b > a:
-            el = stack[-1]
-            if len(el.text) < 120:
+        if not stack or b <= a:
+            return
+        chunk = None
+        if len(stack[-1].text) < TEXT_CAP:
+            chunk = " ".join(text[a:b].split())
+            if chunk:
+                stack[-1].text = (stack[-1].text + " " + chunk).strip()[:TEXT_CAP]
+        # Every open element gets the text, innermost first. An element holds at least the
+        # text of each element open inside it, so once one is full every outer one is too,
+        # and the total work stays linear in the size of the file.
+        for el in reversed(stack):
+            if len(el.deep_text) >= TEXT_CAP:
+                break
+            if chunk is None:
                 chunk = " ".join(text[a:b].split())
-                if chunk:
-                    el.text = (el.text + " " + chunk).strip()[:120]
+            if not chunk:
+                break
+            el.deep_text = (el.deep_text + " " + chunk).strip()[:TEXT_CAP]
 
     while i < n:
         lt = text.find("<", i)
@@ -157,13 +206,13 @@ def scan(text: str, base: int = 0, lower: bool = False) -> list[Element]:
             for depth in range(len(stack) - 1, max(-1, len(stack) - 65), -1):  # a bounded search keeps malformed input linear
                 if stack[depth].tag == tag:
                     for el in stack[depth:]:
-                        el.close = base + end
+                        el.close = at(end)
                     del stack[depth:]
                     break
             i = text_start = end
             continue
-        attrs, k, self_closing = _attributes(text, k, base)
-        el = Element(tag=tag, attrs={}, start=base + lt, end=base + k, parent=stack[-1] if stack else None)
+        attrs, k, self_closing = _attributes(text, k, at)
+        el = Element(tag=tag, attrs={}, start=at(lt), end=at(k), parent=stack[-1] if stack else None)
         for a in attrs:
             el.attrs.setdefault(a.key, a)
         if el.parent is not None:
@@ -173,9 +222,9 @@ def scan(text: str, base: int = 0, lower: bool = False) -> list[Element]:
         if name in RAW and not self_closing:
             m = _RAW_END[name].search(text, k)
             close = n if m is None else m.start()
-            el.raw, el.raw_start = text[k:close], base + k
+            el.raw, el.raw_start, el.raw_end = text[k:close], at(k), at(close)
             gt = text.find(">", close)
-            el.close = base + (n if gt < 0 else gt + 1)
+            el.close = at(n if gt < 0 else gt + 1)
             i = text_start = n if gt < 0 else gt + 1
             continue
         if self_closing or (name in VOID):
@@ -184,13 +233,14 @@ def scan(text: str, base: int = 0, lower: bool = False) -> list[Element]:
             stack.append(el)
         i = text_start = k
     for el in stack:
-        el.close = base + n
+        el.close = at(n)
     return out
 
 
-def _attributes(text: str, k: int, base: int) -> tuple[list[Attr], int, bool]:
+def _attributes(text: str, k: int, at: ByteOf) -> tuple[list[Attr], int, bool]:
     """Attributes from position `k` to the end of the tag; returns them, the position
-    just past '>', and whether the tag closed itself."""
+    just past '>', and whether the tag closed itself. `at` maps a position to the offset
+    the attributes report."""
     n = len(text)
     attrs: list[Attr] = []
     while k < n:
@@ -229,13 +279,13 @@ def _attributes(text: str, k: int, base: int) -> tuple[list[Attr], int, bool]:
                 value = text[v:k]
         if raw:
             key, literal = normalise(raw)
-            attrs.append(Attr(key=key, raw=raw, value=utf8(value) if value is not None else None, literal=literal, start=base + s, end=base + k))
+            attrs.append(Attr(key=key, raw=raw, value=value, literal=literal, start=at(s), end=at(k)))
     return attrs, n, False
 
 
 def sfc_blocks(text: str) -> list[tuple[str, dict[str, str], int, int]]:
     """The top-level blocks of a Vue single-file component: (tag, attributes, content
-    start, content end). A top-level block opens at the start of a line; the
+    start, content end), positions in `text` (not bytes). A top-level block opens at the start of a line; the
     template block runs to the last `</template>` before the next block."""
     blocks: list[tuple[str, dict[str, str], int, int]] = []
     starts: list[tuple[str, int, int, dict[str, str]]] = []
@@ -246,7 +296,7 @@ def sfc_blocks(text: str) -> list[tuple[str, dict[str, str], int, int]]:
         line_end = n if line_end < 0 else line_end
         for tag in ("template", "script", "style"):
             if text.startswith("<" + tag, pos) and pos + len(tag) + 1 < n and text[pos + len(tag) + 1] in " >\t\r\n":
-                attrs, end, _ = _attributes(text, pos + len(tag) + 1, 0)
+                attrs, end, _ = _attributes(text, pos + len(tag) + 1, _same)
                 starts.append((tag, pos, end, {a.raw: (a.value or "") for a in attrs}))
                 break
         pos = line_end + 1

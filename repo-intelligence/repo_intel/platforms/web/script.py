@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from functools import cache
 from typing import Any, Iterator
 
-from repo_intel.platforms.web.markup import Attr, Element
+from repo_intel.platforms.web.markup import TEXT_CAP, Attr, Element
 
 SCRIPT_EXTS = (".tsx", ".jsx", ".ts", ".js", ".mjs", ".cjs")
 MODULE_EXTS = (".tsx", ".ts", ".jsx", ".js", ".vue")
@@ -391,6 +391,25 @@ class Script:
             el.node = n  # type: ignore[attr-defined]
             self._element_of[n.id] = el
             self.elements.append(el)
+        self._read_jsx_deep_text()
+
+    def _read_jsx_deep_text(self) -> None:
+        """Each element's descendant JSX text in document order. Text inside an
+        expression (`{ok && <b>Done</b>}`) is computed, so it stops at the expression."""
+        for n in self.nodes:
+            if n.type != "jsx_text":
+                continue
+            chunk = " ".join(text(n).split())
+            if not chunk:
+                continue
+            p = n.parent
+            while p is not None and p.type == "jsx_element":
+                el = self._element_of.get(p.id)
+                if el is not None:
+                    if len(el.deep_text) >= TEXT_CAP:
+                        break  # an outer element holds all of this one's text: it is full too
+                    el.deep_text = (el.deep_text + " " + chunk).strip()[:TEXT_CAP]
+                p = p.parent
 
     def _jsx_attr(self, a) -> Attr | None:
         name = a.children[0] if a.children else None

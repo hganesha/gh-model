@@ -475,6 +475,61 @@
     {
       "kind": "UIControl",
       "natural_key": {
+        "container": "public/contact.html#contact",
+        "name": "checkbox1"
+      },
+      "attributes": {
+        "input_type": "checkbox"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "UIControl",
+      "natural_key": {
+        "container": "public/contact.html#contact",
+        "name": "button:Preview message"
+      },
+      "attributes": {
+        "control_type": "button"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "UIControl",
+      "natural_key": {
+        "container": "public/contact.html#contact",
+        "name": "submit~2"
+      },
+      "attributes": {
+        "control_type": "button"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "UIControl",
+      "natural_key": {
+        "container": "public/contact.html",
+        "name": "link:about.html~2"
+      },
+      "attributes": {
+        "target": "about.html?from="
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "UIControl",
+      "natural_key": {
+        "container": "public/contact.html",
+        "name": "link:mailto:~2"
+      },
+      "attributes": {
+        "target": "mailto:"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "UIControl",
+      "natural_key": {
         "container": "checkout/src/views/CheckoutView.vue#form1",
         "name": "form.email"
       },
@@ -576,7 +631,7 @@
       "kind": "UIControl",
       "natural_key": {
         "container": "src/pages/OrdersPage.tsx",
-        "name": "link2"
+        "name": "link1"
       },
       "attributes": {
         "target": "dynamic"

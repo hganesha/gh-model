@@ -296,8 +296,9 @@ def test_a_component_without_forms_or_links_is_not_a_screen():
 
 
 def test_control_names_follow_the_contract_order():
-    # name, id, binding path, link:<target>, submit or button:<text>, else <type><n> with n
-    # the control's position among the container's controls of that type, named or not.
+    # name, id, binding path, link:<target>, submit or button:<text>, else <type><n>: type is
+    # an input's type attribute (text when absent), else the tag; n counts only the
+    # container's controls of that type that reach this last rule.
     out = run("src/partials/signup.html", """<form id="signup" [formGroup]="form">
   <input type="text">
   <input name="email" id="ignored-when-named">
@@ -316,11 +317,177 @@ def test_control_names_follow_the_contract_order():
     container = "src/partials/signup.html#signup"
     controls = sorted(e["natural_key"]["name"] for e in out["entities"] if e["kind"] == "UIControl" and e["natural_key"]["container"] == container)
     assert controls == sorted([
-        "input1", "email", "phone", "city", "input5",
-        "button:Preview", "button2", "button:Clear",
-        "link:#terms", "link2", "link:/help", "link:https://example.com",
+        "text1", "email", "phone", "city", "text2",
+        "button:Preview", "button1", "button:Clear",
+        "link1", "link2", "link:/help", "link:https://example.com",  # a fragment or a query alone leaves no target
         "submit",
     ])
+
+
+def _controls(out, container):
+    return [e["natural_key"]["name"] for e in out["entities"] if e["kind"] == "UIControl" and e["natural_key"]["container"] == container]
+
+
+def test_fallback_names_count_only_the_controls_that_fall_back():
+    out = run("src/partials/filters.html", """<form id="f">
+  <input>
+  <input type="date">
+  <input name="q">
+  <select></select>
+  <input type="Date">
+  <textarea></textarea>
+  <input>
+  <select></select>
+</form>
+<form id="g"><input><select></select></form>""")
+    assert _controls(out, "src/partials/filters.html#f") == ["text1", "date1", "q", "select1", "date2", "textarea1", "text2", "select2"]
+    assert _controls(out, "src/partials/filters.html#g") == ["text1", "select1"]  # counted per container
+    # Naming one control, or adding a named one, renames no other control.
+    named = run("src/partials/filters.html", """<form id="f">
+  <input name="first">
+  <input type="date">
+  <input name="q">
+  <input name="added">
+  <select></select>
+  <input type="Date">
+  <textarea></textarea>
+  <input>
+  <select></select>
+</form>""")
+    assert _controls(named, "src/partials/filters.html#f") == ["first", "date1", "q", "added", "select1", "date2", "textarea1", "text1", "select2"]
+
+
+def test_repeated_names_in_one_container_get_a_suffix():
+    out = run("src/partials/contact.html", """<form id="c">
+  <button type="submit">Send</button>
+  <button type="submit">Send and copy me</button>
+  <input type="radio" name="size" value="s"><input type="radio" name="size" value="m"><input type="radio" name="size" value="l">
+  <a href="mailto:sales@example.com">Sales</a>
+  <a href="mailto:help@example.com">Help</a>
+  <a href="/orders">Orders</a>
+  <a href="/orders?page=2">More orders</a>
+</form>
+<a href="/orders">Orders</a>""")
+    assert _controls(out, "src/partials/contact.html#c") == [
+        "submit", "submit~2", "size", "size~2", "size~3", "link:mailto:", "link:mailto:~2", "link:/orders", "link:/orders~2"]
+    assert _controls(out, "src/partials/contact.html") == ["link:/orders"]  # another container: no suffix
+    assert "example.com" not in repr(out["entities"])  # no mail address is copied
+
+
+def test_blank_name_and_binding_values_do_not_name_a_control():
+    out = run("src/partials/blank.html", """<form id="b">
+  <input type="text" name="  ">
+  <input formControlName=" " id=" ">
+  <input formControlName=" city ">
+  <input name=" email ">
+</form>""")
+    controls = {e["natural_key"]["name"]: e["attributes"] for e in out["entities"] if e["kind"] == "UIControl"}
+    assert sorted(controls) == ["city", "email", "text1", "text2"]
+    assert controls["city"]["binds"] == "city" and controls["email"]["binds"] == "email"
+    assert "binds" not in controls["text1"] and "binds" not in controls["text2"]
+
+
+def test_button_text_is_all_descendant_text_but_never_computed():
+    html = run("src/partials/editor.html", """<form id="e">
+  <button type="button"><b>Preview</b> page</button>
+  <button type="button"><span><i class="icon"></i>Save</span>  <em>draft</em></button>
+  <button type="button">Delete {{ count }} rows</button>
+  <button type="button">A label that is far too long to be a control name at all</button>
+</form>""")
+    assert _controls(html, "src/partials/editor.html#e") == ["button:Preview page", "button:Save draft", "button1", "button2"]
+    jsx = run("src/views/Editor.tsx", """
+export default function Editor({ count, ok }) {
+  return (
+    <form name="e">
+      <button type="button"><b>Preview</b> page</button>
+      <button type="button">Delete {count} rows</button>
+      <button type="button">{ok && <b>Done</b>}</button>
+      <Button><Icon /> Export <em>all</em></Button>
+    </form>
+  );
+}
+""")
+    # Expression text is left out: what is left is the static text around it.
+    assert _controls(jsx, "src/views/Editor.tsx#e") == ["button:Preview page", "button:Delete rows", "button1", "button:Export all"]
+    assert entity(jsx, "UIControl", name="button:Preview page")["attributes"]["label"] == "Preview page"
+
+
+def test_urls_keep_query_parameter_names_but_never_values():
+    out = run("src/partials/search.html", """<form id="s" action="/search?q=shoes&page=2#results" method="get">
+  <a href="/help?topic=signup&token=abc123#top">Help</a>
+  <a href="https://user:pw@example.com/a/b?token=x">Elsewhere</a>
+  <a href="login.cfm?token=abc123">Log in</a>
+  <a [href]="'/orders?key=' + secretKey">Orders</a>
+</form>
+<form id="t" action="https://pay.example.com/charge?amount=10"></form>""")
+    form = entity(out, "Form", name="s")["attributes"]
+    assert form["action"] == "/search?q=&page="
+    controls = {e["natural_key"]["name"]: e["attributes"] for e in out["entities"] if e["kind"] == "UIControl"}
+    assert controls["link:/help"]["target"] == "/help?topic=&token="
+    assert controls["link:https://example.com"]["target"] == "https://example.com"
+    assert controls["link:login.cfm"]["target"] == "login.cfm?token="
+    assert entity(out, "Form", name="t")["attributes"]["action"] == "https://pay.example.com"
+    text = repr(out["entities"]) + repr(out["relations"]) + repr(out["diagnostics"])
+    for value in ("shoes", "abc123", "user:pw", "/a/b", "amount=10", "results", "#top"):
+        assert value not in text, value
+
+
+def _spans(path, data, kind="UIControl"):
+    ext = next(e for e in PACK.extractors if e.matches(path))
+    result = ext.extract(path, data, BLOB)
+    return {o.payload["natural_key"]["name"]: o.evidence.span for o in result.observations if o.kind == "entity" and o.payload["kind"] == kind}
+
+
+def test_non_ascii_markup_is_read_as_utf8_with_byte_spans():
+    source = """<!doctype html><html><head><title>Bestellübersicht</title></head><body>
+<p>Größe wählen – à la carte</p>
+<form id="bestellung"><button type="button">Bestätigen &amp; schließen</button>
+<input type="button" value="Zurück"><input name="straße"></form></body></html>"""
+    data = source.encode("utf-8")
+    out = run("public/bestellung.html", data)
+    assert entity(out, "Screen", name="public/bestellung.html")["attributes"]["title"] == "Bestellübersicht"
+    assert _controls(out, "public/bestellung.html#bestellung") == ["button:Bestätigen &amp; schließen", "button:Zurück", "straße"]
+    # Spans are byte offsets into the file, past every multi-byte character before them.
+    spans = _spans("public/bestellung.html", data)
+    for name, opening in (("straße", '<input name="straße">'), ("button:Zurück", '<input type="button" value="Zurück">')):
+        assert data[spans[name].start_byte:spans[name].end_byte] == opening.encode("utf-8"), name
+    # A file that is not valid UTF-8 is read as Latin-1, one character per byte.
+    latin = '<form id="l"><button type="button">Grüße</button><input name="x"></form>'.encode("latin-1")
+    out = run("src/partials/latin.html", latin)
+    assert _controls(out, "src/partials/latin.html#l") == ["button:Grüße", "x"]
+    assert _spans("src/partials/latin.html", latin)["x"].start_byte == latin.index(b'<input name="x">')
+
+
+def test_non_ascii_vue_templates_and_styles_keep_byte_spans():
+    data = """<template>
+  <form @submit.prevent="save"><button type="button">Löschen</button><input name="straße" /></form>
+</template>
+<script setup>
+// Schließen
+async function save() { await fetch("/api/adresse", { method: "POST" }); }
+</script>
+<style>
+/* Grün */
+.x { --farbe: #00ff00; }
+</style>
+""".encode("utf-8")
+    spans = _spans("src/views/Adresse.vue", data)
+    assert data[spans["straße"].start_byte:spans["straße"].end_byte] == '<input name="straße" />'.encode()
+    assert data[spans["button:Löschen"].start_byte:spans["button:Löschen"].end_byte] == b'<button type="button">'
+    assert entity(run("src/views/Adresse.vue", data), "Form", name="form1")["attributes"]["submits"] == ["POST /api/adresse"]
+    token = _spans("src/views/Adresse.vue", data, "StyleToken")["--farbe"]
+    assert data[token.start_byte:token.end_byte].startswith(b"--farbe")
+
+
+def test_non_ascii_angular_inline_templates_keep_byte_spans():
+    data = """import { Component } from "@angular/core";
+// Übersicht
+@Component({ selector: "x", template: `<p>Grüße</p><form><button type="button">Prüfen</button><input name="größe"></form>` })
+export class X {}
+""".encode("utf-8")
+    spans = _spans("src/app/x.component.ts", data)
+    assert sorted(spans) == ["button:Prüfen", "größe"]
+    assert data[spans["größe"].start_byte:spans["größe"].end_byte] == '<input name="größe">'.encode()
 
 
 NEW_ORDER = """

@@ -217,7 +217,8 @@ SubmitResolver = Callable[[Element, Attr], tuple[str | None, list[Any] | None, s
 def emit_ui(out: Out, owner: Owner | None, elements: list[Element], resolve: SubmitResolver | None = None, library: str | None = None) -> None:
     """Forms and controls under `owner` (counted but not modelled when there is none)."""
     forms: dict[int, tuple[str, dict[str, Any]]] = {}
-    counters: dict[tuple[str, str], int] = {}
+    fallbacks: dict[tuple[str, str], int] = {}  # (container, type) -> controls named <type><n> so far
+    taken: dict[tuple[str, str], int] = {}  # (container, name) -> controls given that name so far
     order = 0
     for el in elements:
         _element_constructs(out, el)
@@ -242,10 +243,16 @@ def emit_ui(out: Out, owner: Owner | None, elements: list[Element], resolve: Sub
         if owner is None:
             continue
         container = f"{owner.name}#{form[0]}" if form else owner.name
-        # n is the control's position among every control of its type in the container, named
-        # or not, the way a form's `form<n>` counts every form on the screen.
-        n = counters[(container, kind)] = counters.get((container, kind), 0) + 1
-        name = _control_name(el, kind, binds, target, n)
+        name = _control_name(el, kind, binds, target)
+        if name is None:
+            # <type><n>: n counts only the container's controls of that type that reach this
+            # rule, so naming or adding another control renames nothing.
+            ctype = _fallback_type(el, kind)
+            n = fallbacks[(container, ctype)] = fallbacks.get((container, ctype), 0) + 1
+            name = f"{ctype}{n}"
+        seen = taken[(container, name)] = taken.get((container, name), 0) + 1
+        if seen > 1:  # the same name again in this container: ~2, ~3, ... in document order
+            name = f"{name}~{seen}"
         attrs = {
             "control_type": kind, "tag": el.tag, "input_type": el.lit("type") if el.tag in ("input", "Input", "TextField", "Field") else None,
             "binds": binds, "validation": validation or None, "label": _label(el, kind),
@@ -253,11 +260,11 @@ def emit_ui(out: Out, owner: Owner | None, elements: list[Element], resolve: Sub
         }
         nav_kind, screens = link_targets(out.path, target) if target is not None else (None, [])
         if target is not None:
-            attrs["target"] = target.split("?")[0].split("#")[0] if nav_kind != "external" else _host(target)
+            attrs["target"] = _safe_url(target)
             attrs["external"] = True if nav_kind == "external" else None
         elif target_attr is not None:
             attrs["target"] = "dynamic"
-            out.diag(f"{el.tag} at byte {target_attr.start} navigates to {str(target_attr.value)[:60]!r}, which is not a literal")
+            out.diag(f"{el.tag} at byte {target_attr.start} navigates to {_masked(str(target_attr.value))[:60]!r}, which is not a literal")
         control = out.entity("web:Control", {"container": container, "name": name}, name, el.start, el.end, attrs)
         out.relate(form[1] if form else owner.ref, P.CONTAINS, control, el.start, el.end)
         for screen in screens:
@@ -276,11 +283,11 @@ def _form(out: Out, owner: Owner, el: Element, order: int, resolve: SubmitResolv
         value = static(action)
         if value is None:
             attrs["action"] = "dynamic"
-            out.diag(f"form {name} at byte {el.start}: action {str(action.value)[:60]!r} is not a literal")
+            out.diag(f"form {name} at byte {el.start}: action {_masked(str(action.value))[:60]!r} is not a literal")
             out.construct("web:form-action", action.start, action.end, False)
         else:
             kind, screens = link_targets(out.path, value) if value else ("anchor", [])
-            attrs["action"] = _host(value) if kind == "external" else value.split("?")[0]
+            attrs["action"] = _safe_url(value)
             if kind in ("route", "page"):
                 targets.append((method or "GET", screens[0], action.start, action.end, "action"))
             else:
@@ -312,7 +319,7 @@ def _form(out: Out, owner: Owner, el: Element, order: int, resolve: SubmitResolv
         if not found and calls is not None and not calls:
             out.diag(f"form {name} at byte {el.start}: handler {handler or '(inline)'} makes no HTTP call this file shows")
         elif calls is None:
-            out.diag(f"form {name} at byte {el.start}: handler {handler or str(handler_attr.value)[:40]!r} is not defined in this file")
+            out.diag(f"form {name} at byte {el.start}: handler {handler or _masked(str(handler_attr.value))[:40]!r} is not defined in this file")
         out.construct("web:submit-handler", handler_attr.start, handler_attr.end, found)
     attrs["submits"] = sorted({f"{m} {p}" for m, p, *_ in targets}) or None
     form = out.entity("web:Form", {"screen": owner.name, "name": name}, name, el.start, el.end, attrs)
@@ -342,19 +349,25 @@ def _form_binding(el: Element) -> str | None:
     return _name_of(a.value) if a is not None and a.value else None
 
 
+def _trimmed(value: str | None) -> str | None:
+    """A literal value without surrounding whitespace; None when nothing is left."""
+    v = (value or "").strip()
+    return v or None
+
+
 def _binding(el: Element) -> str | None:
     for key in ("v-model", "ngModel", "formControl", "value-binding"):
         a = el.get(key)
         if a is not None and a.value:
             return _name_of(a.value)
-    v = el.lit("formControlName")
+    v = _trimmed(el.lit("formControlName"))
     if v:
         return v
     for s in el.spreads:
         m = _REGISTER.search(s.value or "")
         if m:
             return m.group(1)
-    return el.lit("name")
+    return _trimmed(el.lit("name"))
 
 
 def _validation(el: Element) -> list[str]:
@@ -372,35 +385,53 @@ def _validation(el: Element) -> list[str]:
     return sorted(set(out))
 
 
-def _control_name(el: Element, kind: str, binds: str | None, target: str | None, n: int) -> str:
-    """A control's name, in the contract's order of preference: its name, its id, its
-    binding path, `link:<target>` for a link with a literal target, `submit` or
-    `button:<text>` for a button, else `<type><n>` with `n` its position among the
-    container's controls of that type in document order."""
-    name = (el.lit("name") or "").strip() or (el.lit("id") or "").strip() or el.lit("formControlName") or binds
+def _control_name(el: Element, kind: str, binds: str | None, target: str | None) -> str | None:
+    """A control's name by the first of the contract's rules 1 to 3 that applies (section
+    1, UIControl names): its name, its id, its binding path; `link:<target>` for a link
+    with a literal target; `submit` or `button:<text>` for a button. None when only rule
+    4, `<type><n>`, is left, which the caller numbers. A value that is empty once trimmed
+    does not count."""
+    name = _trimmed(el.lit("name")) or _trimmed(el.lit("id")) or binds
     if name:
         return name
-    if kind == "link" and target:
+    if kind == "link" and target is not None:
+        target = target.strip()
         if _EXTERNAL.match(target):
             return "link:" + _host(target)  # the host only: a path or query on another host can carry identifiers
-        path = target.split("?")[0].split("#")[0]
+        path = target.split("#")[0].split("?")[0]
         if path:
             return "link:" + path
-        if target.startswith("#") and len(target) > 1:
-            return "link:" + target  # an anchor on the same page
     if kind == "button":
-        if (el.lit("type") or "").lower() == "submit":
+        if (el.lit("type") or "").strip().lower() == "submit":
             return "submit"
-        text = el.text if el.tag not in ("input", "Input") else (el.lit("value") or "").strip()
+        text = _button_text(el)
         if text and len(text) <= 40 and "{" not in text:
             return "button:" + text
-    return f"{kind}{n}"
+    return None
+
+
+def _button_text(el: Element) -> str:
+    """An input button's value, else all the button's descendant text (expression text
+    left out by the scanners), collapsed."""
+    text = el.lit("value") if el.tag in ("input", "Input") else el.deep_text
+    return " ".join((text or "").split())
+
+
+def _fallback_type(el: Element, kind: str) -> str:
+    """The `<type>` of a `<type><n>` name: an input's type attribute (`text` when absent),
+    else `select`, `textarea`, `button` or `link`."""
+    if kind == "input" or el.tag == "input":
+        t = (el.lit("type") or "").strip().lower()
+        return t if re.fullmatch(r"[a-z][a-z-]*", t) else "text"
+    return kind
 
 
 def _label(el: Element, kind: str) -> str | None:
     label = el.lit("aria-label", "label", "placeholder")
-    if label is None and kind in ("button", "link") and el.text and "{" not in el.text:
-        label = el.text
+    if label is None and kind in ("button", "link"):
+        text = " ".join(el.deep_text.split())
+        if text and "{" not in text:
+            label = text
     return label[:60] if label else None
 
 
@@ -417,6 +448,30 @@ def _simple_name(expr: str | None) -> str | None:
 def _host(url: str) -> str:
     m = re.match(r"^([a-z][a-z0-9+.-]*:)?//([^/?#@]*@)?([^/?#]*)", url, re.I)
     return (m.group(1) or "") + "//" + m.group(3) if m else url.split(":")[0] + ":"
+
+
+def _safe_url(url: str) -> str:
+    """A literal URL as structural output may keep it (contract section 2, rule 7): on
+    another host, the scheme and host only; on this one, the path and the query's
+    parameter names, never their values or a fragment (`login.cfm?token=`)."""
+    url = url.strip()
+    if _EXTERNAL.match(url):
+        return _host(url)
+    path, sep, query = url.split("#")[0].partition("?")
+    if not sep:
+        return path
+    names = [p.split("=")[0] + ("=" if "=" in p else "") for p in query.split("&") if p]
+    return path + "?" + "&".join(names) if names else path
+
+
+_QUERY_VALUE = re.compile(r"([?&][^=&#?\s'\"`]+=)[^&#\s'\"`]*")
+_USER_INFO = re.compile(r"(//)[^/?#@\s'\"`]*@")
+
+
+def _masked(expr: str) -> str:
+    """Expression text for a diagnostic, with query values and user information in any
+    URL it spells out removed."""
+    return _USER_INFO.sub(r"\1", _QUERY_VALUE.sub(r"\1", expr))
 
 
 def _element_constructs(out: Out, el: Element) -> None:
