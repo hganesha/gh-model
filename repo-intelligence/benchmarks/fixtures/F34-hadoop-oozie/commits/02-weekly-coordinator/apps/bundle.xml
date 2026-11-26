@@ -1,0 +1,8 @@
+<bundle-app name="orders-bundle" xmlns="uri:oozie:bundle:0.2">
+    <coordinator name="daily">
+        <app-path>daily_orders/coordinator.xml</app-path>
+    </coordinator>
+    <coordinator name="weekly">
+        <app-path>${appBaseDir}/daily_orders/weekly_coordinator.xml</app-path>
+    </coordinator>
+</bundle-app>

@@ -1,0 +1,1 @@
+{"message": "Customers are cleaned upstream now: retire the Pig step", "delete": ["apps/daily_orders/pig/clean_customers.pig"]}
