@@ -1,6 +1,6 @@
 # Solution IR contract
 
-Status: 2026-11-25, amended after the wave-1 review. This is the contract every workstream building the solution IR follows, so that their work fits together without negotiation. It implements [Toward a complete solution IR](vscode-plugin-plan.md#toward-a-complete-solution-ir). The shared foundation it describes is built and tested (`tests/test_platforms.py`); everything else is built against it.
+Status: 2026-11-26, amended after the wave-1 review and extended for wave 2 (section 8). This is the contract every workstream building the solution IR follows, so that their work fits together without negotiation. It implements [Toward a complete solution IR](vscode-plugin-plan.md#toward-a-complete-solution-ir). The shared foundation it describes is built and tested (`tests/test_platforms.py`); everything else is built against it.
 
 If something here is wrong or missing for your workstream, do not change a shared file. Write the request under **Requests for the foundation** in your report, with the reason, and work around it in your own files.
 
@@ -175,3 +175,104 @@ The integrator checks every branch against this list before merging:
 ## 7. Reporting
 
 Each workstream ends with a short report: what it built, what it did not, test results with counts, coverage on its fixture (`platform_constructs` numerator and denominator), and Requests for the foundation. Commits are made on the workstream's branch, ending with the attribution line used in this repository. Workstreams do not push; the integrator merges and pushes.
+
+## 8. Wave 2
+
+Wave 2 builds on the integrated wave 1 (`claude/solution-ir`). Sections 1 to 7 still apply; where this section names a different branch, base or file list, it replaces section 4 for wave 2. Each workstream branches from the commit that adds this section.
+
+### 8.1 Transform shapes (W1)
+
+A transform shape says what a unit does to the rows it reads. It is derived from what the engine already parses and never needs a model. The vocabulary comes from pipeline-builder (sourceform), which uses it to generate pipelines; here it is used to recognise them.
+
+`repo_intel/compile/transforms.py` (new, owned by W1) defines schema `rkp-transform/1`, `validate_shape`, and `transform_observation(blob, at, owner, language, transforms)`, which validates and returns an observation of kind `transform`. One observation describes one unit: a SQL statement, a DATA step, a PROC step or a PySpark chain.
+
+```json
+{"owner": {"kind": "Program", "natural_key": {...}, "name": "..."},
+ "language": "sql" | "sas" | "pyspark",
+ "transforms": [
+   {"id": "t1", "op": "deduplicate", "at": [120, 410],
+    "inputs": ["work.orders_sorted"], "output": "work.orders_latest",
+    "keys": ["order_id"], "order": [{"column": "updated_at", "desc": true}],
+    "primitive": "dedupe_by_key"}]}
+```
+
+Fields of a transform:
+
+| Field | Meaning |
+|---|---|
+| `id` | `t1`, `t2`, ... in source order within the unit |
+| `op` | one of `read`, `project`, `filter`, `join`, `union`, `deduplicate`, `aggregate`, `window`, `pivot`, `unpivot`, `sort`, `validate`, `publish`, `platform` |
+| `at` | span of the clause or statement it comes from; required |
+| `inputs` | dataset or table names as written (lower-cased, library or schema kept), or ids of earlier transforms in the unit |
+| `output` | the name written, or absent when the result only feeds the next transform |
+| `keys` | partition, group, join or BY columns |
+| `order` | `[{"column", "desc"}]` |
+| `join` | `{"type": inner\|left\|right\|full\|semi\|anti\|cross, "on": [[left, right]]}` |
+| `columns` | the column effect, pipeline-builder's `Shape`: `{"add": [...], "replace": [...], "drop": [...], "rename": {old: new}}`; casts and derived columns are `replace` or `add` on a `project` |
+| `predicate` | a behavioural-IR expression (section 3), or `{"sql": text}` when only SQL text is available |
+| `measures` | `[{"fn", "column", "as"}]` for `aggregate` and `window` |
+| `primitive` | a name from `PRIMITIVES`, only when the whole idiom matched exactly |
+| `candidates` | primitive names a partial match suggests; never with `primitive` |
+| `dynamic` | `true` when an input or output name is not literal (macro variable, f-string); the name keeps its `{placeholder}` |
+| `construct` | for `op: platform`, the construct or function that was not recognised |
+
+`PRIMITIVES` maps each recognisable primitive name to its pipeline-builder category. Start with these and add only names whose idiom can be matched exactly: `select_columns`, `drop_columns`, `rename_columns`, `safe_cast`, `derive_column`, `conditional_flag`, `map_codes`, `coalesce_columns`, `apply_defaults`, `trim_strings`, `normalize_case`, `parse_timestamp`, `split_by_condition`, `union_by_name`, `join`, `dedupe_by_key`, `dedupe_by_hash`, `aggregate`, `window_function`, `calculate_running_total`, `delta_calc`, `top_n_filter`, `pivot`, `unpivot`, `merge_into`, `apply_scd_type_2`, `apply_deletes`. Categories use pipeline-builder's names, snake-cased: `structural_reshaping`, `type_standardization`, `cleaning`, `deduplication`, `cdc`, `integration`, `business_rules`, `aggregation`. Names that only describe business meaning (`calculate_score`, `classify_record`, `derive_status`) are never emitted here; they are for rule lifting.
+
+Where shapes come from:
+
+- **Behaviour units** (CFML `cfquery`, SAS DATA steps, PROC SQL and other PROC steps): derived in the compiler from the stored behaviour, after step 4b, so no pack has to emit them. A `query` node that is `remote` or whose table names are dynamic gives `op: platform` with `dynamic: true`. The SAS pack may add detail to its own `platform` nodes (PROC options such as `nodupkey` and `out=`, KEEP, DROP and RENAME lists) so the derivation has what it needs.
+- **Stand-alone SQL** (`sql_lineage.SqlScripts`) and **PySpark** (`data_python`): those extractors emit `transform` observations themselves, using the shared SQL recognizer in `transforms.py` (sqlglot trees, never run).
+
+Storage: the compiler writes one row per observation to the shard's `transforms` table (`{"owner": <entity id>, "path", "at", "language", "transforms"}`), sorted, present only when it has rows. It is detail: `bundle.DETAIL_TABLES` and `_OPTIONAL_TABLES` list it. The owner entity gets `attributes.transforms = {"primitives": [...sorted names], "purpose": <category>}` in every tier; `purpose` is the category with the most primitives in the owner's units, ties broken by the order above, absent when there are none. `behavior_store` returns the owner's transforms beside its behaviour, and the local API's behaviour answer includes them. Coverage domain `transform_shapes`: units with at least one non-`platform` transform over units that move data.
+
+### 8.2 Rules, workflows and captured screens from models (W2)
+
+Model output follows the DM08 pattern (`repo_intel/decisions/behavior.py`): a decision spec, egress denied unless policy names the provider, abstain on any failure, evidence class `E5`, citations checked against the evidence supplied.
+
+- **Business rules.** Candidates are deterministic: conditions and computed values in behaviour units (a CFML `if` whose branch throws, redirects or outputs an error; SAS `WHERE`, subsetting `IF` and assignments; SQL `WHERE` and `CASE`), each with its unit's transform shapes (8.1) as context, read from the shard's `transforms` rows. Spec `dm.business-rules` names and groups candidates into rules. A rule is `BusinessRule {scope: <owner entity name>, name: <lower-case slug from the model, at most 60 characters>}` with attributes `statement` (at most 280 characters), `rule_kind` (`validation`, `calculation`, `decision`), `status` (`hypothesis`, or `confirmed` after an owner override), and the candidate spans it cites. Relations: owner `ENFORCES` rule; rule `APPLIES_TO` the `Field`, `Table`, `Dataset` or `Form` the condition reads, when that entity already exists. Assertions are `hypothesis`, `inferred`, `E5`.
+- **Workflows.** States come from literal assignments to a column named `status`, `state` or `stage` (or a column a CodeList constrains) across units; transitions from the conditions guarding them. The states and transitions found are facts (`E2`/`E3`); spec `dm.workflows` only names the workflow and its states. `Workflow {scope: <table or dataset name>, name: <column>}`, attributes `states`, `transitions` (each with evidence), `status`. `Workflow APPLIES_TO` the Table or Dataset.
+- **Confirmation.** An owner confirms or rejects with a `decisions` override: `spec` is `dm.business-rules` or `dm.workflows`, `scope_entity` the rule or workflow's entity id, `label` `confirmed` or `rejected`. Confirmed gives `status: confirmed` and epistemic status `supported`; rejected drops it from the snapshot and keeps a conflict record. Nothing is confirmed by default.
+- **Captured screens (E5).** Owner-captured evidence under `.rkp/inputs/screens/`: a `capture.json` listing `{route or template, image, dom}` per capture, PNG images and saved DOM HTML. A deterministic step reads `capture.json` and the DOM (regions by landmark and heading, controls by the naming rule of section 1); spec `dm.screen-regions` labels regions. Results attach to the existing `Screen` (matched by route or template) as `attributes.captured` with `E5` evidence pointing at the capture; an unmatched capture is a diagnostic. No browser runs inside the engine.
+- Rules and workflows belong in the committed architecture tier; captured regions are detail.
+
+### 8.3 HTTP calls in the committed bundle (W3)
+
+- `typescript_source` records the HTTP method of a client call (`fetch` `method:` literal, `axios.get/post/...`, `axios({method})`, `$http`, Angular `HttpClient.get/...`): `"method"` on the `http_call` observation, upper-case, absent when not literal.
+- The linker's `http_calls` export and the compiler's `workspace_exports.unresolved_calls` carry `method`.
+- The bundle commits `workspace_exports` (the `operations` and `unresolved_calls` lists) in every tier, as one manifest-listed JSON file with its digest; `bundle_check` and `rkp verify` check it; old bundles without it still read. The publish gate's secret scan covers it.
+- `solution/loader.py` reads exports from a committed bundle, so `rkp solution` links members exactly without a local compile; the "not in the committed bundle" warning stays only for old bundles.
+- The TypeScript reader in `packages/bundle` reads the file and tolerates its absence.
+
+### 8.4 Multi-repository goldens and coverage per plane (W4)
+
+- A fixture may be multi-repository: `base/` holds `solution.json` (the `.rkp/solution.json` format) and one directory per member. `golden_check` compiles each member, loads the solution and checks a `golden.json` whose entries may name a member (`"member": "web"`) and may list identity links (`{"link": {"rule", "from", "to"}}`) and unmatched references. Single-repository fixtures are unchanged.
+- F23 moves from `tests/fixtures/solution/F23-multi-repo-solution/` to `benchmarks/fixtures/F23-solution-multi-repo/` and becomes a golden; `tests/test_solution.py` reads it from there.
+- Coverage per Explorer plane: each plane shows the coverage domains that bear on it (experience: `platform_constructs` of packs with UI terms; business: `transform_shapes` and rule counts by status; security: roles and permissions found), and entity counts per kind with the share confirmed where a kind has a status.
+
+### 8.5 Web experience follow-ups (W5)
+
+- **Per-file Symbol reference.** A relation end may be the string `"@symbol:<name>"`, meaning the top-level exported symbol `<name>` declared in the same file. The linker resolves it to that `Symbol` (`{package, qualified_name}`, as `symbol_ref` builds it); when the file exports no such symbol it falls back to `"@package"` with qualifier `component: <name>`, as today. The web pack uses it for `RENDERS`, so a screen is rendered by its component.
+- **Screen key qualifier.** When one unit has more than one router or app (two `createBrowserRouter` calls, two Angular `RouterModule.forRoot`, several Next.js apps), Screen keys gain `app`: the router's variable name, or the app directory from the unit root. With a single router the key stays `{platform, name}`, so existing keys do not change.
+- **Stylesheets.** An `@import` or `@use` of a literal stylesheet path is `Artifact DEPENDS_ON Artifact` (the importing file's Artifact to the imported one's, through `"@file"` and a non-declaring Artifact ref); a token defined as another token (`--a: var(--b)`, `$a: $b`, a theme key pointing to another) is `StyleToken ALIAS_OF StyleToken`.
+- **Field keys for BINDS_TO.** A binding binds a `Field` only when the form's model type is a declared schema whose fields are literal (a TypeScript interface or type alias in the same file, a Zod or Yup object schema): `Field {table: "<file path>#<TypeName>", name}`, declared by the web pack with `web:ModelField` (lossy). Otherwise the binding path stays an attribute, as now.
+- **Accessibility.** Per control: accessible name source (`label for`, wrapping label, `aria-label`, `aria-labelledby`, none), role, explicit `tabindex`; per screen: landmarks, heading order, positive tabindex count. Contrast ratio for a text and background token pair used together in one rule, when both values are literal colours. All attributes, plus a coverage domain `accessibility` (controls with an accessible name over controls).
+
+### 8.6 More server pages and SAS Enterprise Guide (W6)
+
+- Pack `jsp` (prefix `jsp`): `.jsp`, `.jspx`, `.tag`, `web.xml`; JSTL and Struts or Spring form tags. Pack `aspnet` (prefix `aspx`): Web Forms (`.aspx`, `.ascx`, `.master`, code-behind references) and Razor (`.cshtml`, `.razor`, `@page` routes). Both follow sections 1 and 2: Screens, Forms and UIControls named by section 1, `RENDERS`, `SUBMITS_TO`, `NAVIGATES_TO`, roles from `<security-constraint>`, `[Authorize(Roles=...)]` and `User.IsInRole`, behaviour units for scriptlets and code blocks only where they validate, and an honest construct list.
+- SAS Enterprise Guide projects (`.egp`, a zip archive read from the file's bytes): the project as a `Program`, its process flows as `Job` and tasks as `Task` with `DEPENDS_ON` in flow order, embedded code tasks lowered by the SAS pack's existing parser, and the datasets each task names. New module `repo_intel/platforms/sas/egp.py` plus its registration in `sas/__init__.py`.
+
+### 8.7 Workstreams (wave 2)
+
+| | Workstream | Branch | May create or change |
+|---|---|---|---|
+| W1 | Transform shapes (8.1) | `claude/ir2-transforms` | `repo_intel/compile/transforms.py` (new), `repo_intel/compile/compiler.py` (transforms only), `repo_intel/knowledge/bundle.py` (table lists only), `repo_intel/knowledge/behavior_store.py`, `repo_intel/extractors/sql_lineage.py`, `repo_intel/extractors/data_python.py`, `repo_intel/platforms/sas/analysis.py` and `lower.py` (node detail only), `tests/test_transforms.py`, `benchmarks/fixtures/F24-transform-shapes/**` |
+| W2 | Rules, workflows and captured screens (8.2) | `claude/ir2-rules` | `repo_intel/decisions/rules.py`, `workflows.py`, `screens.py` (new), `repo_intel/compile/pipeline.py` (wiring only), `repo_intel/compile/compiler.py` (decision results only), `repo_intel/decisions/overrides.py` (labels only, if needed), `tests/test_rules.py` |
+| W3 | HTTP calls in the bundle (8.3) | `claude/ir2-http` | `repo_intel/extractors/typescript_source.py` (`http_call` only), `repo_intel/compile/link.py` (exports only), `repo_intel/compile/compiler.py` (exports only), `repo_intel/knowledge/bundle.py` (exports only), `repo_intel/knowledge/bundle_check.py`, `repo_intel/ingest/publish_secrets.py`, `repo_intel/solution/loader.py`, `packages/bundle/**`, `tests/test_http_exports.py` |
+| W4 | Multi-repository goldens and coverage per plane (8.4) | `claude/ir2-goldens` | `repo_intel/compile/golden_check.py`, `benchmarks/fixtures/README.md`, `benchmarks/fixtures/F23-solution-multi-repo/**` (new), `tests/fixtures/solution/**` (removal of `F23-multi-repo-solution`), `tests/test_solution.py` (fixture path only), `tests/test_golden_multi.py`, `repo-intelligence/explorer/**` |
+| W5 | Web follow-ups (8.5) | `claude/ir2-web` | `repo_intel/platforms/web/**`, `repo_intel/compile/link.py` (`@symbol:` only), `repo_intel/compile/compiler.py` (`@symbol:` only), `tests/test_platform_web.py`, `benchmarks/fixtures/F22-web-frontend/**` |
+| W6 | JSP, ASP.NET and Enterprise Guide (8.6) | `claude/ir2-pages` | `repo_intel/platforms/jsp/**`, `repo_intel/platforms/aspnet/**` (new), `repo_intel/platforms/sas/egp.py` (new), `repo_intel/platforms/sas/__init__.py` (registration only), `tests/test_platform_jsp.py`, `tests/test_platform_aspnet.py`, `tests/test_platform_sas_egp.py`, `benchmarks/fixtures/F25-jsp-app/**`, `F26-aspnet-app/**`, `F27-sas-eg-project/**` |
+
+Shared files: `compiler.py` is changed by W1, W2, W3 and W5, and `link.py` and `bundle.py` by two each; each keeps its change in its own function or a clearly separate block and touches nothing else, and the integrator merges them. A pack whose output changes raises its `version`; the integrator settles version bumps in `sas/__init__.py`. Fixture numbers are allocated above: `tests/test_fixtures.py` checks that numbering is contiguous, so on a single branch it fails while another branch's number is missing. That failure alone is expected; every other test must pass.
+
+Everything in section 4's shared, read-only list stays read-only, and so does this document.
