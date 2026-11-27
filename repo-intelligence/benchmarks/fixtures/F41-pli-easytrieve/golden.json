@@ -1,0 +1,777 @@
+{
+  "fixture": "F41-pli-easytrieve",
+  "description": "A customer batch estate in four mainframe languages: a PL/I update program (an %INCLUDE member with the customer record, a file with a TITLE, an ON-unit, SELECT, embedded DB2 SQL and a call to an assembler routine), an Easytrieve report program (FILE layouts, a SORT, a JOB with procedures, a REPORT section, CALL and SQL), a REXX driver (ALLOC and EXECIO of literal datasets, an allocation built at run time, ADDRESS LINKMVS, ISPEXEC SELECT PGM, a queued DSN RUN PROGRAM, INTERPRET and a planted password in a variable) and an assembler date routine (a DCB opened for input, LINK EP=, a V-type constant and LOAD EPLOC=). The commits add a PL/I internal procedure, a second Easytrieve report and a CLIST driver. 'since' names the milestone whose compiler must produce the item. A program is Program {platform: mainframe, name} whatever its language, so the REXX driver's LINKMVS and ISPEXEC calls link to the PL/I and Easytrieve programs and the PL/I CALL to the assembler one.",
+  "entities": [
+    {
+      "kind": "Program",
+      "natural_key": {
+        "platform": "mainframe",
+        "name": "CUSTUPD"
+      },
+      "since": "M2",
+      "attributes": {
+        "platform": "pli",
+        "platform_kind": "pli:Program",
+        "language": "pli",
+        "main": true
+      }
+    },
+    {
+      "kind": "Symbol",
+      "natural_key": {
+        "platform": "mainframe",
+        "program": "CUSTUPD",
+        "name": "VALIDATE"
+      },
+      "since": "M2",
+      "attributes": {
+        "platform_kind": "pli:Procedure",
+        "params": [
+          "REC",
+          "RC"
+        ]
+      }
+    },
+    {
+      "kind": "DataSchema",
+      "natural_key": {
+        "kind": "include",
+        "name": "CUSTREC"
+      },
+      "since": "M2",
+      "attributes": {
+        "platform_kind": "pli:IncludeMember",
+        "layouts": [
+          "CUST_REC"
+        ]
+      }
+    },
+    {
+      "kind": "Field",
+      "natural_key": {
+        "table": "pli:CUSTREC",
+        "name": "CUST_BALANCE"
+      },
+      "since": "M2",
+      "attributes": {
+        "level": 2,
+        "offset": 106,
+        "length": 6,
+        "usage": "FIXED DECIMAL",
+        "parent": "CUST_REC"
+      }
+    },
+    {
+      "kind": "Field",
+      "natural_key": {
+        "table": "pli:CUSTREC",
+        "name": "POSTCODE"
+      },
+      "since": "M2",
+      "attributes": {
+        "level": 3,
+        "offset": 101,
+        "length": 5,
+        "pic": "99999",
+        "parent": "CUST_ADDRESS"
+      }
+    },
+    {
+      "kind": "Table",
+      "natural_key": {
+        "datastore": "default",
+        "name": "accounts"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "Table",
+      "natural_key": {
+        "datastore": "default",
+        "name": "run_log"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "Program",
+      "natural_key": {
+        "platform": "mainframe",
+        "name": "CUSTRPT"
+      },
+      "since": "M2",
+      "attributes": {
+        "platform": "easytrieve",
+        "platform_kind": "ezt:Program",
+        "language": "easytrieve",
+        "activities": [
+          "sort",
+          "job"
+        ],
+        "reports": [
+          "NORTHRPT"
+        ]
+      }
+    },
+    {
+      "kind": "DataSchema",
+      "natural_key": {
+        "kind": "easytrieve-file",
+        "name": "CUSTRPT.CUSTIN"
+      },
+      "since": "M2",
+      "attributes": {
+        "platform_kind": "ezt:File",
+        "dd": "CUSTIN",
+        "record_format": "FB",
+        "lrecl": 120,
+        "fields": 6
+      }
+    },
+    {
+      "kind": "DataSchema",
+      "natural_key": {
+        "kind": "easytrieve-file",
+        "name": "CUSTRPT.SORTWK"
+      },
+      "since": "M2",
+      "attributes": {
+        "platform_kind": "ezt:File",
+        "dd": "SORTWK"
+      }
+    },
+    {
+      "kind": "Field",
+      "natural_key": {
+        "table": "easytrieve:CUSTRPT.CUSTIN",
+        "name": "CUST-BAL"
+      },
+      "since": "M2",
+      "attributes": {
+        "platform_kind": "ezt:Field",
+        "offset": 40,
+        "length": 7,
+        "type": "P",
+        "usage": "packed-decimal",
+        "decimals": 2
+      }
+    },
+    {
+      "kind": "Field",
+      "natural_key": {
+        "table": "easytrieve:CUSTRPT.SORTWK",
+        "name": "SRT-STATUS"
+      },
+      "since": "M2",
+      "attributes": {
+        "offset": 54,
+        "length": 1,
+        "type": "A"
+      }
+    },
+    {
+      "kind": "Symbol",
+      "natural_key": {
+        "platform": "mainframe",
+        "program": "CUSTRPT",
+        "name": "FLAG-OVER"
+      },
+      "since": "M2",
+      "attributes": {
+        "platform_kind": "ezt:Procedure"
+      }
+    },
+    {
+      "kind": "Symbol",
+      "natural_key": {
+        "platform": "mainframe",
+        "program": "CUSTRPT",
+        "name": "WRAPUP"
+      },
+      "since": "M2",
+      "attributes": {
+        "platform_kind": "ezt:Procedure"
+      }
+    },
+    {
+      "kind": "Report",
+      "natural_key": {
+        "platform": "easytrieve",
+        "name": "CUSTRPT.NORTHRPT"
+      },
+      "since": "M2",
+      "attributes": {
+        "printer": "RPTOUT",
+        "control": [
+          "SRT-REGION"
+        ],
+        "sum": [
+          "SRT-BAL",
+          "WS-OVER"
+        ],
+        "job": "CUSTLIST"
+      }
+    },
+    {
+      "kind": "Table",
+      "natural_key": {
+        "datastore": "default",
+        "name": "rpt_audit"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "Program",
+      "natural_key": {
+        "platform": "tso",
+        "name": "RUNRPT"
+      },
+      "since": "M2",
+      "attributes": {
+        "platform": "rexx",
+        "platform_kind": "rexx:Exec",
+        "language": "rexx",
+        "environments": [
+          "ISPEXEC",
+          "LINKMVS",
+          "TSO"
+        ]
+      }
+    },
+    {
+      "kind": "Dataset",
+      "natural_key": {
+        "name": "prod.cust.master"
+      },
+      "since": "M2",
+      "attributes": {
+        "platform": "mainframe"
+      }
+    },
+    {
+      "kind": "Dataset",
+      "natural_key": {
+        "name": "prod.cust.master.new"
+      },
+      "since": "M2",
+      "attributes": {
+        "platform": "mainframe"
+      }
+    },
+    {
+      "kind": "Program",
+      "natural_key": {
+        "platform": "mainframe",
+        "name": "DATEUTIL"
+      },
+      "since": "M2",
+      "attributes": {
+        "platform": "hlasm",
+        "platform_kind": "asm:Program",
+        "language": "hlasm",
+        "csects": [
+          "DATEUTIL"
+        ],
+        "entries": [
+          "DATENEXT"
+        ],
+        "externals": [
+          "DATEFMT"
+        ],
+        "files": [
+          {
+            "file": "DATEIN",
+            "dd": "DATEIN",
+            "mode": "input"
+          }
+        ]
+      }
+    }
+  ],
+  "edges": [
+    {
+      "subject": {
+        "kind": "Program",
+        "natural_key": {
+          "platform": "mainframe",
+          "name": "CUSTUPD"
+        }
+      },
+      "predicate": "DEPENDS_ON",
+      "object": {
+        "kind": "DataSchema",
+        "natural_key": {
+          "kind": "include",
+          "name": "CUSTREC"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Program",
+        "natural_key": {
+          "platform": "mainframe",
+          "name": "CUSTUPD"
+        }
+      },
+      "predicate": "CONTAINS",
+      "object": {
+        "kind": "Symbol",
+        "natural_key": {
+          "platform": "mainframe",
+          "program": "CUSTUPD",
+          "name": "VALIDATE"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Program",
+        "natural_key": {
+          "platform": "mainframe",
+          "name": "CUSTUPD"
+        }
+      },
+      "predicate": "CALLS",
+      "object": {
+        "kind": "Symbol",
+        "natural_key": {
+          "platform": "mainframe",
+          "program": "CUSTUPD",
+          "name": "VALIDATE"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Program",
+        "natural_key": {
+          "platform": "mainframe",
+          "name": "CUSTUPD"
+        }
+      },
+      "predicate": "CALLS",
+      "object": {
+        "kind": "Program",
+        "natural_key": {
+          "platform": "mainframe",
+          "name": "DATEUTIL"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Program",
+        "natural_key": {
+          "platform": "mainframe",
+          "name": "CUSTUPD"
+        }
+      },
+      "predicate": "READS_FROM",
+      "object": {
+        "kind": "Table",
+        "natural_key": {
+          "datastore": "default",
+          "name": "accounts"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Program",
+        "natural_key": {
+          "platform": "mainframe",
+          "name": "CUSTUPD"
+        }
+      },
+      "predicate": "WRITES_TO",
+      "object": {
+        "kind": "Table",
+        "natural_key": {
+          "datastore": "default",
+          "name": "accounts"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Program",
+        "natural_key": {
+          "platform": "mainframe",
+          "name": "CUSTUPD"
+        }
+      },
+      "predicate": "WRITES_TO",
+      "object": {
+        "kind": "Table",
+        "natural_key": {
+          "datastore": "default",
+          "name": "run_log"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "DataSchema",
+        "natural_key": {
+          "kind": "include",
+          "name": "CUSTREC"
+        }
+      },
+      "predicate": "CONTAINS",
+      "object": {
+        "kind": "Field",
+        "natural_key": {
+          "table": "pli:CUSTREC",
+          "name": "CUST_BALANCE"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Program",
+        "natural_key": {
+          "platform": "mainframe",
+          "name": "CUSTRPT"
+        }
+      },
+      "predicate": "CONTAINS",
+      "object": {
+        "kind": "DataSchema",
+        "natural_key": {
+          "kind": "easytrieve-file",
+          "name": "CUSTRPT.CUSTIN"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "DataSchema",
+        "natural_key": {
+          "kind": "easytrieve-file",
+          "name": "CUSTRPT.CUSTIN"
+        }
+      },
+      "predicate": "CONTAINS",
+      "object": {
+        "kind": "Field",
+        "natural_key": {
+          "table": "easytrieve:CUSTRPT.CUSTIN",
+          "name": "CUST-BAL"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Program",
+        "natural_key": {
+          "platform": "mainframe",
+          "name": "CUSTRPT"
+        }
+      },
+      "predicate": "PRODUCES",
+      "object": {
+        "kind": "Report",
+        "natural_key": {
+          "platform": "easytrieve",
+          "name": "CUSTRPT.NORTHRPT"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Program",
+        "natural_key": {
+          "platform": "mainframe",
+          "name": "CUSTRPT"
+        }
+      },
+      "predicate": "CALLS",
+      "object": {
+        "kind": "Symbol",
+        "natural_key": {
+          "platform": "mainframe",
+          "program": "CUSTRPT",
+          "name": "FLAG-OVER"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Program",
+        "natural_key": {
+          "platform": "mainframe",
+          "name": "CUSTRPT"
+        }
+      },
+      "predicate": "CALLS",
+      "object": {
+        "kind": "Symbol",
+        "natural_key": {
+          "platform": "mainframe",
+          "program": "CUSTRPT",
+          "name": "WRAPUP"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Program",
+        "natural_key": {
+          "platform": "mainframe",
+          "name": "CUSTRPT"
+        }
+      },
+      "predicate": "WRITES_TO",
+      "object": {
+        "kind": "Table",
+        "natural_key": {
+          "datastore": "default",
+          "name": "rpt_audit"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Program",
+        "natural_key": {
+          "platform": "tso",
+          "name": "RUNRPT"
+        }
+      },
+      "predicate": "CALLS",
+      "object": {
+        "kind": "Program",
+        "natural_key": {
+          "platform": "mainframe",
+          "name": "CUSTUPD"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Program",
+        "natural_key": {
+          "platform": "tso",
+          "name": "RUNRPT"
+        }
+      },
+      "predicate": "CALLS",
+      "object": {
+        "kind": "Program",
+        "natural_key": {
+          "platform": "mainframe",
+          "name": "CUSTRPT"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Program",
+        "natural_key": {
+          "platform": "tso",
+          "name": "RUNRPT"
+        }
+      },
+      "predicate": "READS_FROM",
+      "object": {
+        "kind": "Dataset",
+        "natural_key": {
+          "name": "prod.cust.master"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Program",
+        "natural_key": {
+          "platform": "tso",
+          "name": "RUNRPT"
+        }
+      },
+      "predicate": "WRITES_TO",
+      "object": {
+        "kind": "Dataset",
+        "natural_key": {
+          "name": "prod.cust.master.new"
+        }
+      },
+      "since": "M2"
+    }
+  ],
+  "absent_entities": [
+    {
+      "kind": "Program",
+      "natural_key": {
+        "platform": "mainframe",
+        "name": "BALSUM"
+      },
+      "why": "BALSUM runs under DSN RUN PROGRAM but no member of the repository holds it: the CALLS is not declared, so it does not bring the program into existence"
+    },
+    {
+      "kind": "Program",
+      "natural_key": {
+        "platform": "tso",
+        "name": "NOTIFY"
+      },
+      "why": "%NOTIFY names an exec no member holds: a reference, not a declaration"
+    },
+    {
+      "kind": "Program",
+      "natural_key": {
+        "platform": "mainframe",
+        "name": "AUDITLOG"
+      },
+      "why": "Easytrieve CALL AUDITLOG and assembler LINK EP=CALCHOL name programs outside the repository"
+    },
+    {
+      "kind": "Program",
+      "natural_key": {
+        "platform": "mainframe",
+        "name": "DATEFMT"
+      },
+      "why": "a V-type constant is an external reference kept in attributes, and LOAD EPLOC= names its module at run time: neither is guessed into a call"
+    },
+    {
+      "kind": "Table",
+      "natural_key": {
+        "datastore": "default",
+        "name": "sqlca"
+      },
+      "why": "EXEC SQL INCLUDE SQLCA is a construct, not a table"
+    },
+    {
+      "kind": "DataSchema",
+      "natural_key": {
+        "kind": "include",
+        "name": "SQLCA"
+      },
+      "why": "SQLCA is the DB2 communication area, not an %INCLUDE member"
+    },
+    {
+      "kind": "Dataset",
+      "natural_key": {
+        "name": "regions"
+      },
+      "why": "an unquoted dataset name in ALLOC is prefixed by the user's TSO prefix at run time: never guessed"
+    },
+    {
+      "kind": "Symbol",
+      "natural_key": {
+        "platform": "tso",
+        "program": "RUNRPT",
+        "name": "LOGRUN"
+      },
+      "why": "LOGRUN is an internal REXX routine: execs give no Symbols"
+    }
+  ],
+  "exclusions": [],
+  "forbidden_kinds": [
+    "Package",
+    "Component",
+    "Endpoint"
+  ],
+  "expected_unknowns": [
+    {
+      "since": "M2",
+      "detail": "RUNRPT allocates REGLIST to a dataset built from a variable and reads it with EXECIO, and INTERPRETs a statement built at run time: counted and noted, not resolved"
+    },
+    {
+      "since": "M2",
+      "detail": "DATEUTIL LOADs a module through EPLOC=: the program is named at run time"
+    }
+  ],
+  "expected_conflicts": [],
+  "secret_probes": [
+    {
+      "path": "rexx/RUNRPT.rexx",
+      "must_never_appear": "fixture-not-a-real-password-0041",
+      "since": "M2"
+    }
+  ],
+  "commits": [
+    {
+      "dir": "01-apply-interest",
+      "expect": "CUSTUPD gains an internal procedure that applies interest and logs each amount to a new table",
+      "added_entities": [
+        {
+          "kind": "Symbol",
+          "natural_key": {
+            "platform": "mainframe",
+            "program": "CUSTUPD",
+            "name": "APPLY_INTEREST"
+          },
+          "since": "M2"
+        },
+        {
+          "kind": "Table",
+          "natural_key": {
+            "datastore": "default",
+            "name": "interest_log"
+          },
+          "since": "M2"
+        }
+      ],
+      "removed_entities": []
+    },
+    {
+      "dir": "02-limit-report",
+      "expect": "CUSTRPT gains a second report section, a summary of the customers over their limit",
+      "added_entities": [
+        {
+          "kind": "Report",
+          "natural_key": {
+            "platform": "easytrieve",
+            "name": "CUSTRPT.LIMITRPT"
+          },
+          "since": "M2"
+        }
+      ],
+      "removed_entities": []
+    },
+    {
+      "dir": "03-nightly-clist",
+      "expect": "A CLIST driver that allocates the run log, runs CUSTUPD with TSO CALL and the REXX driver with %RUNRPT",
+      "added_entities": [
+        {
+          "kind": "Program",
+          "natural_key": {
+            "platform": "tso",
+            "name": "NIGHTLY"
+          },
+          "since": "M2"
+        },
+        {
+          "kind": "Dataset",
+          "natural_key": {
+            "name": "prod.cust.runlog"
+          },
+          "since": "M2"
+        }
+      ],
+      "removed_entities": []
+    }
+  ],
+  "decision_cases": [],
+  "granularity": {
+    "label": null,
+    "why": "library members (programs, an include member, execs) with no build file or deployment a repository shows",
+    "source": "fixture design"
+  }
+}
