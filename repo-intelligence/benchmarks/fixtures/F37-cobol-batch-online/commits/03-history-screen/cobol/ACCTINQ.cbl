@@ -13,6 +13,7 @@
        01  WS-ACCT-NAME             PIC X(30).
        01  WS-BALANCE               PIC S9(11)V99 COMP-3.
        01  WS-ACCT-ID               PIC 9(10).
+       01  WS-ACCT-REC              PIC X(83).
        01  WS-HIST-TRAN             PIC X(4) VALUE 'AHST'.
        01  WS-HIST-COUNT            PIC S9(4) COMP VALUE 0.
            COPY HISTREC.
@@ -47,6 +48,9 @@
                COMMAREA(WS-COMMAREA)
            END-EXEC.
        1000-LOOKUP.
+           EXEC CICS READ FILE('ACCTFIL')
+               INTO(WS-ACCT-REC) RIDFLD(WS-ACCT-ID)
+           END-EXEC
            EXEC SQL
                SELECT ACCT_NAME, BALANCE
                  INTO :WS-ACCT-NAME, :WS-BALANCE

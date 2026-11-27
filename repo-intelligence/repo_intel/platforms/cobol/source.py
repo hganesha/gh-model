@@ -33,7 +33,10 @@ Beyond that (docs/solution-ir-contract.md, section 11):
   88-levels a `CodeList` the field BINDS_TO (11.1 items 3 and 4).
 
 No value of a data item is copied except the 88-level codes, which are reference data,
-and literal program, transaction, map, file and queue names, which are names.
+and literal program, transaction, map, file and queue names, which are names. The codes
+of an 88 named like a credential, or under a field or group so named, are not copied
+either: its CodeList has no values and `redacted: true`, and a test of it in a behaviour
+unit names the condition without its values.
 """
 
 from __future__ import annotations
@@ -43,7 +46,7 @@ import re
 from typing import Any
 
 from repo_intel.platforms.cobol import lexer
-from repo_intel.platforms.cobol.lower import DLI_CALLS, MQ_CALLS, Ctx, Lowerer, sql_statement
+from repo_intel.platforms.cobol.lower import CREDENTIAL, DLI_CALLS, MQ_CALLS, Ctx, Lowerer, credential_item, line_of, line_starts, sql_statement
 from repo_intel.platforms.cobol.parse import DataItem, Exec, File, Program, exec_block, layout, parse
 from repo_intel.platforms.cobol.vocabulary import LANGUAGE, PLATFORM
 
@@ -86,6 +89,7 @@ class _Emit:
         self.diagnostics: list = []
         self.resolved = self.unresolved = 0
         self.seen_rel: set[tuple] = set()
+        self.starts: list[int] | None = None  # line starts of `text`, computed on first use
 
     def span(self, a: int, b: int):
         return self.base.span(self.data, self.to_byte(a), self.to_byte(max(a, b)))
@@ -116,7 +120,9 @@ class _Emit:
         self.diagnostics.append(self.base.diagnostic(self.id, severity, message))
 
     def line(self, offset: int) -> int:
-        return self.text.count("\n", 0, offset) + 1
+        if self.starts is None:
+            self.starts = line_starts(self.text)
+        return line_of(self.starts, offset)
 
     def program_ref(self, name: str, declare: bool = True) -> dict[str, Any]:
         return self.base.ref(self.K.PROGRAM, {"platform": PLATFORM, "name": name}, name, declare=declare)
@@ -164,16 +170,23 @@ class _Emit:
             self.rel(item.name_at[0], item.name_at[1], schema, self.P.CONTAINS, field)
             self.construct("cbl:copybook_field", item.name_at[0], item.name_at[1], True)
             if item.conditions:
+                # A field named like a credential (or under such a group), or an 88 so named,
+                # may hold a secret in its condition values: the CodeList is declared, so the
+                # field still BINDS_TO it, with no values and `redacted` (11.3 item 3).
+                redacted = any(credential_item(c) for c in item.conditions)
                 values: list[dict[str, Any]] = []
                 for c in item.conditions:
-                    for v in c.values:
-                        entry: dict[str, Any] = {"code": v.text, "label": c.name or ""}
-                        if v.through is not None:
-                            entry["through"] = v.through.text
-                        values.append(entry)
-                    self.construct("cbl:condition_name", c.name_at[0], c.name_at[1], True)
+                    if not redacted:
+                        for v in c.values:
+                            entry: dict[str, Any] = {"code": v.text, "label": c.name or ""}
+                            if v.through is not None:
+                                entry["through"] = v.through.text
+                            values.append(entry)
+                    self.construct("cbl:condition_name", c.name_at[0], c.name_at[1], not redacted)
                 list_name = f"{layout_name}.{name}"
                 attrs = {"values": values[:_MAX_VALUES], "field": name}
+                if redacted:
+                    attrs["redacted"] = True
                 if len(values) > _MAX_VALUES:
                     attrs["truncated"] = True
                 first = item.conditions[0]
@@ -201,6 +214,8 @@ class _Emit:
             for item in root.walk():
                 if item.name:
                     ctx.items.setdefault(item.name, []).append(item)
+                if item.redefines:
+                    ctx.redefined.add(item.redefines)
                 for c in item.conditions:
                     if c.name:
                         ctx.conditions.setdefault(c.name, []).append(c)
@@ -365,6 +380,7 @@ class _Emit:
 
         # CICS: files, maps, transactions.
         maps: list[dict[str, Any]] = []
+        seen_maps: set[tuple] = set()
         for c in ctx.cics:
             verb = c.command.split(" ")[0] if c.command else ""
             if verb in ("READ", "READNEXT", "READPREV", "STARTBR", "WRITE", "REWRITE", "DELETE") and ("FILE" in c.options or "DATASET" in c.options):
@@ -390,7 +406,9 @@ class _Emit:
                 if not map_name or not set_name:
                     entry["dynamic"] = True
                     self.note(f"{p.name}: {verb} MAP at line {self.line(c.start)}: the map or mapset is not one literal in this file")
-                if entry not in maps:
+                entry_key = tuple(sorted(entry.items()))
+                if entry_key not in seen_maps:
+                    seen_maps.add(entry_key)
                     maps.append(entry)
                 if verb == "SEND" and map_name and set_name:
                     screen = f"{set_name}.{map_name}"
@@ -509,13 +527,13 @@ class _Emit:
             item = items[0]
             if item.section == "linkage" or item.redefines or item.occurs or any(other.redefines == item.name for other in ctx.items.get(item.redefines or "", [])):
                 return None
-            if any(i.redefines == name for lst in ctx.items.values() for i in lst):
+            if name in ctx.redefined:
                 return None
             anc = item.parent
             while anc is not None:
                 if anc.name and ctx.writes.get(anc.name):
                     return None
-                if anc.redefines or any(i.redefines == anc.name for lst in ctx.items.values() for i in lst):
+                if anc.redefines or anc.name in ctx.redefined:
                     return None
                 anc = anc.parent
             for v in item.values:
@@ -538,7 +556,6 @@ class _Emit:
         return value
 
 
-_CREDENTIAL = re.compile(r"PASSW|PASWD|PSWD|PWD|SECRET|TOKEN|CREDENT|API-?KEY|PASSPHRASE", re.I)
 _NESTED = ("body", "then", "else", "cases", "default", "catches", "finally")
 
 
@@ -574,7 +591,7 @@ def scrub_credentials(body: list[Any]) -> None:
             continue
         names: set[str] = set()
         _names(stmt, names)
-        if any(_CREDENTIAL.search(n) for n in names):
+        if any(CREDENTIAL.search(n) for n in names):
             _blank(stmt)
             stmt["redacted"] = "credential"
         for k in _NESTED:
@@ -640,7 +657,7 @@ def _sort_shapes(s: dict[str, Any], files: dict[str, Any], at) -> list[dict[str,
 
 class CobolSource:
     id = "cobol.source"
-    version = "1.0.0"
+    version = "1.1.0"
     SUFFIXES = (".cbl", ".cob", ".cobol", ".cpy")
 
     def matches(self, path: str) -> bool:

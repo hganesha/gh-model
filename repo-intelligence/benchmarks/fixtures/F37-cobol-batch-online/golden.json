@@ -1,6 +1,6 @@
 {
   "fixture": "F37-cobol-batch-online",
-  "description": "An account system kept as COBOL source: a nightly batch with SELECT/ASSIGN, FDs whose records are copybooks, OPEN INPUT, I-O and OUTPUT, PERFORM THRU with UNTIL, GO TO, EVALUATE over 88-levels, READ with AT END and INVALID KEY, REWRITE and two CALLs through data items (one with a single literal value, one given two by an IF); a CICS inquiry with HANDLE CONDITION, RECEIVE and SEND MAP, DB2 SELECT INTO and RETURN TRANSID; a subprogram with PROCEDURE DIVISION USING; and copybooks with 88-level condition names. Commits change a paragraph, add a free-format program with a DB2 cursor and a SORT, and add a history paragraph with a second map and START TRANSID. 'since' names the milestone whose compiler must produce the item.",
+  "description": "An account system kept as COBOL source: a nightly batch with SELECT/ASSIGN, FDs whose records are copybooks, OPEN INPUT, I-O and OUTPUT, PERFORM THRU with UNTIL, GO TO, EVALUATE over 88-levels, READ with AT END and INVALID KEY, REWRITE and two CALLs through data items (one with a single literal value, one given two by an IF); a CICS inquiry with HANDLE CONDITION, RECEIVE and SEND MAP, DB2 SELECT INTO and RETURN TRANSID; a subprogram with PROCEDURE DIVISION USING; and copybooks with 88-level condition names. Commits change a paragraph, add a free-format program with a DB2 cursor and a SORT, and add a history paragraph with a second map and START TRANSID. Beside the COBOL, the base holds the BMS mapset the inquiry sends, a CSD export defining its transaction and the CICS file it reads, and the JCL job that runs the batch, so the inquiry RENDERS its map, EXPOSES and CONSUMES its transaction, the CICS file is an alias of its data set, and the batch reads and writes the data sets its DD names are bound to. 'since' names the milestone whose compiler must produce the item.",
   "entities": [
     {
       "kind": "Program",
@@ -344,6 +344,94 @@
         "name": "accounts"
       },
       "since": "M2"
+    },
+    {
+      "kind": "Screen",
+      "natural_key": {
+        "platform": "bms",
+        "name": "ACCTMS.ACCTM1"
+      },
+      "since": "M2",
+      "attributes": {
+        "platform_kind": "bms:Map",
+        "mapset": "ACCTMS",
+        "map": "ACCTM1"
+      }
+    },
+    {
+      "kind": "Form",
+      "natural_key": {
+        "screen": "ACCTMS.ACCTM1",
+        "name": "ACCTM1"
+      },
+      "since": "M2",
+      "attributes": {
+        "platform_kind": "bms:MapForm",
+        "inputs": 1
+      }
+    },
+    {
+      "kind": "Endpoint",
+      "natural_key": {
+        "component_root": "",
+        "protocol": "cics",
+        "method": "TRANSACTION",
+        "route": "AINQ"
+      },
+      "since": "M2",
+      "attributes": {
+        "platform_kind": "zos:Transaction",
+        "program": "ACCTINQ",
+        "group": "ACCTGRP"
+      }
+    },
+    {
+      "kind": "Dataset",
+      "natural_key": {
+        "name": "acctfil"
+      },
+      "since": "M2",
+      "attributes": {
+        "access": "cics_file",
+        "cics_group": "ACCTGRP"
+      }
+    },
+    {
+      "kind": "Dataset",
+      "natural_key": {
+        "name": "prod.acct.master"
+      },
+      "since": "M2",
+      "attributes": {
+        "platform": "mainframe"
+      }
+    },
+    {
+      "kind": "Dataset",
+      "natural_key": {
+        "name": "prod.acct.daily.txns"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "Dataset",
+      "natural_key": {
+        "name": "prod.acct.posting.report"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "Task",
+      "natural_key": {
+        "framework": "jcl",
+        "job": "ACCTNITE",
+        "name": "POST"
+      },
+      "since": "M2",
+      "attributes": {
+        "platform_kind": "zos:Step",
+        "program": "ACCTPOST"
+      }
     }
   ],
   "edges": [
@@ -668,6 +756,184 @@
         }
       },
       "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Program",
+        "natural_key": {
+          "platform": "mainframe",
+          "name": "ACCTINQ"
+        }
+      },
+      "predicate": "RENDERS",
+      "object": {
+        "kind": "Screen",
+        "natural_key": {
+          "platform": "bms",
+          "name": "ACCTMS.ACCTM1"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Program",
+        "natural_key": {
+          "platform": "mainframe",
+          "name": "ACCTINQ"
+        }
+      },
+      "predicate": "EXPOSES",
+      "object": {
+        "kind": "Endpoint",
+        "natural_key": {
+          "component_root": "",
+          "protocol": "cics",
+          "method": "TRANSACTION",
+          "route": "AINQ"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Program",
+        "natural_key": {
+          "platform": "mainframe",
+          "name": "ACCTINQ"
+        }
+      },
+      "predicate": "CONSUMES",
+      "object": {
+        "kind": "Endpoint",
+        "natural_key": {
+          "component_root": "",
+          "protocol": "cics",
+          "method": "TRANSACTION",
+          "route": "AINQ"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Program",
+        "natural_key": {
+          "platform": "mainframe",
+          "name": "ACCTINQ"
+        }
+      },
+      "predicate": "READS_FROM",
+      "object": {
+        "kind": "Dataset",
+        "natural_key": {
+          "name": "acctfil"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Dataset",
+        "natural_key": {
+          "name": "acctfil"
+        }
+      },
+      "predicate": "ALIAS_OF",
+      "object": {
+        "kind": "Dataset",
+        "natural_key": {
+          "name": "prod.acct.master"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Task",
+        "natural_key": {
+          "framework": "jcl",
+          "job": "ACCTNITE",
+          "name": "POST"
+        }
+      },
+      "predicate": "RUNS",
+      "object": {
+        "kind": "Program",
+        "natural_key": {
+          "platform": "mainframe",
+          "name": "ACCTPOST"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Program",
+        "natural_key": {
+          "platform": "mainframe",
+          "name": "ACCTPOST"
+        }
+      },
+      "predicate": "READS_FROM",
+      "object": {
+        "kind": "Dataset",
+        "natural_key": {
+          "name": "prod.acct.daily.txns"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Program",
+        "natural_key": {
+          "platform": "mainframe",
+          "name": "ACCTPOST"
+        }
+      },
+      "predicate": "READS_FROM",
+      "object": {
+        "kind": "Dataset",
+        "natural_key": {
+          "name": "prod.acct.master"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Program",
+        "natural_key": {
+          "platform": "mainframe",
+          "name": "ACCTPOST"
+        }
+      },
+      "predicate": "WRITES_TO",
+      "object": {
+        "kind": "Dataset",
+        "natural_key": {
+          "name": "prod.acct.master"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Program",
+        "natural_key": {
+          "platform": "mainframe",
+          "name": "ACCTPOST"
+        }
+      },
+      "predicate": "WRITES_TO",
+      "object": {
+        "kind": "Dataset",
+        "natural_key": {
+          "name": "prod.acct.posting.report"
+        }
+      },
+      "since": "M2"
     }
   ],
   "absent_entities": [
@@ -800,7 +1066,7 @@
     },
     {
       "dir": "03-history-screen",
-      "expect": "The inquiry shows account history on a second map from a new table, through a new copybook",
+      "expect": "The inquiry shows account history on a second map, which the mapset gains, from a new table, through a new copybook",
       "added_entities": [
         {
           "kind": "Symbol",
@@ -832,6 +1098,22 @@
           "natural_key": {
             "datastore": "default",
             "name": "acct_history"
+          },
+          "since": "M2"
+        },
+        {
+          "kind": "Screen",
+          "natural_key": {
+            "platform": "bms",
+            "name": "ACCTMS.ACCTM2"
+          },
+          "since": "M2"
+        },
+        {
+          "kind": "Form",
+          "natural_key": {
+            "screen": "ACCTMS.ACCTM2",
+            "name": "ACCTM2"
           },
           "since": "M2"
         }
