@@ -184,9 +184,11 @@ class _Emit:
                             values.append(entry)
                     self.construct("cbl:condition_name", c.name_at[0], c.name_at[1], not redacted)
                 list_name = f"{layout_name}.{name}"
-                attrs = {"values": values[:_MAX_VALUES], "field": name}
+                attrs: dict[str, Any] = {"field": name}
                 if redacted:
-                    attrs["redacted"] = True
+                    attrs["redacted"] = True  # no `values` key, as the ibmi and idms packs write it
+                else:
+                    attrs["values"] = values[:_MAX_VALUES]
                 if len(values) > _MAX_VALUES:
                     attrs["truncated"] = True
                 first = item.conditions[0]
@@ -668,7 +670,7 @@ def _sort_shapes(s: dict[str, Any], files: dict[str, Any], at) -> list[dict[str,
 
 class CobolSource:
     id = "cobol.source"
-    version = "1.1.0"
+    version = "1.2.0"
     SUFFIXES = (".cbl", ".cob", ".cobol", ".cpy")
 
     def matches(self, path: str) -> bool:

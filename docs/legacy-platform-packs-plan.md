@@ -36,7 +36,7 @@ The integrator makes these in the commit that opens wave W7. They are in shared,
 3. **Transform languages.** `rkp-transform/1` accepts a pack id as `language` (today `sql`, `sas`, `pyspark`), so an ETL mapping or a DFSORT step is described with the same vocabulary.
 4. **Behaviour unit kinds.** Add `paragraph` (COBOL, RPG subroutine), `trigger` and `flow` (an integration or ETL flow) to the unit kinds of section 3.
 5. **Transactions.** A CICS or IMS transaction, an SAP transaction code and a scheduler-invoked entry point are `Endpoint`s with `method: "TRANSACTION"` and the transaction id as route (fidelity `lossy`).
-6. **Record fields.** A copybook, DDS or DCLGEN layout declares `Field {table: "<platform>:<layout name>", name}`, as the web pack does for model types (8.5).
+6. **Record fields.** A copybook, DDS or DCLGEN layout declares `Field {table: "<platform>:<layout name>", name}`, as the web pack does for model types (8.5). Contract 11.1 and 11.3 refine this for wave W8: a DCLGEN is a copybook (`cobol:<member>`) and an IBM i physical file is the table SQL names.
 7. **Triggers.** Decide the relation from a database trigger to its table. Recommended: the trigger is a `Program` with `attributes.on` naming the table and event, and `ENFORCES` any rule lifted from it; no new predicate.
 8. **Binary sources.** A pack never parses a proprietary binary (`.pbl`, `.fmb`, `.rpt`, `.unx`, Ab Initio `.mp`). The owner commits the vendor's text or XML export under `.rkp/inputs/<pack id>/`; the binary itself is inventoried and reported as a coverage gap that names the export needed. Zip containers of text (`.egp`, `.ispac`, `.dsx` archives) are read from the file's bytes, as `egp.py` does.
 

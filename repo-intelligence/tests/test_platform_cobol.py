@@ -710,8 +710,9 @@ def test_condition_names_of_a_credential_are_never_copied():
     pw = key("Field", table="cobol:SECREC", name="SEC-PASSWD")
     codes = key("CodeList", platform="cobol", name="SECREC.SEC-PASSWD")
     assert (pw, "BINDS_TO", codes) in rels
-    assert ents[codes]["values"] == [] and ents[codes]["redacted"] is True
-    assert ents[key("CodeList", platform="cobol", name="SECREC.SEC-PIN-TOKEN")].items() >= {"values": [], "redacted": True}.items()
+    assert "values" not in ents[codes] and ents[codes]["redacted"] is True
+    pin = ents[key("CodeList", platform="cobol", name="SECREC.SEC-PIN-TOKEN")]
+    assert "values" not in pin and pin["redacted"] is True
     mode = ents[key("CodeList", platform="cobol", name="SECREC.SEC-MODE")]
     assert mode["values"] == [{"code": "A", "label": "SEC-MODE-ADMIN"}] and "redacted" not in mode
     assert counts[("cbl:condition_name", False)] == 3 and counts[("cbl:condition_name", True)] == 1
