@@ -1,0 +1,1 @@
+{"message": "The archive mart is retired: remove the PowerShell archive job", "delete": ["etl/archive.ps1"]}

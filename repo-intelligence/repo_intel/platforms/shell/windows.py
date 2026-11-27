@@ -24,7 +24,7 @@ import re
 from typing import Any
 
 from repo_intel.platforms.shell.commands import SCRIPT_DIR, Arg, Cmd, Context, Resolver, arg_expr, interpret, var_expr
-from repo_intel.platforms.shell.emit import Expanded, Out, decode, program_ref
+from repo_intel.platforms.shell.emit import Expanded, Out, decode, pack_input, program_ref
 from repo_intel.platforms.shell.posix import Part
 from repo_intel.platforms.shell.vocabulary import PLATFORM, SENSITIVE_NAME, SQL_CLIENTS
 
@@ -371,11 +371,11 @@ class _Caseless(Resolver):
 
 class BatchSource:
     id = "shell.batch"
-    version = "1.0.0"
+    version = "1.1.0"
     SUFFIXES = (".bat", ".cmd")
 
     def matches(self, path: str) -> bool:
-        return path.lower().endswith(self.SUFFIXES)
+        return path.lower().endswith(self.SUFFIXES) and not pack_input(path)
 
     def extract(self, path: str, data: bytes, blob: str):
         text = decode(data)
@@ -580,10 +580,10 @@ def _in_string(text: str, i: int) -> bool:
 
 class PowerShellSource:
     id = "shell.powershell"
-    version = "1.0.0"
+    version = "1.1.0"
 
     def matches(self, path: str) -> bool:
-        return path.lower().endswith((".ps1", ".psm1"))
+        return path.lower().endswith((".ps1", ".psm1")) and not pack_input(path)
 
     def extract(self, path: str, data: bytes, blob: str):
         text = decode(data)

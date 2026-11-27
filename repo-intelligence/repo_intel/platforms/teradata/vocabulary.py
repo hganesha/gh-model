@@ -19,7 +19,7 @@ TERMS = (
 
 _CONSTRUCTS = (
     # Shared by FastLoad, MultiLoad, TPump and FastExport
-    ("logon", ".LOGON: the logon string is never read", "unmapped"),
+    ("logon", ".LOGON, or a TPT operator's TdpId, UserName and UserPassword: the logon is never read", "unmapped"),
     ("logoff", ".LOGOFF or QUIT", "unmapped"),
     ("logtable", ".LOGTABLE restart log table", "attribute:log_table"),
     ("database", "DATABASE: the default database for names without one", "attribute:default_database"),
@@ -45,7 +45,7 @@ _CONSTRUCTS = (
     ("end-loading", "END LOADING", "unmapped"),
     # MultiLoad and TPump
     ("begin-mload", ".BEGIN [IMPORT|DELETE] MLOAD or .BEGIN LOAD (TPump): target, work and error tables", "relation:WRITES_TO"),
-    ("dml-label", ".DML LABEL: a named group of DML statements applied to input rows", "behavior:query"),
+    ("dml-label", ".DML LABEL: a named group of DML statements applied to input rows; its tables are lineage and its statements transform shapes", "relation:WRITES_TO"),
     ("apply", "APPLY label [WHERE condition] in .IMPORT", "attribute:apply"),
     ("end-mload", ".END MLOAD or .END LOAD", "unmapped"),
     # FastExport

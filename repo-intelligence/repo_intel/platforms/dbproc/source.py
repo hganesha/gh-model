@@ -16,7 +16,7 @@ procedures stay with `sql_lineage`.
 Each procedure, function and trigger is a `Program {platform: <engine>, name: <lower-case
 name>}` with one behaviour unit (kind `function`, or `trigger`), the tables its statements
 write and read, and CALLS to the procedures it calls. `sql_lineage` also declares a
-procedure in a `.sql` file, under the platform its scanner guesses (`sql` or `tsql`); that
+procedure in a `.sql` file, under the platform its scanner guesses (`sql`, `teradata` or `tsql`); that
 Program is ALIAS_OF this one.
 """
 
@@ -58,6 +58,12 @@ def engine_of(path: str, text: str) -> str | None:
 class Routines:
     id = "dbproc.routines"
     version = "1.0.0"
+    # Other readers of the same `.sql` files: `data.sql_lineage` declares a DB2 procedure as
+    # Program {sql | teradata | tsql, name}, `data.sql_ddl` reads its DDL, and `plsql.source`
+    # reads a DB2 `CREATE OR REPLACE PROCEDURE` as Oracle. Once the foundation honours this, a
+    # file this extractor parses (it parses only files whose content names its engine) is not
+    # read by them. Until then the attribute changes nothing.
+    supersedes_when_parsed = ("data.sql_lineage", "data.sql_ddl", "plsql.source")
     SUFFIXES = (".sql", ".db2", ".nzpl", ".nzsql", ".sp", ".spl", ".proc")
 
     def matches(self, path: str) -> bool:

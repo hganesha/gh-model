@@ -258,7 +258,7 @@ class Lowering:
                 self.i = end
                 self.semi()
                 self.construct("declare-condition", start)
-                return [{"op": "declare", "at": self.at(start), "name": names[0], "value": {"e": "platform", "construct": "dbp:condition"}}]
+                return [{"op": "declare", "at": self.at(start), "name": names[0], "value": {"e": "platform", "construct": "dbp:declare-condition"}}]
             if self.up() in ("CURSOR", "SCROLL", "INSENSITIVE", "ASENSITIVE", "SENSITIVE", "NO"):
                 return self.cursor(start, names[0])
             if self.eat(","):
@@ -363,7 +363,7 @@ class Lowering:
             self.ctx.cursors[name] = ("", [])
         self.semi()
         self.construct("declare-cursor", start)
-        return [{"op": "declare", "at": self.at(start), "name": name, "value": {"e": "platform", "construct": "dbp:cursor"}}]
+        return [{"op": "declare", "at": self.at(start), "name": name, "value": {"e": "platform", "construct": "dbp:declare-cursor"}}]
 
     def handler(self, start: int) -> list[dict[str, Any]]:
         kind = self.next().up.lower()
@@ -1028,7 +1028,7 @@ class Lowering:
         sql, _ = self.sql_of(toks)
         if toks:
             self.ctx.sqls.append((sql, toks[0].start, toks[-1].end))
-        return {"e": "platform", "construct": "dbp:subquery", "detail": {"sql": sql}}
+        return {"e": "platform", "construct": "dbp:dml", "detail": {"sql": sql}}  # a scalar subquery: its tables are lineage
 
     # ------------------------------------------------------------ expressions
 

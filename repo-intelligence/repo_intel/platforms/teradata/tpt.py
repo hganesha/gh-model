@@ -22,6 +22,8 @@ from repo_intel.platforms.teradata.utilities import Base, _source
 
 _KEYWORD = re.compile(r"\bDEFINE\s+(JOB|SCHEMA|OPERATOR)\s+(\w+)|\bAPPLY\b|\bSTEP\s+(\w+)|\bINCLUDE\b|^\s*SET\s+(\w+)\s*=", re.I | re.M)
 _READ_ATTRS = {"targettable", "selectstmt", "directorypath", "filename", "format", "logtable", "worktable", "errortable", "errortable1", "errortable2", "openmode"}
+# Logon attributes: counted as `td:logon`, never read.
+_LOGON_ATTRS = {"tdpid", "username", "userpassword", "logonmech", "logonmechdata", "authuser", "authpassword", "dsnname", "connectstring", "tduser", "tdpassword"}
 _LOADERS = {"LOAD", "UPDATE", "STREAM", "INSERTER"}
 _EXPORTERS = {"EXPORT", "SELECTOR", "ODBC"}
 _TEMPLATES = {"$LOAD": "LOAD", "$UPDATE": "UPDATE", "$STREAM": "STREAM", "$INSERTER": "INSERTER", "$EXPORT": "EXPORT", "$SELECTOR": "SELECTOR",
@@ -165,9 +167,18 @@ class TptScript(Base):
         if attrs_at:
             open_at = attrs_at.end() - 1
             inner = text[open_at + 1:closing(text, open_at)]
+            logon = False
             for fa, fb in split_top(inner):
                 item = inner[fa:fb]
                 am = re.match(r"(?:(?:VARCHAR|INTEGER|VARDATE)\s+(?:ARRAY\s+)?)?(\w+)\s*(?:=\s*(.*))?$", item, re.I | re.S)
+                if am and am.group(1).lower() in _LOGON_ATTRS:
+                    logon = True  # counted once per operator; the value is never read
+                    continue
+                if am and am.group(2) is not None:
+                    ia = a + open_at + 1 + fa
+                    for jm in re.finditer(r"@(\w+)", _masked(am.group(2))):
+                        if jm.group(1).lower() not in self.values:
+                            self.out.construct("td:tpt.job-variable", ia, ia + len(item), False)
                 if am and am.group(1).lower() in _READ_ATTRS and am.group(2) is not None:
                     raw = am.group(2).strip()
                     if raw.startswith("["):
@@ -175,6 +186,8 @@ class TptScript(Base):
                         op.attrs[am.group(1).lower()] = values if values and None not in values else None
                     else:
                         op.attrs[am.group(1).lower()] = self.value(raw)
+            if logon:
+                self.out.construct("td:logon", a, b, False)
         self.operator_data(op, a, b)
 
     def operator_data(self, op: Operator, a: int, b: int) -> None:
