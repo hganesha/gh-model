@@ -81,7 +81,7 @@ _WHAT = {"dbd": "database descriptions", "psb": "program specification blocks", 
 
 class ImsSource:
     id = "ims.source"
-    version = "1.0.0"
+    version = "1.1.0"
     # A DBD or PSB in `.asm` or `.mac` is not also read as assembler (contract 11.1 item 1).
     supersedes_when_parsed = ("hlasm.source",)
 

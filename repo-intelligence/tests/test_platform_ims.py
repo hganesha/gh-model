@@ -377,6 +377,31 @@ def test_messages_are_screens_of_the_device_fields_they_map():
     check_relations(out)
 
 
+
+def test_the_default_of_a_credential_field_is_never_copied():
+    data = deck(
+        "LOGF     FMT",
+        "         DEV    TYPE=(3270,2),FEAT=IGNORE",
+        "         DIV    TYPE=INOUT",
+        "         DPAGE  CURSOR=((3,14))",
+        "USERPWD  DFLD   POS=(3,14),LTH=8,ATTR=(NUM,MOD)",
+        "OTHER    DFLD   POS=(4,14),LTH=8,ATTR=(NUM,MOD)",
+        "         FMTEND",
+        "LOGIN    MSG    TYPE=INPUT,SOR=(LOGF,IGNORE)",
+        "         SEG",
+        "         MFLD   'LOGTRAN '",
+        "         MFLD   (USERPWD,'pz8y'),LTH=8",
+        "         MFLD   (OTHER,'kept2'),LTH=8",
+        "         MSGEND",
+        "         END",
+    )
+    out = run(data, "ims/LOGF.mfs")
+    assert "pz8y" not in json.dumps([o.payload for o in out.observations])
+    ents = entities(out)
+    pw = ents[key("UIControl", container="LOGIN", name="USERPWD")]
+    assert "initial" not in pw and pw["initial_redacted"] is True
+    assert ents[key("UIControl", container="LOGIN", name="OTHER")]["initial"] == "kept2"
+
 def test_mfs_constructs():
     out = run(MFS, "ims/CUSTF.mfs")
     c = constructs(out)

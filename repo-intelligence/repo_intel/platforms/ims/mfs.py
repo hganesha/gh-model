@@ -12,7 +12,8 @@ Each message field (MFLD) that names a device field of the format becomes a `UIC
 {container: <MID or MOD name>, name: <device field>}` the Screen CONTAINS, with the device
 field's `pos`, `length`, `attr` and `control` (`display` when protected, else `input`)
 from the format's first device, and the message field's `message_length`, `initial`
-(a literal default) and `segment` (1-based). A short literal device field just before a
+(a literal default; not copied, `initial_redacted`, when the field is named for a password,
+secret, token or key) and `segment` (1-based). A short literal device field just before a
 named one is its `label`, as for BMS. Device fields of later devices repeat the first
 device's names and are counted.
 
@@ -33,7 +34,7 @@ from typing import Any
 from repo_intel.compile.ontology import EntityKind as K
 from repo_intel.compile.ontology import Predicate as P
 from repo_intel.platforms.bms.emit import Emitter
-from repo_intel.platforms.bms.source import label_text
+from repo_intel.platforms.bms.source import CREDENTIAL, label_text
 from repo_intel.platforms.bms.statements import Quoted, Statement, dynamic, first, is_name, number, words
 from repo_intel.platforms.ims.psb import endpoint_ref, is_transaction_code
 from repo_intel.platforms.ims.vocabulary import PLATFORM
@@ -203,7 +204,10 @@ class MfsReader:
             attrs["attr"] = words(attr)
         attrs["control"] = "display" if "PROT" in attrs.get("attr", []) else "input"
         if literal is not None:
-            attrs["initial"] = str(literal)
+            if CREDENTIAL.search(s.name):
+                attrs["initial_redacted"] = True  # a credential field's default is its value
+            else:
+                attrs["initial"] = str(literal)
         d = _Dfld(s, attrs)
         if self.pending is not None:
             attrs["label"] = self.pending[1]
@@ -281,7 +285,11 @@ class MfsReader:
                     cattrs = dict(d.attrs) if d else {}
                     cattrs.update({"message_length": f.length, "segment": index})
                     if f.literal is not None:
-                        cattrs["initial"] = f.literal
+                        if CREDENTIAL.search(f.name):
+                            cattrs.pop("initial", None)
+                            cattrs["initial_redacted"] = True  # a credential field's default is its value
+                        else:
+                            cattrs["initial"] = f.literal
                     if f.system_literal is not None:
                         cattrs["system_literal"] = f.system_literal
                     if d is not None:
