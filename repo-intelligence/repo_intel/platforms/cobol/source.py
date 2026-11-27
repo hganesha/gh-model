@@ -564,7 +564,7 @@ def _names(node: Any, out: set[str]) -> None:
         for x in node:
             _names(x, out)
     elif isinstance(node, dict):
-        if node.get("e") == "var" and isinstance(node.get("name"), str):
+        if node.get("e") in ("var", "member") and isinstance(node.get("name"), str):
             out.add(node["name"])
         for k, v in node.items():
             if k not in _NESTED:
@@ -585,15 +585,26 @@ def _blank(node: Any) -> None:
 
 def scrub_credentials(body: list[Any]) -> None:
     """Blank the string literals of a statement that touches a data item named like a
-    credential (`MOVE 'x' TO WS-PASSWORD`): names are kept, values never (contract rule 7)."""
+    credential (`MOVE 'x' TO WS-PASSWORD`): names are kept, values never (contract rule 7).
+    An EVALUATE's WHEN values are the values its subject is compared with: they are blanked
+    when the subject, or the WHEN itself (`EVALUATE TRUE WHEN WS-PWD = 'x'`), names one."""
     for stmt in body:
         if not isinstance(stmt, dict):
             continue
         names: set[str] = set()
         _names(stmt, names)
-        if any(CREDENTIAL.search(n) for n in names):
+        flagged = any(CREDENTIAL.search(n) for n in names)
+        if flagged:
             _blank(stmt)
             stmt["redacted"] = "credential"
+        for case in stmt.get("cases") or []:
+            if not isinstance(case, dict) or "match" not in case:
+                continue
+            matched: set[str] = set()
+            _names(case["match"], matched)
+            if flagged or any(CREDENTIAL.search(n) for n in matched):
+                _blank(case["match"])
+                stmt["redacted"] = "credential"
         for k in _NESTED:
             v = stmt.get(k)
             if isinstance(v, list):

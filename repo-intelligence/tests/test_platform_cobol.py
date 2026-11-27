@@ -744,3 +744,38 @@ def test_condition_names_of_a_credential_are_never_copied():
     tested = next(n for n in walk(unit["body"]) if n["op"] == "if")
     assert tested["cond"] == {"e": "var", "name": "WS-PWD-OK", "condition_name": True}
     assert any(n["op"] == "platform" and n.get("construct") == "cbl:set_condition" for n in walk(unit["body"]))
+
+
+def test_when_values_compared_with_a_credential_are_never_copied():
+    # An EVALUATE's WHEN values are what its subject is compared with: blanked when the
+    # subject or the WHEN itself names a credential, kept otherwise.
+    out = run(fixed(
+        "IDENTIFICATION DIVISION.", "PROGRAM-ID. LOGON.", "DATA DIVISION.", "WORKING-STORAGE SECTION.",
+        "01  WS-PWD             PIC X(5).",
+        "01  WS-X               PIC X(5).",
+        "PROCEDURE DIVISION.",
+        "MAIN-PARA.",
+        "    EVALUATE WS-PWD",
+        "        WHEN 'Rt5y' CONTINUE",
+        "        WHEN OTHER CONTINUE",
+        "    END-EVALUATE",
+        "    EVALUATE TRUE",
+        "        WHEN WS-PWD = 'Rt5z' CONTINUE",
+        "        WHEN WS-X = 'kept1' CONTINUE",
+        "    END-EVALUATE",
+        "    EVALUATE WS-X ALSO WS-PWD",
+        "        WHEN 'a' ALSO 'Rt5w' CONTINUE",
+        "    END-EVALUATE",
+        "    EVALUATE WS-X",
+        "        WHEN 'kept2' CONTINUE",
+        "    END-EVALUATE",
+        "    GOBACK.",
+    ))
+    unit = units(out)["MAIN-PARA"]
+    validate_unit(unit)
+    dumped = json.dumps([o.payload for o in out.observations]) + json.dumps(messages(out))
+    for value in ("Rt5y", "Rt5z", "Rt5w"):
+        assert value not in dumped, value
+    assert "kept1" in dumped and "kept2" in dumped
+    switches = [n for n in unit["body"] if n["op"] == "switch"]
+    assert [s.get("redacted") for s in switches] == ["credential", "credential", "credential", None]
