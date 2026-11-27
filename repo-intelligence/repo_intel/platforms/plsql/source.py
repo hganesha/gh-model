@@ -360,7 +360,10 @@ class _Emit:
 
 class PlsqlSource:
     id = "plsql.source"
-    version = "1.0.0"
+    version = "1.1.0"
+    # A `.sql` file this extractor reads as PL/SQL is not also read by the generic SQL
+    # lineage extractor, whose output for it would duplicate and contradict this one's.
+    supersedes_when_parsed = ("data.sql_lineage",)
     SUFFIXES = (".pks", ".pkb", ".pls", ".plb", ".prc", ".fnc", ".trg", ".sql")
 
     def matches(self, path: str) -> bool:

@@ -514,7 +514,7 @@ def slug(name: Any) -> str | None:
     return s if s and len(s) <= 60 and SLUG.match(s) else None
 
 
-def _answered_rules(content: Mapping[str, Any], candidates: Mapping[str, Mapping[str, Any]]) -> list[tuple[str, str, str, list[str]]]:
+def answered_rules(content: Mapping[str, Any], candidates: Mapping[str, Mapping[str, Any]]) -> list[tuple[str, str, str, list[str]]]:
     """(rule_kind, name, statement, candidate ids) for each acceptable rule; first of a name wins."""
     kept: dict[str, tuple[str, str, str, list[str]]] = {}
     items = content.get("rules") if isinstance(content, Mapping) else None
@@ -531,6 +531,9 @@ def _answered_rules(content: Mapping[str, Any], candidates: Mapping[str, Mapping
         if name not in kept:
             kept[name] = (kind, name, " ".join(statement.split()), sorted(set(cited), key=lambda c: int(c[1:])))
     return [kept[n] for n in sorted(kept)][:MAX_RULES]
+
+
+_answered_rules = answered_rules  # the earlier private name, kept for existing callers
 
 
 def call_llm(spec: DecisionSpec, scope_entity: str, features: Mapping[str, Any], *, ledger: Ledger, evidence_ids: tuple[str, ...], gateway: Gateway | None, budget: Budget | None, instructions: str, schema: Mapping[str, Any], accept: Any, label: str) -> DecisionResult:
@@ -595,7 +598,7 @@ def lift(group: Mapping[str, Any], *, ledger: Ledger, gateway: Gateway | None, b
     by_id = {c["id"]: c for c in group["candidates"]}
 
     def accept(content: Mapping[str, Any]) -> tuple[list[Hypothesis], list[str]] | None:
-        rules = _answered_rules(content, by_id)
+        rules = answered_rules(content, by_id)
         if not rules:
             return None
         hypotheses = [Hypothesis(statement=statement, evidence_ids=sorted({by_id[c]["evidence_id"] for c in cited})) for _, _, statement, cited in rules]

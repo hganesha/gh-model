@@ -1253,15 +1253,22 @@ def from_behavior(unit: Mapping[str, Any]) -> tuple[str, list[dict[str, Any]]] |
         node = next((n for n in body if n.get("op") == "call"), None)
         out = _sas_proc(node) if node is not None else None
         return ("sas", out) if out else None
+    # The engine's SQL dialect (sql_lineage.DIALECT, contract 10.1.2): an Oracle query over
+    # `name@dblink` or a Hive `INSERT OVERWRITE` does not parse as generic SQL.
+    language = unit.get("language")
+    dialects = {"plsql": "oracle", "db2": None, "netezza": "postgres", "sybase": "tsql", "hive": "hive", "teradata": "teradata"}
+    dialect = dialects.get(language) if isinstance(language, str) else None
     b = Builder()
     for node in walk(body):
         if node.get("op") == "query" and isinstance(node.get("sql"), str):
             at = node.get("at") or unit.get("at") or [0, 0]
-            sql_query(b, node["sql"], at, params=node.get("params") or [], qualify=_sas_name if sas else None, remote=node.get("remote") if isinstance(node.get("remote"), str) else None, sas=sas)
+            sql_query(b, node["sql"], at, dialect=dialect, params=node.get("params") or [], qualify=_sas_name if sas else None, remote=node.get("remote") if isinstance(node.get("remote"), str) else None, sas=sas)
         elif sas and node.get("op") == "platform" and node.get("construct") == "sas:sql_passthrough" and (node.get("detail") or {}).get("action") == "execute":
             b.add("platform", node.get("at") or [0, 0], [], construct="sas:sql_passthrough", dynamic=True)
     out = b.finish()
-    return ("sql", out) if out else None
+    # The shapes carry the unit's language when it is a registered pack id (contract 10.1.3).
+    label = language if not sas and isinstance(language, str) and language not in LANGUAGES and _known_language(language) else "sql"
+    return (label, out) if out else None
 
 
 # ------------------------------------------------------------------ SAS

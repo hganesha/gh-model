@@ -107,6 +107,21 @@ def _fallback(text: str, a: int, b: int) -> Lineage:
     return out
 
 
+def _update_alias_target(tree, target):
+    """T-SQL `UPDATE o SET ... FROM sales.orders AS o`: the table written is the one the
+    FROM clause binds to the alias `o`, not a table named `o`. Only an unqualified target
+    bound by exactly one table of the FROM clause (joins included, subqueries not) is read
+    that way; anything else keeps the target as written."""
+    from sqlglot import exp
+
+    source = tree.args.get("from_") or tree.args.get("from")
+    if source is None or target.text("db") or target.text("catalog"):
+        return target
+    alias = target.name.lower()
+    bound = [t for t in source.find_all(exp.Table) if t.alias.lower() == alias and t.find_ancestor(exp.Subquery, exp.Select) is None]
+    return bound[0] if len(bound) == 1 else target
+
+
 def _statement(text: str, a: int, b: int, dialect: str | None, views: bool) -> Lineage:
     import sqlglot
     from sqlglot import exp
@@ -128,8 +143,14 @@ def _statement(text: str, a: int, b: int, dialect: str | None, views: bool) -> L
         return bool(isinstance(ident, exp.Identifier) and ident.args.get("temporary")) or re.search(rf"#{re.escape(t.name)}\b", text[a:b]) is not None
 
     targets: list[exp.Table] = []
+    aliases: list[exp.Table] = []  # an UPDATE target that only names a FROM alias
     if isinstance(tree, (exp.Insert, exp.Merge, exp.Update, exp.Delete, exp.Copy)):
         target = tree.this.this if isinstance(tree.this, exp.Schema) else tree.this
+        if isinstance(target, exp.Table) and isinstance(tree, exp.Update):
+            bound = _update_alias_target(tree, target)
+            if bound is not target:
+                aliases.append(target)
+                target = bound
         if isinstance(target, exp.Table):
             targets.append(target)
     elif isinstance(tree, exp.TruncateTable):
@@ -145,7 +166,7 @@ def _statement(text: str, a: int, b: int, dialect: str | None, views: bool) -> L
         if isinstance(into, exp.Table) and not into.args.get("temporary") and not tree.args["into"].args.get("temporary"):
             targets.append(into)
     ctes = {c.alias_or_name.lower() for c in tree.find_all(exp.CTE)}
-    target_ids = {id(t) for t in targets}
+    target_ids = {id(t) for t in targets + aliases}
     written = set()
     for t in targets:
         name = qualified(t)
@@ -236,7 +257,7 @@ _PROCEDURE = re.compile(
     re.I | re.M,
 )
 _CALL = re.compile(r"\b(?:exec(?:ute)?|call)\s+((?:[\[\]`\"\w$]+\.){0,2}[\[\]`\"\w$]+)", re.I)
-_TERADATA = re.compile(r"^\s*\.(logon|if\s+errorcode|quit|set\s+\w+|export|import)\b|\breplace\s+procedure\b|\bcreate\s+(?:multiset\s+|set\s+)?(?:volatile\s+)?(?:macro|multiset)\b|\bcollect\s+statistics\b", re.I | re.M)
+_TERADATA = re.compile(r"^\s*\.(logon|if\s+errorcode|quit|set\s+\w+|export|import)\b|^\s*replace\s+procedure\b|\bcreate\s+(?:multiset\s+|set\s+)?(?:volatile\s+)?(?:macro|multiset)\b|\bcollect\s+statistics\b", re.I | re.M)
 _TSQL = re.compile(r"^\s*go\s*$|\[dbo\]|\bdbo\.|\bcreate\s+proc\b|\bdistribution\s*=|\bset\s+nocount\b|\bdeclare\s+@|\bopenrowset\b|\bcreate\s+external\s+table\b", re.I | re.M)
 _EXTERNAL = re.compile(r"\bcreate\s+external\s+table\s+((?:[\[\]\w$]+\.){0,2}[\[\]\w$]+)[^;]*?\blocation\s*=\s*'([^']+)'(?:[^;]*?\bdata_source\s*=\s*([\[\]\w$]+))?", re.I | re.S)
 
@@ -285,7 +306,7 @@ def transform_shapes(blob: str, data: bytes, text: str, a: int, b: int, owner: d
 
 class SqlScripts:
     id = "data.sql_lineage"
-    version = "1.1.0"
+    version = "1.2.0"
     SUFFIXES = (".sql", ".bteq", ".btq", ".tpt")
 
     def matches(self, path: str) -> bool:

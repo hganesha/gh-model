@@ -129,6 +129,7 @@ def _file_extract(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, An
     else:
         data = secrets.mask_for_extraction(data, config.get("secret_findings", []))
         wanted: dict[str, str] = config.get("extractors", {})
+        results: list[tuple[Extractor, Extraction]] = []
         for extractor in (e for e in EXTRACTORS if e.id in wanted):
             if extractor_version(extractor) != wanted[extractor.id]:
                 raise RuntimeError(f"extractor skew: {extractor.id} is {extractor_version(extractor)}, the cache key expects {wanted[extractor.id]}")
@@ -136,6 +137,14 @@ def _file_extract(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, An
                 result = extractor.extract(path, data, blob)
             except Exception as exc:  # an extractor bug must not fail the compile
                 result = Extraction(diagnostics=[diagnostic(extractor.id, "error", f"extractor crashed: {type(exc).__name__}: {exc}")], parsed=False)
+            results.append((extractor, result))
+        # Per-file supersession: an extractor that read this file (returned at least one
+        # observation) and names other extractors in `supersedes_when_parsed` drops their
+        # observations and diagnostics for this file only. One that read nothing leaves them.
+        dropped = {i for e, r in results if r.observations for i in getattr(e, "supersedes_when_parsed", ())}
+        for extractor, result in results:
+            if extractor.id in dropped:
+                continue
             observations += result.observations
             diagnostics += result.diagnostics
             parsed = parsed or result.parsed
