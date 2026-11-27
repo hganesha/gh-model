@@ -156,6 +156,8 @@ class _Lines:
         self.lines_of = LineIndex(text)
         self.seg_start: int | None = None
         self.seg_end = 0
+        self.first_free: int | None = None  # where the first free-form code is
+        self.second_free: int | None = None  # where a second **FREE begins another program
 
     def line(self, a: int) -> int:
         return self.lines_of(a)
@@ -184,6 +186,12 @@ class _Lines:
         in_free = False
         sql: dict[str, Any] | None = None  # an open fixed-form /EXEC SQL
         for start, line in lines:
+            if line[:6].upper() == "**FREE":
+                # **FREE belongs on a member's first line: a second one begins another
+                # program, which is not read.
+                self.flush()
+                self.second_free = start
+                break
             if line[:2] == "**" and (self.fully_free or line[2:3] in ("", " ") or line[2:].upper().startswith(("CTDATA", "FTRANS", "ALTSEQ"))):
                 self.flush()
                 self.constructs.append(("ibmi:compile_time_data", start, start + len(line), False))
@@ -255,6 +263,8 @@ class _Lines:
             self.directive("/" + word[0][1:].upper(), " ".join(word[1:]), start, start + len(line))
             return
         self.free_seen = True
+        if self.first_free is None:
+            self.first_free = start
         quote = False
         k = a
         end = min(b, len(line))
@@ -1769,6 +1779,52 @@ class _Builder:
         self.emit(query(st, item.start, item.end, item.body_start))
 
 
+def _after_procedures(items: list[Any]) -> int | None:
+    """The index of the first item outside a procedure once a procedure has ended, other
+    than a directive or the start of another procedure: nothing but procedures follows a
+    member's first procedure, so such text belongs to another program."""
+    depth = 0
+    closed = False
+    for idx, item in enumerate(items):
+        if isinstance(item, Directive):
+            continue
+        begin = end = False
+        if isinstance(item, Free) and item.toks:
+            begin, end = item.toks[0].up == "DCL-PROC", item.toks[0].up == "END-PROC"
+        elif isinstance(item, Spec) and item.kind == "P":
+            be = item.col(24, 24).upper()
+            begin, end = be == "B", be == "E"
+        if begin:
+            depth += 1
+        elif end:
+            depth = max(0, depth - 1)
+            closed = closed or depth == 0
+        elif closed and depth == 0:
+            return idx
+    return None
+
+
+def _first_program(lines: _Lines, text: str) -> list[tuple[str, int, int, bool]]:
+    """Keep the items of the member's first program; report the text after it as not read.
+    Returns the construct for that text, if any."""
+    cut = _after_procedures(lines.items)
+    at: int | None = None
+    if cut is not None:
+        at = lines.items[cut].start
+        lines.diagnostics.append(("info", f"text from line {lines.line(at)}, after the last procedure, is not read: nothing but procedures may follow a procedure, so it belongs to another program"))
+        del lines.items[cut:]
+    elif lines.second_free is not None:
+        at = lines.second_free
+        lines.diagnostics.append(("info", f"text from line {lines.line(at)}, after a second **FREE, is not read: a member holds one program"))
+    if at is None:
+        return []
+    lines.constructs = [c for c in lines.constructs if c[1] < at]
+    lines.fixed_seen = any(isinstance(i, Spec) for i in lines.items)
+    lines.free_seen = lines.first_free is not None and lines.first_free < at
+    nl = text.find("\n", at)
+    return [("ibmi:text_not_read", at, len(text) if nl < 0 else nl, False)]
+
+
 def read_member(path: str, text: str, at: Callable[[int, int], list[int]]) -> Member:
     """Read one RPG source member."""
     rpg3 = path.lower().endswith(".rpg")
@@ -1779,6 +1835,7 @@ def read_member(path: str, text: str, at: Callable[[int, int], list[int]]) -> Me
         rpg3 = False
         lines = _Lines(text, False)
         lines.read()
+    lines.constructs += _first_program(lines, text)
     mask = "".join(lines.mask)
     decls = _Declarations(lines.items, text, mask)
     decls.rpg3 = rpg3

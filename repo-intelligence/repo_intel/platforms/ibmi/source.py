@@ -19,8 +19,13 @@ What they declare (natural keys in `vocabulary`, contract section 11.1):
   file, so a declared file is referred to as both `Table` and logical file `DataSchema`,
   neither declared: whichever the repository's DDS declares links;
 - a WORKSTN file RENDERS the display record formats `EXFMT` and `WRITE` show (`Screen`,
-  `declare=False`), and the format's `Form` SUBMITS_TO the program when it reads the reply;
+  `declare=False`), and the format's `Form` SUBMITS_TO the program when it reads the reply.
+  A format belongs to the WORKSTN file whose SFILE, RENAME or INCLUDE names it, or else to
+  the member's only WORKSTN file when no printer or database file could own it either;
+  otherwise it is counted as unresolved, with a diagnostic, and nothing is linked;
   a PRINTER file PRODUCES its `Report`;
+- text after a member's first program (a second `**FREE`, statements after the last
+  procedure, commands after `ENDPGM`) is not read: it is counted, with a diagnostic;
 - from DDS: a physical file as `Table` CONTAINS its `Field`s, a VALUES list as a `CodeList`
   the field BINDS_TO; a logical file as a `DataSchema` with `based_on`, CONTAINS the fields
   it selects; a display file's record formats as `Screen`s with a `Form` and `UIControl`s
@@ -137,6 +142,10 @@ class _Emit:
         end = max(start, end)
         return Span(start_byte=start, end_byte=end, start_line=bisect.bisect_left(self.breaks, start) + 1, end_line=bisect.bisect_left(self.breaks, max(start, end - 1)) + 1)
 
+    def line(self, a: int) -> int:
+        """The 1-based line of a text offset, from the index of line breaks."""
+        return bisect.bisect_left(self.breaks, self.to_byte(a)) + 1
+
     def term(self, a: int, b: int, term: str, key: dict[str, Any], name: str, attrs: dict[str, Any] | None = None) -> dict[str, Any]:
         clean = {k: v for k, v in (attrs or {}).items() if v is not None and v != [] and v != {}}
         o = self.platforms.platform_entity(self.blob, self.span(a, b), term, key, name, clean, self.EC.E2)
@@ -192,7 +201,7 @@ class _Emit:
             try:
                 found = self.sql.lineage(st.lineage, None, views=False)  # the db2 dialect is the scanner's default
             except Exception as exc:  # a scanner fault on hostile input: the statement is counted, not read
-                self.note(f"SQL at line {self.text.count(chr(10), 0, start) + 1} not read: {type(exc).__name__}", "warning")
+                self.note(f"SQL at line {self.line(start)} not read: {type(exc).__name__}", "warning")
                 self.unresolved += 1
                 continue
             self.unresolved += found.unresolved
@@ -287,6 +296,10 @@ def _emit_rpg(o: _Emit, path: str) -> None:
 
     # Unit facts and behaviour.
     workstn = [f for f in m.files if f.device == "WORKSTN" and not f.dynamic]
+    # Files whose record formats an operation may name, besides the display files: WRITE
+    # writes a printer or database record, READ reads a database record.
+    others = {"WRITE": [f for f in m.files if f.device in ("PRINTER", "DISK") and f.external and not f.dynamic],
+              "READ": [f for f in m.files if f.device == "DISK" and f.external and not f.dynamic]}
     file_names = {f.name for f in m.files}
     for u in m.units:
         owner = me if u.kind == "main" else owners[u.name]
@@ -304,7 +317,18 @@ def _emit_rpg(o: _Emit, path: str) -> None:
         for use in u.files:
             if use.name in file_names or use.op not in ("EXFMT", "WRITE", "READ", "READC"):
                 continue
-            targets = [f for f in workstn if use.name in f.formats or use.name in f.sfile] or workstn
+            if any(use.name in f.formats for f in m.files if f.device != "WORKSTN"):
+                continue  # a format a database or printer file renames or includes
+            targets = [f for f in workstn if use.name in f.formats or use.name in f.sfile]
+            if not targets and workstn:
+                # Which file the format belongs to is not written here (its DDS is another
+                # file): the format is the display file's only when nothing else could own it.
+                candidates = workstn + others.get(use.op, [])
+                if len(candidates) == 1:
+                    targets = workstn
+                else:
+                    o.construct("ibmi:format_unresolved", use.start, use.end, False)
+                    o.note(f"record format {use.name} ({use.op} at line {o.line(use.start)}) may belong to any of {', '.join(sorted({f.object for f in candidates}))}: no screen is linked")
             for ws in targets:
                 if use.op in ("EXFMT", "WRITE"):
                     o.rel(use.start, use.end, me, o.P.RENDERS, o.screen(ws.object, use.name), {"op": use.op.lower()})
@@ -324,7 +348,7 @@ def _emit_rpg(o: _Emit, path: str) -> None:
 
 class IbmiRpg:
     id = "ibmi.rpg"
-    version = "1.0.0"
+    version = "1.1.0"
     SUFFIXES = (".rpg", ".rpgle", ".sqlrpgle")
 
     def matches(self, path: str) -> bool:
@@ -410,7 +434,7 @@ def _emit_cl(o: _Emit, path: str) -> None:
 
 class IbmiCl:
     id = "ibmi.cl"
-    version = "1.0.0"
+    version = "1.1.0"
     SUFFIXES = (".clp", ".clle")
 
     def matches(self, path: str) -> bool:
