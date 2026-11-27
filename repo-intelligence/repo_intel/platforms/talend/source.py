@@ -39,7 +39,7 @@ def _first_line(text: str | None, limit: int = 200) -> str | None:
 
 class TalendItem:
     id = "talend.item"
-    version = "1.0.0"
+    version = "1.1.0"
 
     def matches(self, path: str) -> bool:
         return path.lower().endswith(".item")

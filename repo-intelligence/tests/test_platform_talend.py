@@ -505,3 +505,20 @@ def test_java_string_values():
     assert sv("context.path") == ("{context.path}", True)
     assert sv("true") == (None, False) and sv("") == (None, False) and sv(None) == (None, False)
     assert sv('"a\\"b"') == ('a"b', False)
+
+
+def test_two_versions_of_a_job_keep_their_components_apart():
+    first = run(process(*chain()), "DWH/process/Sample_0.1.item")
+    second = run(process(*chain()), "DWH/process/Sample_0.2.item")
+    tasks = [{k for k in entities(out) if k[0] == "Task"} for out in (first, second)]
+    assert task("Sample", "tFileInputDelimited_1") in tasks[0] and task("Sample", "tFileInputDelimited_1@0.2") in tasks[1]
+    assert tasks[0] and not tasks[0] & tasks[1], "one version's components never merge with another's"
+    lineage = [{r for r in relations(out) if r[0][0] == "Task" and r[1] in ("READS_FROM", "WRITES_TO")} for out in (first, second)]
+    assert lineage[0] and lineage[1] and not lineage[0] & lineage[1]
+    assert {r[2] for r in lineage[0]} == {r[2] for r in lineage[1]}, "both versions read and write the same data"
+    assert job("Sample") in entities(first) and job("Sample") in entities(second), "both versions are the one Job"
+    assert (job("Sample"), "CONTAINS", task("Sample", "tFileOutputDelimited_1@0.2")) in relations(second)
+    assert not messages(first)
+    assert messages(second) == ["DWH/process/Sample_0.2.item is version 0.2 of job Sample: other versions may be in the repository, "
+                                "so its components are named <unique name>@0.2"]
+    check_all_valid(second)

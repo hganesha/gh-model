@@ -18,12 +18,14 @@ precedence constraints that name executables by `IDREF`). What it declares, all 
   `Project.params`); values are never read;
 - an Execute SQL task with its SQL typed in as a Program (`ssis:SqlTask`) the Task RUNS,
   with a `sql_step` behaviour unit of `query` nodes (the compiler derives their transform
-  shapes) and the tables its SQL reads and writes. SQL from a variable, a file or an
+  shapes) and the tables its SQL reads and writes (READS_FROM and WRITES_TO from the
+  Program only: the Task RUNS it, so lineage is not counted twice). SQL from a variable, a file or an
   expression is dynamic: counted and reported, never guessed;
 - a Data Flow task as a Program (`ssis:DataFlow`) the Task RUNS, with one `transform`
   observation (language `ssis`) whose transforms follow the pipeline's paths: sources,
   lookups, merge joins, aggregates, conditional splits, derived columns, sorts, unions and
-  destinations, embedded SQL read by the shared recognizer (T-SQL). When the flow has
+  destinations, embedded SQL read by the shared recognizer (T-SQL), and the tables and
+  files it reads and writes, again from the Program only. When the flow has
   derived columns or conditional splits it also gets a `flow` behaviour unit: an implicit
   row loop with their assignments and branches, other components as `platform` nodes;
 - an Execute Package task of the same project RUNS the child package's Job.
@@ -395,7 +397,8 @@ class PackageReader:
         if not body:
             return
         out.add(behavior_observation(out.blob, at, decl, PLATFORM, body, evidence_class=EvidenceClass.E1, kind="sql_step"))
-        self.lineage(at, sql or "", [decl, task_ref], "execute_sql")
+        # Lineage is the Program's only: the Task RUNS it, so a table is not counted twice.
+        self.lineage(at, sql or "", [decl], "execute_sql")
 
     @staticmethod
     def statements(sql: str) -> list[str]:
@@ -471,7 +474,7 @@ class DataFlow:
         pipeline = next(iter(descendants(child(self.ex, "ObjectData"), "pipeline")), None)
         decl = out.entity(at, "ssis:DataFlow", self.program["natural_key"], self.program["name"], {"kind": "data_flow", "package": pkg.job_name, "task": self.task_name})
         out.relation(at, self.task_ref, P.RUNS, decl)
-        self.subjects = [decl, self.task_ref]
+        self.subjects = [decl]  # lineage subjects: the Program only, as for an Execute SQL task
         if pipeline is None:
             out.note("info", f"data flow {self.task_name} of {pkg.job_name} has no pipeline to read")
             return
@@ -549,7 +552,9 @@ class DataFlow:
         return name.lower() if name else None
 
     def relate(self, at, predicate, obj, extra: dict[str, Any] | None = None) -> None:
-        for i, s in enumerate(self.subjects):
+        """READS_FROM and WRITES_TO from the Program; a connection is referenced by the Task too."""
+        subjects = self.subjects + ([self.task_ref] if predicate == P.REFERENCES_CONFIG else [])
+        for i, s in enumerate(subjects):
             self.out.relation(at, s, predicate, obj, {**(extra or {}), **({"via": "data_flow"} if i else {})})
 
     def connection(self, c) -> str | None:

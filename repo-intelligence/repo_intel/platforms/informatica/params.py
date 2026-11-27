@@ -8,13 +8,18 @@ A parameter file is sections of `name=value` lines:
     [SALES.WF:wf_daily_sales.ST:s_m_load_orders]
     $DBConnection_SRC=ORA_SRC
 
-Each user parameter (`$$NAME`, or a session parameter `$NAME`) becomes
-`ConfigKey parameter:<name>`, the same key a mapping parameter or a session's connection
-variable has, so the file is linked to what it sets. A section naming a workflow or worklet
-makes that Job REFERENCES_CONFIG the parameter; one naming a session makes that session's
-Task do so; neither is declared here (they are linked only when an export declares them).
-Built-in parameters (`$PM...`) are counted, not modelled. Values are never read, so a
-password a file sets never leaves it.
+Each user parameter (`$$NAME`, or a session parameter `$NAME`) in a section naming a
+workflow or worklet becomes `ConfigKey parameter:<folder>/<flow>#<name>`, where `<flow>` is
+the innermost workflow or worklet the section header names (`[SALES.WF:wf_daily.WT:wl_q]`
+gives `SALES/wl_q`). That is the key the export gives a session parameter of a session in
+that flow, and the key a session there references for each parameter its mapping declares,
+so the file is linked to what it sets and `$$LOAD_DATE` set for one workflow never merges
+with `$$LOAD_DATE` set for another. A section naming a workflow or worklet makes that Job
+REFERENCES_CONFIG the parameter; one naming a session makes that session's Task do so;
+neither is declared here (they are linked only when an export declares them). Parameters in
+`[Global]` or in a section that is not read apply to no workflow this file names: they are
+counted, not modelled. Built-in parameters (`$PM...`) are counted, not modelled. Values are
+never read, so a password a file sets never leaves it.
 
 A file is read only when it has a section header and a `$` parameter line: other `.par`
 files are left alone without a diagnostic.
@@ -84,16 +89,23 @@ def read(out: Out, data: bytes) -> bool:
         if why:
             out.note("info", f"{out.path}: {why}")
         out.construct(sat, "infa:parameter_section", subject is not None or header.strip().lower() == "global")
+        scope = (subject["natural_key"].get("job") or subject["natural_key"]["name"]) if subject is not None else None
+        unscoped = 0
         for m in _ENTRY.finditer(data, start, end):
             name = m.group(1).decode("ascii")
             at = out.span(place, m.start(1), m.end(1))
             if name.upper().startswith("$PM"):
                 out.construct(at, "infa:parameter_builtin", False)
                 continue
-            out.construct(at, "infa:parameter_entry", True)
-            key = f"parameter:{name}"
+            out.construct(at, "infa:parameter_entry", scope is not None)
+            if scope is None:
+                unscoped += 1
+                continue
+            key = f"parameter:{scope}#{name}"
             ref = out.entity(at, "infa:Parameter", {"name": key}, key, {"kind": "mapping_parameter" if name.startswith("$$") else "session_parameter"})
-            if subject is not None and (header, name) not in seen:
+            if (header, name) not in seen:
                 seen.add((header, name))
                 out.relation(at, subject, P.REFERENCES_CONFIG, ref, {"via": "parameter_file"})
+        if unscoped:
+            out.note("info", f"{out.path}: {unscoped} parameter(s) in section [{header}] belong to no workflow or worklet the section names: counted, not linked")
     return True
