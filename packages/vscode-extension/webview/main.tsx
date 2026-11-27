@@ -4,7 +4,8 @@
  * The views are the Explorer's components, imported unchanged from
  * repo-intelligence/explorer ("@/..."). This file replaces only its outer shell: one
  * repository and one snapshot (the bundle's), no sidebar, no connection or settings
- * screens, and no business map, timeline or lineage, which need more than one bundle.
+ * screens, and no business map, timeline or lineage, which need more than one bundle. The
+ * Map opens with the repository profile, as the Explorer's does, without a catalogue description.
  */
 
 import "@fontsource-variable/fraunces";
@@ -22,6 +23,7 @@ import { EntityDrawer } from "@/components/entity-drawer";
 import { DEFAULT_GRAPH_PREFS, GraphView, type GraphPrefs } from "@/components/graph-view";
 import { MapView, type MapPrefs } from "@/components/map-view";
 import { PlaneView } from "@/components/plane-view";
+import { ProfileBand } from "@/components/profile-band";
 import { QualityView } from "@/components/quality-view";
 import { SearchDialog } from "@/components/search-dialog";
 import { Badge, ErrorNote, Loading } from "@/components/ui";
@@ -155,6 +157,9 @@ function Snapshot({ local }: { local: Local }) {
           {summary.error && <ErrorNote error={summary.error} onRetry={summary.reload} what="this snapshot" />}
           {summary.data && (
             <>
+              {view === "map" && plane === null && summary.data.profile && (
+                <ProfileBand profile={summary.data.profile} onOpenEntity={openEntity} onOpenPlane={setPlane} />
+              )}
               {view === "map" && (plane === null
                 ? <MapView summary={summary.data} prefs={mapPrefs} onPrefs={setMapPrefs} onOpenPlane={setPlane} onOpenQuality={() => switchView("quality")} purpose={null} />
                 : <PlaneView key={`${hash}:${plane}`} hash={hash} planeId={plane} summary={summary.data} onBack={() => setPlane(null)} onOpenEntity={openEntity} activeEntityId={activeEntityId} />)}
