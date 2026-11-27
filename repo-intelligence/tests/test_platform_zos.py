@@ -92,7 +92,7 @@ def blob_of(out) -> str:
 def test_pack_is_registered_valid_and_supersedes_legacy_jcl():
     assert packs()["zos"] is PACK
     assert validate_pack(PACK) == []
-    assert PACK.prefix == "zos" and PACK.version == "1.0.0"
+    assert PACK.prefix == "zos" and PACK.version == "1.1.0"
     assert PACK.supersedes == ("legacy.jcl",) and "legacy.jcl" in superseded()
     assert {e.id for e in PACK.extractors} == {"zos.jcl", "zos.definitions"}
     assert PACK.inputs == (".rkp/inputs/zos/**",)
@@ -447,6 +447,16 @@ def test_a_call_of_a_cataloged_procedure_binds_only_its_own_dds():
     assert not any(b["task"]["natural_key"]["name"] == "CALL2" for b in of(out, "dd_binding"))  # the program the step runs is in another file
 
 
+def test_a_referback_stays_in_its_own_job_and_sets_apply_in_order():
+    text = ("//J1 JOB\n//S1 EXEC PGM=P1\n//OUT DD DSN=A.FIRST,DISP=(NEW,CATLG)\n"
+            "//J1 JOB\n//S1 EXEC PGM=P1\n//OUT DD DSN=A.SECOND,DISP=(NEW,CATLG)\n//S2 EXEC PGM=P2\n//IN DD DSN=*.S1.OUT,DISP=SHR\n")
+    rels = relations(run(text))
+    assert (task("J1", "S2"), "READS_FROM", ds("a.second")) in rels and (task("J1", "S2"), "READS_FROM", ds("a.first")) not in rels
+    text = "//J2 JOB\n//  SET V=ONE\n//S1 EXEC PGM=P1\n//IN DD DSN=A.&V,DISP=SHR\n//  SET V=TWO\n//S2 EXEC PGM=P1\n//IN DD DSN=A.&V,DISP=SHR\n"
+    rels = relations(run(text))
+    assert {(t, o) for t, p, o in rels if p == "READS_FROM"} == {(task("J2", "S1"), ds("a.one")), (task("J2", "S2"), ds("a.two"))}
+
+
 def test_dd_kinds_temporary_system_library_dummy_sysout_and_concatenation():
     out = run(SAMPLE_UTILITIES, "jcl/PAYROLL.jcl")
     ents = entities(out)
@@ -483,9 +493,47 @@ def test_tso_steps_run_programs_execs_with_plans():
     assert ents[task("J1", "S1")]["plan"] == "PLAN1" and ents[task("J1", "S1")]["execs"] == ["MYEXEC"]
     assert (task("J1", "S1"), "RUNS", prog("PGM1")) in rels and (task("J1", "S1"), "RUNS", prog("MYEXEC", "tso")) in rels
     assert (task("J1", "S1"), "DEPENDS_ON", prog("PLAN1", "db2-plan")) in rels
-    [b] = of(out, "dd_binding")
-    assert b["program"]["natural_key"]["name"] == "PGM1" and b["dd"] == "IN"
+    # The step's DDs are allocated for everything SYSTSIN runs: the load module and the exec.
+    got = sorted((b["program"]["natural_key"]["platform"], b["program"]["natural_key"]["name"], b["dd"], b["dataset"]["natural_key"]["name"]) for b in of(out, "dd_binding"))
+    assert got == [("mainframe", "PGM1", "IN", "a.in"), ("tso", "MYEXEC", "IN", "a.in")]
     assert "DB2X" not in blob_of(out) and "/X" not in blob_of(out)
+
+
+def test_tso_execs_and_clists_get_dd_bindings_like_run_program():
+    text = ("//J1 JOB\n//S1 EXEC PGM=IKJEFT1B\n//RPTIN DD DSN=A.REPORT.IN,DISP=SHR\n//RPTOUT DD DSN=A.REPORT.OUT,DISP=(NEW,CATLG)\n//SYSTSPRT DD SYSOUT=*\n"
+            "//SYSTSIN DD *\n  %RPTONE\n  EX 'PROD.REXX(RPTTWO)' 'ARG'\n  EXEC PROD.CLIST(CLNUP)\n  EX 'PROD.REXX'\n  ALLOC FI(X) DA('A.X') SHR\n/*\n")
+    out = run(text)
+    rows = sorted((b["program"]["natural_key"]["platform"], b["program"]["natural_key"]["name"], b["dd"], b["disp"], b["job"], b["step"]) for b in of(out, "dd_binding"))
+    assert rows == [("tso", name, dd, disp, "J1", "S1") for name in ("CLNUP", "RPTONE", "RPTTWO") for dd, disp in (("RPTIN", "SHR"), ("RPTOUT", "NEW"))]
+    for b in of(out, "dd_binding"):
+        assert b["program"]["declare"] is False and b["program"]["natural_key"] == {"platform": "tso", "name": b["program"]["natural_key"]["name"]}
+    # An exec run from a data set with no member names no program: nothing bound, nothing guessed.
+    assert not any(b["program"]["natural_key"]["name"] == "PROD" for b in of(out, "dd_binding"))
+    assert constructs(out)[("zos:tso_exec", False)] == 1
+
+
+def test_a_rexx_exec_run_by_ikjeft01_joins_its_dd_files_through_the_linker():
+    from repo_intel.compile.link import _Linker
+    from repo_intel.platforms.rexx import PACK as REXX
+
+    jcl_data = (F38 / "jcl/ACCTDLY.jcl").read_bytes()
+    jcl_out = ZosJcl().extract("jcl/ACCTDLY.jcl", jcl_data, "b")
+    exec_text = b"/* REXX */\n\"EXECIO * DISKR ACCTIN (STEM LINE. FINIS\"\n\"EXECIO * DISKRU ACCTMST (STEM M. FINIS\"\n\"EXECIO * DISKW RPTOUT (STEM OUT. FINIS\"\nEXIT 0\n"
+    rexx_out = next(e for e in REXX.extractors if e.matches("rexx/ACCTRPT.rexx")).extract("rexx/ACCTRPT.rexx", exec_text, "c")
+    assert {(d["dd"], d["mode"]) for d in of(rexx_out, "dd_file")} >= {("ACCTIN", "input"), ("RPTOUT", "output")}
+
+    def summary(path, out):
+        rows = [{"kind": o.kind, "payload": json.loads(json.dumps(o.payload, default=str)), "evidence": {"path": path, "n": i}} for i, o in enumerate(out.observations) if o.kind in ("dd_binding", "dd_file")]
+        return {"path": path, "observations": rows}
+
+    linker = _Linker({"name": "@root"}, [summary("jcl/ACCTDLY.jcl", jcl_out), summary("rexx/ACCTRPT.rexx", rexx_out)], [])
+    linker.link_dd_datasets()
+    got = {(r["payload"]["subject"]["natural_key"]["platform"], r["payload"]["subject"]["natural_key"]["name"], r["payload"]["predicate"], r["payload"]["object"]["natural_key"]["name"],
+            r["payload"]["qualifiers"]["via"]["step"]) for r in linker.out}
+    assert ("tso", "ACCTRPT", "READS_FROM", "prod.acct.daily.extract", "POST") in got
+    assert not any(row[3] == "rptout" or row[2] == "WRITES_TO" and row[3] == "prod.acct.daily.extract" for row in got)  # RPTOUT is bound by no DD of the step
+    for r in linker.out:
+        assert r["path"] == "rexx/ACCTRPT.rexx" and r["evidence_class"] == "E3"
 
 
 def test_idcams_definitions_deletes_and_repro():
@@ -611,15 +659,45 @@ def test_csd_in_a_dfhcsdup_step_and_a_twice_defined_file():
 def test_dclgen_schema_fields_and_columns():
     out = run(DCLGEN, ".rkp/inputs/zos/dclgen/DACCT.dclgen")
     ents = entities(out)
-    schema = ents[("DataSchema", json.dumps({"kind": "dclgen", "name": "DACCT"}, sort_keys=True))]
-    assert (schema["table"], schema["record"], schema["columns"], schema["fields"]) == ("acct.account", "DCLACCOUNT", 4, 6)
+    # A DCLGEN member is a copybook (contract 11.3 item 4), its fields keyed as the cobol pack keys a copybook's.
+    schema = ents[("DataSchema", json.dumps({"kind": "copybook", "name": "DACCT"}, sort_keys=True))]
+    assert schema["platform_kind"] == "zos:Dclgen"
+    assert (schema["table"], schema["record"], schema["columns"], schema["fields"]) == ("acct.account", "DCLACCOUNT", 4, 7)
+    assert not any(k[0] == "DataSchema" and "dclgen" in k[1] for k in ents) and not any(k[0] == "Field" and "zos:" in k[1] for k in ents)
 
     def field(name):
-        return ents[("Field", json.dumps({"name": name, "table": "zos:DACCT"}, sort_keys=True))]
+        return ents[("Field", json.dumps({"name": name, "table": "cobol:DACCT"}, sort_keys=True))]
 
     assert field("BALANCE")["usage"] == "COMP-3" and field("BALANCE")["length"] == 6 and field("BALANCE")["offset"] == 52 and field("BALANCE")["nullable"] is True
     assert field("ACCT-NAME")["group"] is True and field("ACCT-NAME")["sql_type"] == "VARCHAR(40)" and field("ACCT-NAME-TEXT")["offset"] == 12
+    assert field("DCLACCOUNT")["level"] == 1 and field("DCLACCOUNT")["length"] == 68 and field("BALANCE")["parent"] == "DCLACCOUNT"
     assert not any(k[0] == "Table" for k in ents)  # the table belongs to the DDL and the SQL that name it
+
+
+def test_a_dclgen_member_and_the_same_member_read_as_a_copybook_name_one_layout():
+    from repo_intel.platforms.cobol import PACK as COBOL
+
+    data = DCLGEN.encode()
+    as_copybook = next(e for e in COBOL.extractors if e.matches("copy/DACCT.cpy")).extract("copy/DACCT.cpy", data, "b")
+    as_dclgen = run(DCLGEN, ".rkp/inputs/zos/dclgen/DACCT.dclgen")
+
+    def layout(out):
+        return {k for k in entities(out) if k[0] in ("DataSchema", "Field")}
+
+    assert layout(as_dclgen) == layout(as_copybook)
+    # A name used twice in the record is qualified by its parent, the record included, as the cobol pack does.
+    text = "       EXEC SQL DECLARE T1 TABLE ( A CHAR(1), B CHAR(1) ) END-EXEC.\n       01  DCLT1.\n           10 GRP-A.\n              49 X PIC X.\n           10 GRP-B.\n              49 X PIC X.\n"
+    names = sorted(json.loads(k[1])["name"] for k in entities(run(text, ".rkp/inputs/zos/T1.dclgen")) if k[0] == "Field")
+    assert names == ["DCLT1", "GRP-A", "GRP-A.X", "GRP-B", "GRP-B.X"]
+
+
+def test_a_cobol_program_depends_on_the_dclgen_it_includes():
+    from repo_intel.platforms.cobol import PACK as COBOL
+
+    data = (F38 / "cobol/ACCTPOST.cbl").read_bytes()
+    out = next(e for e in COBOL.extractors if e.matches("cobol/ACCTPOST.cbl")).extract("cobol/ACCTPOST.cbl", data, "b")
+    target = next(iter(k for k in entities(run(DCLGEN, ".rkp/inputs/zos/dclgen/DACCT.dclgen")) if k[0] == "DataSchema"))
+    assert (prog("ACCTPOST"), "DEPENDS_ON", target) in relations(out)
 
 
 def test_bind_packages_and_plans_never_copy_owner_or_qualifier():
@@ -649,6 +727,16 @@ def test_db2_ddl_outside_sql_is_read_as_sql_ddl_reads_it():
     assert not any("ACCTTS" in k[1] or "XACCT01" in k[1] for k in ents)
     c = constructs(out)
     assert c[("zos:ddl_table", True)] == 1 and c[("zos:ddl_storage", False)] == 1 and c[("zos:ddl_index", False)] == 1
+    # Lower case, as data.sql_ddl keys tables and columns (contract 11.3 item 1): the DDL's
+    # table is the one the COBOL program's embedded SQL writes.
+    table = ("Table", json.dumps({"datastore": "default", "name": "acct.account"}, sort_keys=True))
+    assert table in ents and ("Field", json.dumps({"name": "balance", "table": "acct.account"}, sort_keys=True)) in ents
+    assert not any(k[0] in ("Table", "Field") and ("ACCOUNT" in k[1] or "BALANCE" in k[1]) for k in ents)
+    from repo_intel.platforms.cobol import PACK as COBOL
+
+    data = (F38 / "cobol/ACCTPOST.cbl").read_bytes()
+    cobol = next(e for e in COBOL.extractors if e.matches("cobol/ACCTPOST.cbl")).extract("cobol/ACCTPOST.cbl", data, "b")
+    assert (prog("ACCTPOST"), "WRITES_TO", table) in relations(cobol)
 
 
 # ---------------------------------------------------------------------- names, never values; determinism; speed

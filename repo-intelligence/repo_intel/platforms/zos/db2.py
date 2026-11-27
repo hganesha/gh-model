@@ -5,7 +5,9 @@ host structure DCLGEN generated for it, a COBOL 01-level record whose items hold
 columns in order (a VARCHAR column is a group of a 49-level length and text). `dclgen`
 reads both: the columns with their SQL types and nullability, and the record's items with
 level, PIC, usage, OCCURS, REDEFINES, and offset and length in bytes (contract 11.1 item 3).
-A name repeated in the record is qualified by its parent; FILLER is not declared. The
+The member is a copybook (contract 11.3 item 4): the record and its items are named as the
+cobol pack names a copybook's, a name repeated in the record qualified by its parent;
+FILLER is not declared. The
 second 01-level DCLGEN makes with `INDVAR(YES)` (the indicator array) is counted, not
 declared. A PL/I, C or assembler structure is counted; only its DECLARE TABLE is read.
 
@@ -266,26 +268,27 @@ def dclgen(text: str) -> Dclgen | None:
     return Dclgen(m.group(1).replace('"', ""), (m.start(1), m.end(1)), columns, record, indicator, language)
 
 
-def flatten(record: Item88) -> list[tuple[str, Item88, Item88 | None]]:
-    """(field name, item, the record's direct child it sits in) for every item below the 01,
-    FILLER left out; a name used twice is qualified by its parent."""
-    seen: dict[str, int] = {}
-    walk: list[tuple[Item88, Item88 | None, Item88 | None]] = []
+def flatten(record: Item88) -> list[tuple[str, Item88, Item88 | None, Item88 | None]]:
+    """(field name, item, its parent, the record's direct child it sits in) for the record
+    and every item below it, FILLER left out, as the cobol pack names a copybook's items:
+    a name used twice is qualified by its parent (`<parent>.<name>`)."""
+    seen: dict[str, int] = {record.name: 1}
+    walk: list[tuple[Item88, Item88 | None, Item88 | None]] = [(record, None, None)]
 
-    def go(node: Item88, parent: Item88 | None, top: Item88 | None) -> None:
+    def go(node: Item88, top: Item88 | None) -> None:
         for c in node.children:
             t = top or c
             walk.append((c, node, t))
             seen[c.name] = seen.get(c.name, 0) + 1
-            go(c, c, t)
+            go(c, t)
 
-    go(record, None, None)
+    go(record, None)
     out = []
     for item, parent, top in walk:
         if item.name == "FILLER":
             continue
-        name = item.name if seen[item.name] == 1 or parent is None or parent is record else f"{parent.name}.{item.name}"
-        out.append((name, item, top))
+        name = item.name if seen[item.name] == 1 or parent is None or parent.name == "FILLER" else f"{parent.name}.{item.name}"
+        out.append((name, item, parent, top))
     return out
 
 

@@ -7,8 +7,13 @@ kinds and natural keys: a Job per JOB or PROC statement (`attributes.kind` and
 `attributes.member`), a Task per EXEC that the Job CONTAINS and that DEPENDS_ON the step
 before it, RUNS for each program or procedure, and READS_FROM / WRITES_TO data sets keyed
 by their lower-cased name. One departure, by design: the steps of an in-stream procedure
-belong to the procedure (`Task {job: <proc>}`), not to the job that defines it, and the
-calling step carries the data sets they bind.
+belong to the procedure (`Task {job: <proc>}`), under the procedure's Job, not to the job
+that defines it; the calling step's overrides apply to them, and the calling step carries
+the data sets they bind (contract 11.3 item 5).
+
+A DCLGEN member is a copybook, `DataSchema {kind: "copybook"}` with `Field {table:
+"cobol:<member>"}` (contract 11.3 item 4); DB2 DDL tables and columns are lower-cased as
+`data.sql_ddl` keys them (11.3 item 1).
 
 Modules:
 
@@ -34,7 +39,7 @@ PACK = PlatformPack(
     id="zos",
     name="z/OS",
     prefix="zos",
-    version="1.0.0",
+    version="1.1.0",  # 1.1.0: a DCLGEN member is a copybook; IKJEFT01 execs get dd_bindings; referbacks stay in their job
     terms=TERMS,
     constructs=CONSTRUCTS,
     extractors=(ZosJcl(), ZosDefinitions()),

@@ -12,8 +12,14 @@ Keys follow contract section 11.1:
                                                  data set the JCL, COBOL and the CSD name is one entity
     Endpoint {component_root, protocol: "cics",  a CSD DEFINE TRANSACTION (zos:Transaction)
               method: "TRANSACTION", route}
-    DataSchema {kind: "dclgen", name: <member>}  a DCLGEN member (zos:Dclgen)
-    Field {table: "zos:<member>", name}          a host variable of a DCLGEN structure (zos:DclgenField)
+    DataSchema {kind: "copybook", name: <member>}  a DCLGEN member (zos:Dclgen): a copybook, keyed
+                                                 as the cobol pack keys one, so COPY <member> and
+                                                 EXEC SQL INCLUDE <member> link to it (11.3 item 4)
+    Field {table: "cobol:<member>", name}        the host structure and each host variable of a
+                                                 DCLGEN member (zos:DclgenField), named as the cobol
+                                                 pack names a copybook's items (11.1 item 3)
+    Table {datastore: "default", name}           a DB2 DDL table, read by data.sql_ddl: table and
+                                                 column names lower-cased (11.3 item 1)
     Program {platform: "db2-package", name: "<collection>.<package>"}  a DB2 package (zos:Db2Package)
     Program {platform: "db2-plan", name: <plan>} a DB2 application plan (zos:Db2Plan)
 
@@ -33,8 +39,8 @@ TERMS = (
     Term("zos:Member", K.JOB, "lossy", "the library member that holds a job whose JOB statement has another name; ALIAS_OF that job"),
     Term("zos:Step", K.TASK, "lossy", "a job or procedure step: one EXEC statement; COND and IF conditions in attributes"),
     Term("zos:Transaction", K.ENDPOINT, "lossy", "a CICS transaction from a CSD DEFINE TRANSACTION: method TRANSACTION, the transaction id as route"),
-    Term("zos:Dclgen", K.DATA_SCHEMA, "lossy", "a DCLGEN member: the DECLARE TABLE and its host structure"),
-    Term("zos:DclgenField", K.FIELD, "lossy", "a host variable of a DCLGEN structure; level, PIC, usage, offset, length and the column it holds"),
+    Term("zos:Dclgen", K.DATA_SCHEMA, "lossy", "a DCLGEN member, a copybook: the DECLARE TABLE and its host structure"),
+    Term("zos:DclgenField", K.FIELD, "lossy", "the host structure or a host variable of a DCLGEN member; level, PIC, usage, offset, length and the column it holds"),
     Term("zos:Db2Package", K.PROGRAM, "lossy", "a DB2 package bound from a program's DBRM (BIND PACKAGE ... MEMBER)"),
     Term("zos:Db2Plan", K.PROGRAM, "lossy", "a DB2 application plan (BIND PLAN): the collections and packages it lists"),
 )
@@ -132,7 +138,7 @@ _CONSTRUCTS = (
     ("csd_group", "ADD GROUP ... LIST, and other DFHCSDUP commands", "unmapped"),
     # DCLGEN
     ("dclgen_table", "DCLGEN DECLARE TABLE", "entity:DataSchema"),
-    ("dclgen_field", "a host variable of a DCLGEN COBOL structure", "entity:Field"),
+    ("dclgen_field", "the record or a host variable of a DCLGEN COBOL structure", "entity:Field"),
     ("dclgen_indicator", "a DCLGEN indicator variable structure", "unmapped"),
     ("dclgen_other_language", "a DCLGEN host structure in PL/I, C or assembler", "unmapped"),
     # DB2 DDL outside .sql files
