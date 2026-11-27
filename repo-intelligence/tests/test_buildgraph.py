@@ -71,6 +71,22 @@ def test_step_version_ignores_runtime_state(monkeypatch):
     assert extractors.FILE_EXTRACT.version == cold
 
 
+def test_code_digest_reads_each_object_source_once(monkeypatch):
+    """Every extractor's digest walks the same shared helpers. Their source is read once per
+    process, so the walk does not grow with extractors times helpers, and the digest is the same."""
+    monkeypatch.setattr(buildgraph, "_SOURCES", {})
+    reads = []
+    real = buildgraph.inspect.getsource
+    monkeypatch.setattr(buildgraph.inspect, "getsource", lambda obj: reads.append(obj) or real(obj))
+    first = buildgraph.code_digest(compiler.UNIT_COMPILE.fn)
+    read_once = len(reads)
+    assert read_once and len(set(map(id, reads))) == read_once
+    assert buildgraph.code_digest(compiler.UNIT_COMPILE.fn) == first
+    assert len(reads) == read_once  # the second walk reads nothing again
+    monkeypatch.setattr(buildgraph, "_SOURCES", {})
+    assert buildgraph.code_digest(compiler.UNIT_COMPILE.fn) == first  # same digest from a cold cache
+
+
 def test_registry_holds_every_pipeline_step():
     steps = registry()
     for name in ("file.extract", "unit.plan", "unit.link", "features.build", "unit.compile", "repo.compile"):
