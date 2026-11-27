@@ -5,6 +5,9 @@ PROMPT Creating the CRM database link and synonyms
 CREATE DATABASE LINK crm CONNECT TO CURRENT_USER USING 'crm_service';
 CREATE OR REPLACE SYNONYM crm_customers FOR customers@crm;
 
+PROMPT Creating the reporting database link
+CREATE DATABASE LINK rpt CONNECT TO rpt_reader IDENTIFIED BY "fixture-not-a-real-password-0028" USING 'rpt_service';
+
 PROMPT Granting the order desk roles
 GRANT EXECUTE ON order_api TO order_desk_role;
 GRANT SELECT, INSERT, UPDATE ON orders TO order_desk_role;

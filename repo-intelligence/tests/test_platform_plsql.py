@@ -475,7 +475,7 @@ def test_scheduler_and_dbms_job_jobs_run_what_they_name():
 
 def test_sqlplus_commands_are_seen_not_modelled():
     out = fixture("db/install/grants_and_jobs.sql")
-    assert constructs(out)[("ora:sqlplus", False)] == 4
+    assert constructs(out)[("ora:sqlplus", False)] == 5  # SET DEFINE OFF and four PROMPTs
 
 
 def test_names_never_values():

@@ -10,5 +10,6 @@ The database side of an order desk, kept as source files with no build file:
   also used for JCL procedures; `jcl/NIGHTLY.prc` is one, and is not Oracle.
 - `db/functions/customer_tier.fnc`: a standalone function with a searched CASE.
 - `db/triggers/trg_orders_status.trg`: a row trigger with a WHEN clause.
-- `db/install/grants_and_jobs.sql`: a SQL*Plus install script with a database link, a
+- `db/install/grants_and_jobs.sql`: a SQL*Plus install script with two database links (one
+  connecting as a fixed user with a made-up password, which is planted test data), a
   synonym, object, system and role grants, two DBMS_SCHEDULER jobs and a DBMS_JOB job.
