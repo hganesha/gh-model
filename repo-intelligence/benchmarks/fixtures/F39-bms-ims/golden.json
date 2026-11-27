@@ -1,0 +1,959 @@
+{
+  "fixture": "F39-bms-ims",
+  "description": "A customer desk on the mainframe kept as source members: a CICS BMS mapset with two maps (continued statements, a mapset TYPE set by &SYSPARM, literal fields that label the named fields after them, a picture, OCCURS and VALIDN), an IMS HIDAM database with a three-level hierarchy and its primary index, the PSB of the program (an alternate PCB to another program's transaction, a PCB with segment-level PROCOPT and SENFLDs, and one through the index), an MFS format with its input and output messages, the COBOL program the PSB is named for, and a stage-1 system definition under .rkp/inputs/ims/. 'since' names the milestone whose compiler must produce the item.",
+  "entities": [
+    {
+      "kind": "Screen",
+      "natural_key": {
+        "platform": "bms",
+        "name": "CUSTSET.CUSTMAP"
+      },
+      "since": "M2",
+      "attributes": {
+        "platform": "bms",
+        "platform_kind": "bms:Map",
+        "fidelity": "lossy",
+        "mapset": "CUSTSET",
+        "map": "CUSTMAP",
+        "size": [
+          24,
+          80
+        ],
+        "mode": "INOUT",
+        "lang": "COBOL",
+        "ctrl": [
+          "FREEKB",
+          "FRSET"
+        ],
+        "fields": 4,
+        "literals": 5
+      }
+    },
+    {
+      "kind": "Screen",
+      "natural_key": {
+        "platform": "bms",
+        "name": "CUSTSET.ORDLST"
+      },
+      "since": "M2",
+      "attributes": {
+        "platform_kind": "bms:Map",
+        "ctrl": [
+          "FREEKB"
+        ],
+        "fields": 3,
+        "literals": 3
+      }
+    },
+    {
+      "kind": "Form",
+      "natural_key": {
+        "screen": "CUSTSET.CUSTMAP",
+        "name": "CUSTMAP"
+      },
+      "since": "M2",
+      "attributes": {
+        "platform_kind": "bms:MapForm",
+        "inputs": 1
+      }
+    },
+    {
+      "kind": "Form",
+      "natural_key": {
+        "screen": "CUSTSET.ORDLST",
+        "name": "ORDLST"
+      },
+      "since": "M2",
+      "attributes": {
+        "platform_kind": "bms:MapForm"
+      }
+    },
+    {
+      "kind": "UIControl",
+      "natural_key": {
+        "container": "CUSTSET.CUSTMAP",
+        "name": "CUSTNO"
+      },
+      "since": "M2",
+      "attributes": {
+        "platform_kind": "bms:Field",
+        "pos": [
+          3,
+          14
+        ],
+        "length": 8,
+        "attrb": [
+          "UNPROT",
+          "NUM",
+          "IC",
+          "FSET"
+        ],
+        "control": "input",
+        "picin": "9(8)",
+        "label": "CUSTOMER NO"
+      }
+    },
+    {
+      "kind": "UIControl",
+      "natural_key": {
+        "container": "CUSTSET.CUSTMAP",
+        "name": "CUSTNM"
+      },
+      "since": "M2",
+      "attributes": {
+        "control": "display",
+        "label": "NAME",
+        "length": 30
+      }
+    },
+    {
+      "kind": "UIControl",
+      "natural_key": {
+        "container": "CUSTSET.CUSTMAP",
+        "name": "CUSTBAL"
+      },
+      "since": "M2",
+      "attributes": {
+        "picout": "ZZZ,ZZ9.99-",
+        "label": "BALANCE"
+      }
+    },
+    {
+      "kind": "UIControl",
+      "natural_key": {
+        "container": "CUSTSET.CUSTMAP",
+        "name": "MSGLINE"
+      },
+      "since": "M2",
+      "attributes": {
+        "color": "RED",
+        "control": "display"
+      }
+    },
+    {
+      "kind": "UIControl",
+      "natural_key": {
+        "container": "CUSTSET.ORDLST",
+        "name": "LCUSTNO"
+      },
+      "since": "M2",
+      "attributes": {
+        "label": "CUSTOMER"
+      }
+    },
+    {
+      "kind": "UIControl",
+      "natural_key": {
+        "container": "CUSTSET.ORDLST",
+        "name": "ORDLINE"
+      },
+      "since": "M2",
+      "attributes": {
+        "occurs": 15
+      }
+    },
+    {
+      "kind": "UIControl",
+      "natural_key": {
+        "container": "CUSTSET.ORDLST",
+        "name": "SELNO"
+      },
+      "since": "M2",
+      "attributes": {
+        "control": "input",
+        "validation": [
+          "MUSTFILL"
+        ],
+        "label": "SELECT"
+      }
+    },
+    {
+      "kind": "Table",
+      "natural_key": {
+        "datastore": "ims:CUSTDB",
+        "name": "CUSTOMER"
+      },
+      "since": "M2",
+      "attributes": {
+        "platform": "ims",
+        "platform_kind": "ims:Segment",
+        "fidelity": "lossy",
+        "dbd": "CUSTDB",
+        "access": [
+          "HIDAM",
+          "VSAM"
+        ],
+        "dd": "CUSTDD",
+        "level": 1,
+        "bytes": 120,
+        "lchild": [
+          {
+            "segment": "CUSTIDX",
+            "dbd": "CUSTIDXD",
+            "pointer": "INDX"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "Table",
+      "natural_key": {
+        "datastore": "ims:CUSTDB",
+        "name": "ORDER"
+      },
+      "since": "M2",
+      "attributes": {
+        "level": 2,
+        "parent": "CUSTOMER",
+        "bytes": 60
+      }
+    },
+    {
+      "kind": "Table",
+      "natural_key": {
+        "datastore": "ims:CUSTDB",
+        "name": "ORDLINE"
+      },
+      "since": "M2",
+      "attributes": {
+        "level": 3,
+        "parent": "ORDER",
+        "parent_pointer": "SNGL"
+      }
+    },
+    {
+      "kind": "Field",
+      "natural_key": {
+        "table": "ims:CUSTDB.CUSTOMER",
+        "name": "CUSTNO"
+      },
+      "since": "M2",
+      "attributes": {
+        "platform_kind": "ims:Field",
+        "start": 1,
+        "offset": 0,
+        "length": 8,
+        "type": "C",
+        "key": true,
+        "unique": true
+      }
+    },
+    {
+      "kind": "Field",
+      "natural_key": {
+        "table": "ims:CUSTDB.CUSTOMER",
+        "name": "BALANCE"
+      },
+      "since": "M2",
+      "attributes": {
+        "offset": 38,
+        "length": 6,
+        "type": "P"
+      }
+    },
+    {
+      "kind": "Field",
+      "natural_key": {
+        "table": "ims:CUSTDB.ORDER",
+        "name": "ORDNO"
+      },
+      "since": "M2",
+      "attributes": {
+        "key": true
+      }
+    },
+    {
+      "kind": "Field",
+      "natural_key": {
+        "table": "ims:CUSTDB.ORDER",
+        "name": "STATUS"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "Field",
+      "natural_key": {
+        "table": "ims:CUSTDB.ORDLINE",
+        "name": "LINENO"
+      },
+      "since": "M2",
+      "attributes": {
+        "key": true,
+        "type": "Z"
+      }
+    },
+    {
+      "kind": "Field",
+      "natural_key": {
+        "table": "ims:CUSTDB.ORDLINE",
+        "name": "QTY"
+      },
+      "since": "M2"
+    },
+    {
+      "kind": "Screen",
+      "natural_key": {
+        "platform": "ims",
+        "name": "CUSTIN"
+      },
+      "since": "M2",
+      "attributes": {
+        "platform_kind": "ims:Message",
+        "message_type": "input",
+        "format": "CUSTF",
+        "devices": [
+          "3270,2"
+        ],
+        "next": "CUSTOUT",
+        "fields": 1
+      }
+    },
+    {
+      "kind": "Screen",
+      "natural_key": {
+        "platform": "ims",
+        "name": "CUSTOUT"
+      },
+      "since": "M2",
+      "attributes": {
+        "platform_kind": "ims:Message",
+        "message_type": "output",
+        "fields": 3
+      }
+    },
+    {
+      "kind": "UIControl",
+      "natural_key": {
+        "container": "CUSTIN",
+        "name": "CUSTNO"
+      },
+      "since": "M2",
+      "attributes": {
+        "platform_kind": "ims:DeviceField",
+        "pos": [
+          3,
+          14
+        ],
+        "length": 8,
+        "label": "CUSTOMER NO",
+        "control": "input",
+        "message_length": 8
+      }
+    },
+    {
+      "kind": "UIControl",
+      "natural_key": {
+        "container": "CUSTOUT",
+        "name": "CUSTNM"
+      },
+      "since": "M2",
+      "attributes": {
+        "control": "display",
+        "label": "NAME"
+      }
+    },
+    {
+      "kind": "UIControl",
+      "natural_key": {
+        "container": "CUSTOUT",
+        "name": "MSGLINE"
+      },
+      "since": "M2",
+      "attributes": {
+        "attr": [
+          "PROT",
+          "HI"
+        ]
+      }
+    },
+    {
+      "kind": "Endpoint",
+      "natural_key": {
+        "component_root": "",
+        "protocol": "ims",
+        "method": "TRANSACTION",
+        "route": "CUSTINQ"
+      },
+      "since": "M2",
+      "attributes": {
+        "platform": "ims",
+        "platform_kind": "ims:Transaction",
+        "fidelity": "lossy",
+        "psb": "CUSTPGM",
+        "pgmtype": "TP",
+        "message_segments": "single",
+        "response": true,
+        "mode": "single"
+      }
+    },
+    {
+      "kind": "Endpoint",
+      "natural_key": {
+        "component_root": "",
+        "protocol": "ims",
+        "method": "TRANSACTION",
+        "route": "CUSTUPD"
+      },
+      "since": "M2",
+      "attributes": {
+        "conversational": true,
+        "message_segments": "multiple",
+        "response": false
+      }
+    },
+    {
+      "kind": "Endpoint",
+      "natural_key": {
+        "component_root": "",
+        "protocol": "ims",
+        "method": "TRANSACTION",
+        "route": "ORDNOTE"
+      },
+      "since": "M2",
+      "attributes": {
+        "psb": "ORDPGM"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "subject": {
+        "kind": "Screen",
+        "natural_key": {
+          "platform": "bms",
+          "name": "CUSTSET.CUSTMAP"
+        }
+      },
+      "predicate": "CONTAINS",
+      "object": {
+        "kind": "Form",
+        "natural_key": {
+          "screen": "CUSTSET.CUSTMAP",
+          "name": "CUSTMAP"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Screen",
+        "natural_key": {
+          "platform": "bms",
+          "name": "CUSTSET.ORDLST"
+        }
+      },
+      "predicate": "CONTAINS",
+      "object": {
+        "kind": "Form",
+        "natural_key": {
+          "screen": "CUSTSET.ORDLST",
+          "name": "ORDLST"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Screen",
+        "natural_key": {
+          "platform": "bms",
+          "name": "CUSTSET.CUSTMAP"
+        }
+      },
+      "predicate": "CONTAINS",
+      "object": {
+        "kind": "UIControl",
+        "natural_key": {
+          "container": "CUSTSET.CUSTMAP",
+          "name": "CUSTNO"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Screen",
+        "natural_key": {
+          "platform": "bms",
+          "name": "CUSTSET.CUSTMAP"
+        }
+      },
+      "predicate": "CONTAINS",
+      "object": {
+        "kind": "UIControl",
+        "natural_key": {
+          "container": "CUSTSET.CUSTMAP",
+          "name": "MSGLINE"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Screen",
+        "natural_key": {
+          "platform": "bms",
+          "name": "CUSTSET.ORDLST"
+        }
+      },
+      "predicate": "CONTAINS",
+      "object": {
+        "kind": "UIControl",
+        "natural_key": {
+          "container": "CUSTSET.ORDLST",
+          "name": "SELNO"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Table",
+        "natural_key": {
+          "datastore": "ims:CUSTDB",
+          "name": "CUSTOMER"
+        }
+      },
+      "predicate": "CONTAINS",
+      "object": {
+        "kind": "Table",
+        "natural_key": {
+          "datastore": "ims:CUSTDB",
+          "name": "ORDER"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Table",
+        "natural_key": {
+          "datastore": "ims:CUSTDB",
+          "name": "ORDER"
+        }
+      },
+      "predicate": "CONTAINS",
+      "object": {
+        "kind": "Table",
+        "natural_key": {
+          "datastore": "ims:CUSTDB",
+          "name": "ORDLINE"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Table",
+        "natural_key": {
+          "datastore": "ims:CUSTDB",
+          "name": "CUSTOMER"
+        }
+      },
+      "predicate": "CONTAINS",
+      "object": {
+        "kind": "Field",
+        "natural_key": {
+          "table": "ims:CUSTDB.CUSTOMER",
+          "name": "CUSTNO"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Table",
+        "natural_key": {
+          "datastore": "ims:CUSTDB",
+          "name": "ORDLINE"
+        }
+      },
+      "predicate": "CONTAINS",
+      "object": {
+        "kind": "Field",
+        "natural_key": {
+          "table": "ims:CUSTDB.ORDLINE",
+          "name": "QTY"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Program",
+        "natural_key": {
+          "platform": "mainframe",
+          "name": "CUSTPGM"
+        }
+      },
+      "predicate": "READS_FROM",
+      "object": {
+        "kind": "Table",
+        "natural_key": {
+          "datastore": "ims:CUSTDB",
+          "name": "CUSTOMER"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Program",
+        "natural_key": {
+          "platform": "mainframe",
+          "name": "CUSTPGM"
+        }
+      },
+      "predicate": "READS_FROM",
+      "object": {
+        "kind": "Table",
+        "natural_key": {
+          "datastore": "ims:CUSTDB",
+          "name": "ORDER"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Program",
+        "natural_key": {
+          "platform": "mainframe",
+          "name": "CUSTPGM"
+        }
+      },
+      "predicate": "WRITES_TO",
+      "object": {
+        "kind": "Table",
+        "natural_key": {
+          "datastore": "ims:CUSTDB",
+          "name": "ORDER"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Program",
+        "natural_key": {
+          "platform": "mainframe",
+          "name": "CUSTPGM"
+        }
+      },
+      "predicate": "READS_FROM",
+      "object": {
+        "kind": "Table",
+        "natural_key": {
+          "datastore": "ims:CUSTDB",
+          "name": "ORDLINE"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Program",
+        "natural_key": {
+          "platform": "mainframe",
+          "name": "CUSTPGM"
+        }
+      },
+      "predicate": "WRITES_TO",
+      "object": {
+        "kind": "Table",
+        "natural_key": {
+          "datastore": "ims:CUSTDB",
+          "name": "ORDLINE"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Program",
+        "natural_key": {
+          "platform": "mainframe",
+          "name": "CUSTPGM"
+        }
+      },
+      "predicate": "EXPOSES",
+      "object": {
+        "kind": "Endpoint",
+        "natural_key": {
+          "component_root": "",
+          "protocol": "ims",
+          "method": "TRANSACTION",
+          "route": "CUSTINQ"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Program",
+        "natural_key": {
+          "platform": "mainframe",
+          "name": "CUSTPGM"
+        }
+      },
+      "predicate": "EXPOSES",
+      "object": {
+        "kind": "Endpoint",
+        "natural_key": {
+          "component_root": "",
+          "protocol": "ims",
+          "method": "TRANSACTION",
+          "route": "CUSTUPD"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Program",
+        "natural_key": {
+          "platform": "mainframe",
+          "name": "CUSTPGM"
+        }
+      },
+      "predicate": "CONSUMES",
+      "object": {
+        "kind": "Endpoint",
+        "natural_key": {
+          "component_root": "",
+          "protocol": "ims",
+          "method": "TRANSACTION",
+          "route": "ORDNOTE"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Screen",
+        "natural_key": {
+          "platform": "ims",
+          "name": "CUSTIN"
+        }
+      },
+      "predicate": "CONTAINS",
+      "object": {
+        "kind": "UIControl",
+        "natural_key": {
+          "container": "CUSTIN",
+          "name": "CUSTNO"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Screen",
+        "natural_key": {
+          "platform": "ims",
+          "name": "CUSTOUT"
+        }
+      },
+      "predicate": "CONTAINS",
+      "object": {
+        "kind": "UIControl",
+        "natural_key": {
+          "container": "CUSTOUT",
+          "name": "CUSTNM"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Screen",
+        "natural_key": {
+          "platform": "ims",
+          "name": "CUSTIN"
+        }
+      },
+      "predicate": "NAVIGATES_TO",
+      "object": {
+        "kind": "Endpoint",
+        "natural_key": {
+          "component_root": "",
+          "protocol": "ims",
+          "method": "TRANSACTION",
+          "route": "CUSTINQ"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Screen",
+        "natural_key": {
+          "platform": "ims",
+          "name": "CUSTIN"
+        }
+      },
+      "predicate": "NAVIGATES_TO",
+      "object": {
+        "kind": "Screen",
+        "natural_key": {
+          "platform": "ims",
+          "name": "CUSTOUT"
+        }
+      },
+      "since": "M2"
+    },
+    {
+      "subject": {
+        "kind": "Screen",
+        "natural_key": {
+          "platform": "ims",
+          "name": "CUSTOUT"
+        }
+      },
+      "predicate": "NAVIGATES_TO",
+      "object": {
+        "kind": "Screen",
+        "natural_key": {
+          "platform": "ims",
+          "name": "CUSTIN"
+        }
+      },
+      "since": "M2"
+    }
+  ],
+  "absent_entities": [
+    {
+      "kind": "Program",
+      "natural_key": {
+        "platform": "mainframe",
+        "name": "ORDPGM"
+      },
+      "why": "the stage-1 deck names ORDPGM's application, but the repository holds no such program: an APPLCTN never declares the program it names"
+    },
+    {
+      "kind": "Table",
+      "natural_key": {
+        "datastore": "ims:CUSTIDXD",
+        "name": "CUSTIDX"
+      },
+      "why": "the primary index DBD is not in the repository: an LCHILD names its segment as an attribute and declares nothing"
+    },
+    {
+      "kind": "UIControl",
+      "natural_key": {
+        "container": "CUSTIN",
+        "name": "PFKEYS"
+      },
+      "why": "PFKEYS is the format's program function key field, not a device field: the message field naming it is counted, not declared"
+    },
+    {
+      "kind": "UIControl",
+      "natural_key": {
+        "container": "CUSTSET.CUSTMAP",
+        "name": "CUSTOMER NO:"
+      },
+      "why": "a field with no label is screen text: it is counted and labels the next named field, never declared"
+    },
+    {
+      "kind": "Program",
+      "natural_key": {
+        "platform": "mainframe",
+        "name": "CUSTF"
+      },
+      "why": "an MFS format is a device layout, not a program"
+    }
+  ],
+  "exclusions": [],
+  "forbidden_kinds": [
+    "Package",
+    "Component"
+  ],
+  "expected_unknowns": [],
+  "expected_conflicts": [],
+  "secret_probes": [],
+  "commits": [
+    {
+      "dir": "01-customer-phone",
+      "expect": "A phone number field, with its label, on the customer inquiry map",
+      "added_entities": [
+        {
+          "kind": "UIControl",
+          "natural_key": {
+            "container": "CUSTSET.CUSTMAP",
+            "name": "CUSTPHN"
+          },
+          "since": "M2"
+        }
+      ],
+      "removed_entities": []
+    },
+    {
+      "dir": "02-shipment-segment",
+      "expect": "A shipment segment under each order, with its fields, which the program's PSB may read",
+      "added_entities": [
+        {
+          "kind": "Table",
+          "natural_key": {
+            "datastore": "ims:CUSTDB",
+            "name": "SHIPMENT"
+          },
+          "since": "M2"
+        },
+        {
+          "kind": "Field",
+          "natural_key": {
+            "table": "ims:CUSTDB.SHIPMENT",
+            "name": "SHIPNO"
+          },
+          "since": "M2"
+        },
+        {
+          "kind": "Field",
+          "natural_key": {
+            "table": "ims:CUSTDB.SHIPMENT",
+            "name": "CARRIER"
+          },
+          "since": "M2"
+        }
+      ],
+      "removed_entities": []
+    },
+    {
+      "dir": "03-retire-order-list",
+      "expect": "The order list map is retired: its screen, form and fields go",
+      "added_entities": [],
+      "removed_entities": [
+        {
+          "kind": "Screen",
+          "natural_key": {
+            "platform": "bms",
+            "name": "CUSTSET.ORDLST"
+          },
+          "since": "M2"
+        },
+        {
+          "kind": "Form",
+          "natural_key": {
+            "screen": "CUSTSET.ORDLST",
+            "name": "ORDLST"
+          },
+          "since": "M2"
+        },
+        {
+          "kind": "UIControl",
+          "natural_key": {
+            "container": "CUSTSET.ORDLST",
+            "name": "SELNO"
+          },
+          "since": "M2"
+        }
+      ]
+    }
+  ],
+  "decision_cases": [],
+  "granularity": {
+    "label": null,
+    "why": "map, database and program sources and a system definition with no build file or deployment a repository shows",
+    "source": "fixture design"
+  }
+}
