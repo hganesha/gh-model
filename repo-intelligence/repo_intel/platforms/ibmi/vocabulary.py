@@ -79,6 +79,7 @@ _CONSTRUCTS = (
     ("copy_directive", "/COPY or /INCLUDE of another source member: named in attributes, not read", "attribute:copies"),
     ("conditional_directive", "/DEFINE, /UNDEFINE, /IF, /ELSEIF, /ELSE, /ENDIF, /EOF", "unmapped"),
     ("compile_time_data", "compile-time array or table data after ** or **CTDATA", "unmapped"),
+    ("text_not_read", "text after a member's first program (a second **FREE, statements after the last procedure, commands after ENDPGM): not read", "unmapped"),
     # RPG: operations.
     ("eval", "EVAL, EVALR and assignment (x = y, x += y)", "behavior:assign"),
     ("eval_corr", "EVAL-CORR: assignment of corresponding subfields", "behavior:platform"),
@@ -111,6 +112,7 @@ _CONSTRUCTS = (
     ("update", "UPDATE of a record format", "behavior:platform"),
     ("delete", "DELETE of a record", "behavior:platform"),
     ("exfmt", "EXFMT: show a display record format and read the reply", "relation:RENDERS"),
+    ("format_unresolved", "a record format EXFMT, READ or WRITE uses that may belong to more than one display, printer or database file: no screen is linked", "unmapped"),
     ("file_control", "OPEN, CLOSE, UNLOCK, FEOD, ACQ, REL, POST, NEXT", "behavior:platform"),
     ("except", "EXCEPT: program-described output", "behavior:output"),
     ("commit", "COMMIT, ROLBK", "behavior:transaction"),

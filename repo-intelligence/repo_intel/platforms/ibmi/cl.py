@@ -498,10 +498,19 @@ class _Builder:
         (into if into is not None else (self.stack[-1]["list"] if self.stack else self.unit.body)).append(node)
 
     def build(self) -> None:
+        ended = False
         for a, b in _split_commands(self.masked):
             cmd = parse_command(self.masked, a, b)
-            if cmd is not None:
-                self.command(cmd)
+            if cmd is None:
+                continue
+            if ended:
+                # ENDPGM ends the program: what follows belongs to another one.
+                nl = self.text.find("\n", cmd.start)
+                self.construct("ibmi:text_not_read", cmd.start, len(self.text) if nl < 0 else nl, False)
+                self.note(f"text from line {self.line(cmd.start)}, after ENDPGM, is not read: a member holds one program")
+                break
+            self.command(cmd)
+            ended = cmd.name == "ENDPGM"
         if self.unit is not self.main:
             self.note(f"subroutine {self.unit.name} has no ENDSUBR", "warning")
             self.end_subr(len(self.text))
@@ -772,7 +781,7 @@ class _Builder:
         p = cmd.get(word)
         if p is None or not p.value.strip():
             return
-        a = self.masked.find(p.value, p.start)
+        a = self.masked.find(p.value, p.start, p.end)
         inner = parse_command(self.masked, a, a + len(p.value)) if a >= 0 else None
         if inner is None:
             return
@@ -821,7 +830,7 @@ class _Builder:
         p = cmd.get("CMD")
         inner = None
         if p is not None and p.value.strip():
-            a = self.masked.find(p.value, p.start)
+            a = self.masked.find(p.value, p.start, p.end)
             inner = parse_command(self.masked, a, a + len(p.value)) if a >= 0 else None
         detail: dict[str, Any] = {}
         job = cmd.value("JOB")
@@ -872,7 +881,7 @@ class _Builder:
         self.construct("ibmi:cl_runsql", cmd.start, cmd.end, True)
         st = embedded.analyse(lit)
         p = cmd.get("SQL")
-        body_start = (self.text.find("'", p.start) + 1) if p is not None else cmd.start
+        body_start = (self.text.find("'", p.start, p.end) + 1) if p is not None else cmd.start
         if st.lineage is not None:
             # A literal's '' is one quote: offsets inside it are approximate when it holds one.
             self.unit.sql.append((st, cmd.start, cmd.end, body_start))

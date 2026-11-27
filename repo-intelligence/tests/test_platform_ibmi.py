@@ -274,7 +274,7 @@ CL_MORE = """             PGM
 def test_pack_is_valid_and_registered():
     assert validate_pack(PACK) == []
     assert packs()["ibmi"] is PACK
-    assert PACK.prefix == "ibmi" and PACK.version == "1.0.0" and PACK.supersedes == ()
+    assert PACK.prefix == "ibmi" and PACK.version == "1.1.0" and PACK.supersedes == ()
     assert sorted(e.id for e in PACK.extractors) == ["ibmi.cl", "ibmi.dds", "ibmi.rpg"]
     for path, lang in (("a.rpg", "rpg"), ("a.rpgle", "rpg"), ("a.sqlrpgle", "rpg"), ("a.clp", "cl"), ("a.clle", "cl"), ("a.pf", "dds"), ("a.lf", "dds"), ("a.dspf", "dds"), ("a.prtf", "dds")):
         assert detect_language(path) == lang
@@ -703,3 +703,129 @@ def test_fixed_form_procedure_specs():
     assert (sym("TOTS", "GETTOT"), "CALLS", sym("TOTS", "GETTOT.CALC")) in rels
     assert us["GETTOT"]["kind"] == "function" and us["GETTOT.CALC"]["kind"] == "paragraph"
     assert "TOTS" not in us  # a NOMAIN module has no main procedure
+
+
+# ------------------------------------------------------------------ review fixes (W8)
+
+
+def screens_and_forms(rels) -> set[tuple]:
+    return {r for r in rels if r[1] in ("RENDERS", "SUBMITS_TO")}
+
+
+def test_a_format_of_one_of_two_display_files_is_not_guessed():
+    src = "**FREE\ndcl-f ORDDSP workstn;\ndcl-f HLPDSP workstn include(HLPPNL);\nexfmt ORDPNL;\nread ORDPNL;\nexfmt HLPPNL;\n*inlr = *on;\n"
+    out = run(src, "x/TWODSP.rpgle")
+    rels = relations(out)
+    # HLPPNL is HLPDSP's by its INCLUDE keyword; ORDPNL could be either file's.
+    assert screens_and_forms(rels) == {
+        (prog("TWODSP"), "RENDERS", key("Screen", platform="ibmi", name="HLPDSP.HLPPNL")),
+        (key("Form", screen="HLPDSP.HLPPNL", name="HLPPNL"), "SUBMITS_TO", prog("TWODSP")),
+    }
+    assert constructs(out)[("ibmi:format_unresolved", False)] == 2
+    notes = [d for d in out.diagnostics if "ORDPNL" in d.message]
+    assert len(notes) == 2 and all(d.severity == "info" for d in notes)
+    assert notes[0].message == "record format ORDPNL (EXFMT at line 4) may belong to any of HLPDSP, ORDDSP: no screen is linked"
+
+
+def test_a_single_display_file_owns_formats_only_nothing_else_could():
+    # EXFMT shows a display format: with one WORKSTN file it is that file's.
+    one = run("**FREE\ndcl-f ORDDSP workstn;\ndcl-f ORDRPT printer;\nexfmt ORDPNL;\nwrite HEADING;\n", "x/ONEDSP.rpgle")
+    rels = relations(one)
+    assert (prog("ONEDSP"), "RENDERS", key("Screen", platform="ibmi", name="ORDDSP.ORDPNL")) in rels
+    # WRITE may write the printer file's format as well: not linked to the display file.
+    assert not any("HEADING" in r[2][1] for r in rels)
+    assert constructs(one)[("ibmi:format_unresolved", False)] == 1
+    alone = run("**FREE\ndcl-f ORDDSP workstn;\nwrite ORDHDR;\nread ORDPNL;\n", "x/ALONE.rpgle")
+    rels = relations(alone)
+    assert (prog("ALONE"), "RENDERS", key("Screen", platform="ibmi", name="ORDDSP.ORDHDR")) in rels
+    assert (key("Form", screen="ORDDSP.ORDPNL", name="ORDPNL"), "SUBMITS_TO", prog("ALONE")) in rels
+    assert ("ibmi:format_unresolved", False) not in constructs(alone)
+
+
+def test_text_after_a_second_free_is_not_read():
+    src = "**FREE\ndcl-f CUSTMAST disk;\nread CUSTMAST;\n*inlr = *on;\n**FREE\ndcl-f STRAY disk usage(*output);\nwrite STRAYREC;\n"
+    out = run(src, "x/TWICE.rpgle")
+    rels = relations(out)
+    assert (prog("TWICE"), "READS_FROM", table("custmast")) in rels
+    assert not any("stray" in r[2][1].lower() for r in rels)
+    assert not any(f["name"] == "STRAY" for f in entities(out)[prog("TWICE")]["files"])
+    assert "text from line 5, after a second **FREE, is not read: a member holds one program" in messages(out)
+    assert constructs(out)[("ibmi:text_not_read", False)] == 1
+
+
+def test_text_after_the_last_procedure_is_not_read():
+    free = "**FREE\ndcl-f CUSTMAST disk;\nread CUSTMAST;\ndcl-proc Show;\n  dsply 'x';\nend-proc;\n\ndcl-f STRAY disk usage(*output);\nwrite STRAYREC;\nOther();\n"
+    out = run(free, "x/AFTER.rpgle")
+    rels = relations(out)
+    assert (prog("AFTER"), "READS_FROM", table("custmast")) in rels and (prog("AFTER"), "CONTAINS", sym("AFTER", "SHOW")) in rels
+    assert not any("stray" in r[2][1].lower() or "other" in r[2][1].lower() for r in rels)
+    assert "text from line 8, after the last procedure, is not read: nothing but procedures may follow a procedure, so it belongs to another program" in messages(out)
+    assert not any(m.startswith("other is called") for m in messages(out))
+    assert constructs(out)[("ibmi:text_not_read", False)] == 1
+    fixed = "\n".join([
+        cols((6, "H"), (7, "NOMAIN")),
+        cols((6, "P"), (7, "GetTot"), (24, "B"), (44, "EXPORT")),
+        c4(op="RETURN", ext="0"),
+        cols((6, "P"), (7, "GetTot"), (24, "E")),
+        cols((6, "H"), (7, "DFTACTGRP(*NO)")),
+        cols((6, "F"), (7, "STRAY"), (17, "O"), (18, "F"), (22, "E"), (36, "DISK")),
+        c4(op="CALL", f2="'OTHER'"),
+    ]) + "\n"
+    out = run(fixed, "x/AFTERF.rpgle")
+    rels = relations(out)
+    assert (prog("AFTERF"), "CONTAINS", sym("AFTERF", "GETTOT")) in rels
+    assert not any("stray" in r[2][1].lower() or "OTHER" in r[2][1] for r in rels)
+    assert any(m.startswith("text from line 5, after the last procedure") for m in messages(out))
+    # Procedures that follow each other, with directives between them, are all read.
+    two = run("**FREE\nctl-opt nomain;\ndcl-proc A;\nend-proc;\n/copy qrpglesrc,protos\ndcl-proc B;\nend-proc;\n", "x/TWOPROC.rpgle")
+    assert (prog("TWOPROC"), "CONTAINS", sym("TWOPROC", "B")) in relations(two)
+    assert ("ibmi:text_not_read", False) not in constructs(two)
+
+
+def test_cl_text_after_endpgm_is_not_read():
+    src = "PGM\n  CALL PGM(FIRST)\nENDPGM\nPGM\n  CALL PGM(SECOND)\nENDPGM\n"
+    out = run(src, "x/TWOCL.clp")
+    rels = relations(out)
+    assert (prog("TWOCL"), "CALLS", prog("FIRST")) in rels and (prog("TWOCL"), "CALLS", prog("SECOND")) not in rels
+    assert "text from line 4, after ENDPGM, is not read: a member holds one program" in messages(out)
+    assert constructs(out)[("ibmi:text_not_read", False)] == 1
+
+
+def _compile_files(root: Path, files: dict[str, str]):
+    import os
+    import subprocess
+
+    from repo_intel.compile.pipeline import compile_commit, load_shards
+    from repo_intel.storage.store import ObjectStore
+
+    repo = root / "repo"
+    for name, text in files.items():
+        (repo / name).parent.mkdir(parents=True, exist_ok=True)
+        (repo / name).write_text(text)
+    env = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.invalid", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@example.invalid",
+           "GIT_AUTHOR_DATE": "2026-01-01T00:00:00Z", "GIT_COMMITTER_DATE": "2026-01-01T00:00:00Z", "PATH": os.environ.get("PATH", "/usr/bin:/bin")}
+    for cmd in (["init", "-q", "-b", "main"], ["add", "-A"], ["commit", "-q", "-m", "x"]):
+        subprocess.run(["git", "-C", str(repo), *cmd], check=True, env=env)
+    sha = subprocess.run(["git", "-C", str(repo), "rev-parse", "HEAD"], capture_output=True, text=True, check=True).stdout.strip()
+    store = ObjectStore(root / "store", "t")
+    shards = load_shards(store, compile_commit(store, repo, "github.com/4040", sha).manifest)
+    return {e["id"]: e for s in shards.values() for e in s["entities"]}, [a for s in shards.values() for a in s["assertions"]]
+
+
+def test_dds_sql_ddl_and_embedded_sql_name_one_table(tmp_path):
+    # Contract 11.3 item 1: names are lower case wherever they come from.
+    ddl = "CREATE TABLE CUSTMAST (\n  CUSNO DECIMAL(7, 0) NOT NULL,\n  CUSNAME CHAR(30),\n  CUSLIMIT DECIMAL(9, 2),\n  CUSSTAT CHAR(1)\n);\n"
+    ents, assertions = _compile_files(tmp_path, {
+        "qddssrc/CUSTMAST.pf": (F40 / "qddssrc/CUSTMAST.pf").read_text(),
+        "sql/custmast.sql": ddl,
+        "qrpglesrc/CUSTUPD.sqlrpgle": (F40 / "qrpglesrc/CUSTUPD.sqlrpgle").read_text(),
+    })
+    tables = [e for e in ents.values() if e["kind"] == "Table" and e["natural_key"]["name"].endswith("custmast")]
+    assert [t["natural_key"] for t in tables] == [{"datastore": "default", "name": "custmast"}]
+    fields = sorted((e["natural_key"]["table"], e["natural_key"]["name"]) for e in ents.values() if e["kind"] == "Field")
+    assert fields == [("custmast", n) for n in ("cuslimit", "cusname", "cusno", "cusstat")]
+    tid = tables[0]["id"]
+    contained = {ents[a["object"]]["natural_key"]["name"] for a in assertions if a["predicate"] == "CONTAINS" and a["subject"] == tid}
+    assert contained == {"cuslimit", "cusname", "cusno", "cusstat"}
+    program = next(e["id"] for e in ents.values() if e["kind"] == "Program" and e["natural_key"]["name"] == "CUSTUPD")
+    assert {a["predicate"] for a in assertions if a["subject"] == program and a["object"] == tid} == {"READS_FROM", "WRITES_TO"}
