@@ -73,6 +73,10 @@ def is_hiveql(path: str, text: str) -> bool:
 class HiveScripts:
     id = EXTRACTOR
     version = "1.0.0"
+    # A Hive script this extractor parses is read here in the hive dialect; the generic SQL
+    # readers of the same file give nothing more. Takes effect once the compiler applies
+    # per-file supersession; until then it has no effect.
+    supersedes_when_parsed = ("data.sql_lineage", "data.sql_ddl")
 
     def matches(self, path: str) -> bool:
         return path.lower().endswith((".hql", ".q", ".sql"))

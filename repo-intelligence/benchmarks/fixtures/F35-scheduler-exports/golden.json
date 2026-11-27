@@ -382,7 +382,10 @@
     "framework": "jcl",
     "name": "PAYJ010"
    },
-   "since": "M2"
+   "since": "M2",
+   "attributes": {
+    "member": "PAYJ010"
+   }
   },
   {
    "kind": "Job",
@@ -390,7 +393,10 @@
     "framework": "jcl",
     "name": "PAYJ020"
    },
-   "since": "M2"
+   "since": "M2",
+   "attributes": {
+    "member": "PAYJ020"
+   }
   }
  ],
  "edges": [
@@ -686,6 +692,24 @@
     "kind": "Job",
     "natural_key": {
      "framework": "control-m",
+     "name": "ORDERS_DAILY/EXTRACT_ORDERS"
+    }
+   },
+   "predicate": "RUNS",
+   "object": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "shell",
+     "name": "scripts/extract_orders.sh"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "control-m",
      "name": "ORDERS_DAILY/LOAD_ORDERS"
     }
    },
@@ -694,6 +718,24 @@
     "kind": "Artifact",
     "natural_key": {
      "path": "scripts/load_orders.sh"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "control-m",
+     "name": "ORDERS_DAILY/LOAD_ORDERS"
+    }
+   },
+   "predicate": "RUNS",
+   "object": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "shell",
+     "name": "scripts/load_orders.sh"
     }
    },
    "since": "M2"
@@ -719,6 +761,24 @@
    "subject": {
     "kind": "Job",
     "natural_key": {
+     "framework": "autosys",
+     "name": "RPT_EXTRACT"
+    }
+   },
+   "predicate": "RUNS",
+   "object": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "shell",
+     "name": "scripts/extract_orders.sh"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Job",
+    "natural_key": {
      "framework": "tws",
      "name": "FINWS#GL_EXTRACT"
     }
@@ -728,6 +788,24 @@
     "kind": "Artifact",
     "natural_key": {
      "path": "fin/bin/gl_extract.sh"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "tws",
+     "name": "FINWS#GL_EXTRACT"
+    }
+   },
+   "predicate": "RUNS",
+   "object": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "shell",
+     "name": "fin/bin/gl_extract.sh"
     }
    },
    "since": "M2"
@@ -754,6 +832,24 @@
     "kind": "Job",
     "natural_key": {
      "framework": "cron",
+     "name": ".rkp/inputs/scheduler/cron/batch.crontab#purge_logs.sh"
+    }
+   },
+   "predicate": "RUNS",
+   "object": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "shell",
+     "name": "scripts/purge_logs.sh"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "cron",
      "name": ".rkp/inputs/scheduler/cron/batch.crontab#load_orders.sh"
     }
    },
@@ -762,6 +858,24 @@
     "kind": "Artifact",
     "natural_key": {
      "path": "scripts/load_orders.sh"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "cron",
+     "name": ".rkp/inputs/scheduler/cron/batch.crontab#load_orders.sh"
+    }
+   },
+   "predicate": "RUNS",
+   "object": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "shell",
+     "name": "scripts/load_orders.sh"
     }
    },
    "since": "M2"
@@ -779,6 +893,24 @@
     "kind": "Artifact",
     "natural_key": {
      "path": "scripts/windows/invoices.ps1"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "windows-task",
+     "name": "\\Finance\\NightlyInvoices"
+    }
+   },
+   "predicate": "RUNS",
+   "object": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "shell",
+     "name": "scripts/windows/invoices.ps1"
     }
    },
    "since": "M2"

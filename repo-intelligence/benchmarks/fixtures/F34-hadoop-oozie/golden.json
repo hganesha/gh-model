@@ -46,6 +46,7 @@
   {"subject": {"kind": "Task", "natural_key": {"framework": "oozie", "job": "apps/daily_orders/workflow.xml", "name": "daily-summary"}}, "predicate": "RUNS", "object": {"kind": "Program", "natural_key": {"platform": "hive", "name": "apps/daily_orders/hive/daily_summary.q"}}, "since": "M2"},
   {"subject": {"kind": "Task", "natural_key": {"framework": "oozie", "job": "apps/daily_orders/workflow.xml", "name": "clean-customers"}}, "predicate": "RUNS", "object": {"kind": "Program", "natural_key": {"platform": "pig", "name": "apps/daily_orders/pig/clean_customers.pig"}}, "since": "M2"},
   {"subject": {"kind": "Task", "natural_key": {"framework": "oozie", "job": "apps/daily_orders/workflow.xml", "name": "publish-marker"}}, "predicate": "RUNS", "object": {"kind": "Artifact", "natural_key": {"path": "apps/daily_orders/scripts/publish_marker.sh"}}, "since": "M2"},
+  {"subject": {"kind": "Task", "natural_key": {"framework": "oozie", "job": "apps/daily_orders/workflow.xml", "name": "publish-marker"}}, "predicate": "RUNS", "object": {"kind": "Program", "natural_key": {"platform": "shell", "name": "apps/daily_orders/scripts/publish_marker.sh"}}, "since": "M2"},
   {"subject": {"kind": "Job", "natural_key": {"framework": "oozie", "name": "apps/daily_orders/coordinator.xml"}}, "predicate": "RUNS", "object": {"kind": "Job", "natural_key": {"framework": "oozie", "name": "apps/daily_orders/workflow.xml"}}, "since": "M2"},
   {"subject": {"kind": "Job", "natural_key": {"framework": "oozie", "name": "apps/daily_orders/coordinator.xml"}}, "predicate": "READS_FROM", "object": {"kind": "Dataset", "natural_key": {"name": "/data/landing/orders/{YEAR}{MONTH}{DAY}"}}, "since": "M2"},
   {"subject": {"kind": "Job", "natural_key": {"framework": "oozie", "name": "apps/daily_orders/coordinator.xml"}}, "predicate": "WRITES_TO", "object": {"kind": "Dataset", "natural_key": {"name": "/data/mart/daily_summary/dt={YEAR}-{MONTH}-{DAY}"}}, "since": "M2"},
@@ -84,7 +85,7 @@
  ],
  "expected_conflicts": [],
  "secret_probes": [
-  {"path": "apps/daily_orders/workflow.xml", "must_never_appear": "fixture-not-a-real-password-0002", "since": "M2"}
+  {"path": "apps/daily_orders/workflow.xml", "must_never_appear": "fixture-not-a-real-password-0004", "since": "M2"}
  ],
  "commits": [
   {"dir": "01-customers-import", "expect": "A Sqoop options file imports the customer table to a landing path", "added_entities": [

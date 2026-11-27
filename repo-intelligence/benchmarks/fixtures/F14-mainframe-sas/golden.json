@@ -34,7 +34,8 @@
    },
    "since": "M0",
    "attributes": {
-    "kind": "job"
+    "kind": "job",
+    "member": "CUSTJOB"
    }
   },
   {

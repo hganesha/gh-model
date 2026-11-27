@@ -50,6 +50,10 @@ def art(path: str) -> tuple:
     return key("Artifact", path=path)
 
 
+def prog(platform: str, name: str) -> tuple:
+    return key("Program", platform=platform, name=name)
+
+
 def entities(out) -> dict[tuple, dict]:
     found: dict[tuple, dict] = {}
     for o in out.observations:
@@ -87,7 +91,7 @@ def blob(out) -> str:
 def test_pack_is_registered_and_valid():
     assert packs()["scheduler"] is PACK
     assert validate_pack(PACK) == []
-    assert PACK.prefix == "sched" and PACK.version == "1.0.0"
+    assert PACK.prefix == "sched" and PACK.version == "1.1.0"
     assert {e.id for e in PACK.extractors} == {"scheduler.exports"}
     assert PACK.inputs == (".rkp/inputs/scheduler/**",)
     assert {t.core for t in PACK.terms} == {EntityKind.JOB, EntityKind.ENDPOINT}
@@ -269,6 +273,27 @@ def test_control_m_or_conditions_do_conditions_and_cyclic_jobs():
     assert "example.invalid" not in blob(out)
 
 
+@pytest.mark.parametrize("script,platform", [
+    ("run.sh", "shell"), ("run.ksh", "shell"), ("run.bash", "shell"), ("run.bat", "shell"), ("run.cmd", "shell"), ("run.ps1", "shell"),
+    ("run.hql", "hive"), ("run.q", "hive"), ("run.pig", "pig"), ("run.sas", "sas"), ("run.py", None), ("run.sql", None),
+])
+def test_scripts_also_run_the_program_their_pack_declares(script, platform):
+    from repo_intel.platforms.scheduler.common import Emitter
+
+    text = "x"
+    em = Emitter("scheduler.exports", INPUTS + "cron/x.crontab", text.encode(), "b" * 64, text, "utf-8", 0)
+    me = {"kind": "Job", "natural_key": {"framework": "cron", "name": "j"}, "name": "j"}
+    assert em.script(em.whole(), me, f"/opt/jobs/{script}")
+    rels = [o.payload for o in em.items if o.kind == "relation"]
+    programs = [r["object"] for r in rels if r["object"]["kind"] == "Program"]
+    if platform is None:
+        assert not programs
+        return
+    assert [p["natural_key"] for p in programs] == [{"platform": platform, "name": n} for n in (f"opt/jobs/{script}", f"jobs/{script}", script)]
+    assert all(p["declare"] is False for p in programs)
+    assert all(o.evidence_class == "E4" for o in em.items if o.kind == "relation")
+
+
 def test_control_m_runs_jcl_members_scripts_and_never_a_dynamic_member():
     out = fixture(INPUTS + "controlm/orders.xml")
     rels = relations(out)
@@ -276,6 +301,8 @@ def test_control_m_runs_jcl_members_scripts_and_never_a_dynamic_member():
     assert jcl == {"via": "jcl_member", "_ev": "E4"}  # a member's JOB statement carries its name only by convention
     for suffix in ("opt/batch/scripts/extract_orders.sh", "batch/scripts/extract_orders.sh", "scripts/extract_orders.sh", "extract_orders.sh"):
         assert rels[(job("control-m", "ORDERS_DAILY/EXTRACT_ORDERS"), "RUNS", art(suffix))] == {"via": "path_suffix", "_ev": "E4"}
+        # and the shell pack's Program for the same candidate path
+        assert rels[(job("control-m", "ORDERS_DAILY/EXTRACT_ORDERS"), "RUNS", prog("shell", suffix))] == {"via": "path_suffix", "_ev": "E4"}
     assert (job("control-m", "ORDERS_DAILY/LOAD_ORDERS"), "RUNS", art("scripts/load_orders.sh")) in rels
     assert not [r for r in rels if r[0] == job("control-m", "PAYROLL_ZOS/PAYJ030") and r[1] == "RUNS"]
     assert entities(out)[job("control-m", "PAYROLL_ZOS/PAYJ030")]["runs_dynamic"] is True
@@ -529,8 +556,17 @@ def compiled(tmp_path_factory):
 def test_runs_links_only_to_what_the_repository_holds(compiled):
     ents = compiled["entities"]
     runs = [(ents[a["subject"]], ents[a["object"]]) for a in compiled["assertions"] if a["predicate"] == "RUNS" and ents[a["subject"]]["attributes"].get("platform") == "scheduler"]
-    targets = sorted({o["natural_key"].get("path") or f"jcl:{o['natural_key']['name']}" for _, o in runs})
-    assert targets == ["fin/bin/gl_extract.sh", "jcl:PAYJ010", "jcl:PAYJ020", "scripts/extract_orders.sh", "scripts/load_orders.sh", "scripts/purge_logs.sh", "scripts/windows/invoices.ps1"]
+
+    def target(o):
+        nk = o["natural_key"]
+        if o["kind"] == "Artifact":
+            return nk["path"]
+        return f"{nk.get('framework') or nk.get('platform')}:{nk['name']}"
+
+    targets = sorted({target(o) for _, o in runs})
+    scripts = ["fin/bin/gl_extract.sh", "scripts/extract_orders.sh", "scripts/load_orders.sh", "scripts/purge_logs.sh", "scripts/windows/invoices.ps1"]
+    # Each script is linked as its file and as the Program the shell pack declares for it.
+    assert targets == sorted(["jcl:PAYJ010", "jcl:PAYJ020", *scripts, *[f"shell:{p}" for p in scripts]])
     # no job runs something the repository does not hold: gl_post.sh, build_reports.sas and queue_listener are not linked
     assert {s["name"] for s, _ in runs} >= {"RPT_EXTRACT", "FINWS#GL_EXTRACT", "PAYJ010"}
     assert not [s for s, _ in runs if s["name"] in ("RPT_BUILD", "FINWS#GL_POST")]

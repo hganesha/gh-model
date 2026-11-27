@@ -18,7 +18,10 @@ defines it.
   points at the `Artifact` of every suffix of that path (`opt/batch/scripts/load_orders.sh`,
   `batch/scripts/load_orders.sh`, `scripts/load_orders.sh`, `load_orders.sh`), each a
   non-declaring reference, so only a file the repository holds at one of those paths is
-  linked, at evidence E4 with `via: "path_suffix"`. A path with a variable in it
+  linked, at evidence E4 with `via: "path_suffix"`. When the extension is one another pack
+  reads (`.sh`, `.ksh`, `.bash`, `.bat`, `.cmd`, `.ps1` as `shell`; `.hql`, `.q` as `hive`;
+  `.pig` as `pig`; `.sas` as `sas`), each candidate also gets a RUNS to the non-declaring
+  `Program {platform, name: <candidate>}`, at the same evidence. A path with a variable in it
   (`$HOME`, `%%LIB`, `%TEMP%`) is dynamic: nothing is linked and a diagnostic says so.
 - A bare program name (`dsjob`, `pmcmd`, `mail`) is a tool on the machine's path: it is
   kept in `attributes.programs` and not linked.
@@ -50,6 +53,14 @@ SCRIPT_EXTENSIONS = frozenset({
     ".sh", ".ksh", ".bash", ".csh", ".zsh", ".pl", ".py", ".rb", ".php", ".js", ".sas", ".ps1", ".bat", ".cmd",
     ".vbs", ".jar", ".r", ".sql", ".hql", ".pig", ".scala", ".jcl", ".exe", ".com", ".awk",
 })
+# The Program platform the pack that reads a script declares it under, by extension: `shell`
+# for shell, batch and PowerShell scripts, `hive` and `pig` for the Hadoop pack's scripts
+# (`.q` is read as HiveQL only when that pack recognises it, so the link may not resolve),
+# `sas` for SAS programs. Each is named by its repository path.
+SCRIPT_PLATFORMS = {
+    ".sh": "shell", ".ksh": "shell", ".bash": "shell", ".bat": "shell", ".cmd": "shell", ".ps1": "shell",
+    ".hql": "hive", ".q": "hive", ".pig": "pig", ".sas": "sas",
+}
 INTERPRETERS = frozenset({
     "sh", "bash", "ksh", "zsh", "csh", "tcsh", "dash", "perl", "python", "python2", "python3", "ruby", "php", "node",
     "rscript", "sas", "powershell", "pwsh", "cscript", "wscript", "java", "sqlplus", "awk", "hive", "pig", "beeline",
@@ -367,11 +378,16 @@ class Emitter:
         self.relation(at, job, P.RUNS, target, None if certain else {"via": "jcl_member"}, E1 if certain else E4)
 
     def script(self, at, job: dict[str, Any], path: str) -> bool:
-        """`job` RUNS the repository file at a suffix of `path`; False if the path is dynamic."""
+        """`job` RUNS the repository file at a suffix of `path`, and the Program another pack
+        declares for that file when its extension names one; False if the path is dynamic."""
         suffixes = path_suffixes(path)
+        platform = SCRIPT_PLATFORMS.get(_extension(path))
         for candidate in suffixes:
             target = self.base.ref(K.ARTIFACT, {"path": candidate}, posixpath.basename(candidate), declare=False)
             self.relation(at, job, P.RUNS, target, {"via": "path_suffix"}, E4)
+            if platform:
+                program = self.base.ref(K.PROGRAM, {"platform": platform, "name": candidate}, posixpath.basename(candidate), declare=False)
+                self.relation(at, job, P.RUNS, program, {"via": "path_suffix"}, E4)
         return bool(suffixes)
 
     def command(self, at, job: dict[str, Any], label: str, command: str | None, attrs: dict[str, Any], construct_id: str, base_dir: str | None = None) -> None:

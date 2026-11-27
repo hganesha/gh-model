@@ -134,11 +134,18 @@ ALL_BASE = [WF, COORD, LOAD, SUMMARY, PIG, OPTS, "ddl/create_tables.hql"]
 
 def test_registered_and_valid():
     assert packs()["hadoop"] is PACK
-    assert (PACK.id, PACK.prefix, PACK.version) == ("hadoop", "hdp", "1.0.0")
+    assert (PACK.id, PACK.prefix, PACK.version) == ("hadoop", "hdp", "1.1.0")
     assert validate_pack(PACK) == []
     assert set(EXTRACTORS) == {"hadoop.hive", "hadoop.pig", "hadoop.oozie", "hadoop.sqoop"}
     terms = {t.name for t in PACK.terms}
     assert {"hdp:HiveScript", "hdp:PigScript", "hdp:SqoopJob", "hdp:OozieWorkflow", "hdp:OozieAction", "hdp:OozieCoordinator", "hdp:OozieBundle"} <= terms
+
+
+def test_hive_supersedes_the_generic_sql_readers_when_it_parses():
+    from repo_intel.extractors import extractor_versions
+
+    assert HiveScripts.supersedes_when_parsed == ("data.sql_lineage", "data.sql_ddl")
+    assert set(HiveScripts.supersedes_when_parsed) <= set(extractor_versions())
 
 
 def test_every_construct_the_readers_name_is_listed():
@@ -221,6 +228,30 @@ def test_workflow_actions_run_their_scripts():
     assert (task("daily-summary"), "RUNS", prog("hive", SUMMARY)) in rels
     assert (task("clean-customers"), "RUNS", prog("pig", PIG)) in rels
     assert (task("publish-marker"), "RUNS", key("Artifact", path="apps/daily_orders/scripts/publish_marker.sh")) in rels
+    # The shell script is also the shell pack's Program, beside the Artifact.
+    assert (task("publish-marker"), "RUNS", prog("shell", "apps/daily_orders/scripts/publish_marker.sh")) in rels
+
+
+@pytest.mark.parametrize("exec_", ["run.sh", "run.ksh", "run.bash", "run.bat", "run.cmd", "run.ps1"])
+def test_shell_action_scripts_are_shell_programs(exec_):
+    xml = ('<workflow-app name="w" xmlns="uri:oozie:workflow:0.5"><start to="a"/>'
+           f'<action name="a"><shell xmlns="uri:oozie:shell-action:0.3"><exec>scripts/{exec_}</exec></shell>'
+           '<ok to="end"/><error to="end"/></action><end name="end"/></workflow-app>')
+    path = "apps/w/workflow.xml"
+    out = run(path, xml)
+    rels = relations(out)
+    t = key("Task", framework="oozie", job=path, name="a")
+    assert (t, "RUNS", key("Artifact", path=f"apps/w/scripts/{exec_}")) in rels
+    assert (t, "RUNS", prog("shell", f"apps/w/scripts/{exec_}")) in rels
+    assert all(o.payload["object"].get("declare") is False for o in relation_obs(out, "RUNS"))
+
+
+def test_shell_action_running_a_python_file_is_only_an_artifact():
+    xml = ('<workflow-app name="w" xmlns="uri:oozie:workflow:0.5"><start to="a"/>'
+           '<action name="a"><shell xmlns="uri:oozie:shell-action:0.3"><exec>bin/job.py</exec></shell>'
+           '<ok to="end"/><error to="end"/></action><end name="end"/></workflow-app>')
+    rels = relations(run("apps/w/workflow.xml", xml))
+    assert [o for _, p, o in rels if p == "RUNS"] == [key("Artifact", path="apps/w/bin/job.py")]
 
 
 def test_workflow_references_to_scripts_do_not_declare_them():
@@ -289,6 +320,8 @@ def test_coordinator_schedule_datasets_and_workflow():
     runs = relation_obs(out, "RUNS")
     assert len(runs) == 1 and ref(runs[0].payload["object"]) == job(WF)
     assert runs[0].evidence_class == "E4" and runs[0].payload["qualifiers"] == {"resolved": "same_directory"}
+    # The diagnostic names the variable the path starts with, never its value.
+    assert any("${appBaseDir}" in m and "same directory" in m for m in messages(out))
 
 
 def test_coordinator_frequencies():
