@@ -90,9 +90,34 @@ def _blank_literals(node: Any) -> None:
                 _blank_literals(v)
 
 
+_NESTED = ("then", "else", "body", "default", "finally", "cases", "catches")
+
+
+def _names_secret(node: Any) -> bool:
+    """Whether a statement's own parts (its nested statements left out) name a variable
+    that reads as a credential."""
+    if isinstance(node, list):
+        return any(_names_secret(x) for x in node)
+    if isinstance(node, dict):
+        if node.get("e") in ("var", "member") and _SECRET_NAME.search(str(node.get("name", ""))):
+            return True
+        return any(_names_secret(v) for k, v in node.items() if k not in _NESTED and k != "at")
+    return False
+
+
+def _blank_own(stmt: dict[str, Any]) -> None:
+    for k, v in stmt.items():
+        if k not in _NESTED and k != "at":
+            _blank_literals(v)
+
+
 def scrub_secrets(block: list[Any]) -> None:
-    """Take text values out of declarations and assignments of names that read as
-    credentials (a constant `DB_PASSWORD`, `token = '...'`), in place."""
+    """Take text values out of every statement that names a variable that reads as a
+    credential, in place: a declaration or assignment of one (a constant `DB_PASSWORD`,
+    `token = '...'`), and a comparison with, or a call passing, one (`if password = '...'`,
+    `CALL PGM(X) PARM(&PWD '...')`), since a literal beside a credential is its value
+    (contract rule 7 and 11.3 item 3). A SELECT's WHEN values are blanked when the subject
+    or the WHEN names one. Nested statements are judged on their own."""
     for stmt in block:
         if not isinstance(stmt, dict):
             continue
@@ -100,6 +125,12 @@ def scrub_secrets(block: list[Any]) -> None:
             _blank_literals(stmt.get("value"))
         elif stmt.get("op") == "assign" and _secret_target(stmt.get("target")):
             _blank_literals(stmt.get("value"))
+        flagged = _names_secret(stmt)
+        if flagged:
+            _blank_own(stmt)
+        for case in stmt.get("cases", []) or []:
+            if isinstance(case, dict) and "match" in case and (flagged or _names_secret(case["match"])):
+                _blank_literals(case["match"])
         for k in ("then", "else", "body", "default", "finally"):
             if isinstance(stmt.get(k), list):
                 scrub_secrets(stmt[k])
@@ -472,9 +503,14 @@ def _code_list(o: _Emit, subject: dict[str, Any], layout: str, field: str, f, dd
     if raw is None:
         return
     vals = dds_mod.values(raw)
-    attrs: dict[str, Any] = {"values": vals[:200], "field": f.name}
-    if len(vals) > 200:
-        attrs["truncated"] = True
+    if _SECRET_NAME.search(f.name or "") or _SECRET_NAME.search(field):
+        # The values a credential field allows are its values: the CodeList is declared, so
+        # the field still BINDS_TO it, with no values (contract 11.3 item 3).
+        attrs: dict[str, Any] = {"values": [], "field": f.name, "redacted": True}
+    else:
+        attrs = {"values": vals[:200], "field": f.name}
+        if len(vals) > 200:
+            attrs["truncated"] = True
     name = f"{layout}.{field}"
     cl = o.term(f.start, f.end, "ibmi:FieldValues", {"platform": UI_PLATFORM, "name": name}, name, attrs)
     o.rel(f.start, f.end, subject, o.P.BINDS_TO, cl)
@@ -594,7 +630,7 @@ def _emit_dds(o: _Emit, path: str) -> None:
 
 class IbmiDds:
     id = "ibmi.dds"
-    version = "1.0.0"
+    version = "1.1.0"
     SUFFIXES = (".pf", ".lf", ".dspf", ".prtf")
 
     def matches(self, path: str) -> bool:

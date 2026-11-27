@@ -829,3 +829,63 @@ def test_dds_sql_ddl_and_embedded_sql_name_one_table(tmp_path):
     assert contained == {"cuslimit", "cusname", "cusno", "cusstat"}
     program = next(e["id"] for e in ents.values() if e["kind"] == "Program" and e["natural_key"]["name"] == "CUSTUPD")
     assert {a["predicate"] for a in assertions if a["subject"] == program and a["object"] == tid} == {"READS_FROM", "WRITES_TO"}
+
+
+def test_literals_beside_a_credential_are_never_copied():
+    # Short values, which admission's detectors would not flag: the pack blanks them itself.
+    rpg = """**FREE
+dcl-s password char(10);
+dcl-s apiToken char(10);
+dcl-s other char(10);
+dcl-c DB_PWD 'rz2b';
+apiToken = 'rz3c';
+if password = 'rz4d';
+  other = 'keptA';
+endif;
+select;
+  when apiToken = 'rz5e';
+    other = 'keptB';
+endsl;
+dow password <> 'rz6f';
+  other = 'keptC';
+enddo;
+callp signon(other : 'rz7g' : password);
+*inlr = *on;
+"""
+    cl = """             PGM
+             DCL        VAR(&PASSWORD) TYPE(*CHAR) LEN(10)
+             DCL        VAR(&TOKEN) TYPE(*CHAR) LEN(10)
+             DCL        VAR(&OTHER) TYPE(*CHAR) LEN(10)
+             CHGVAR     VAR(&TOKEN) VALUE('cz2b')
+             IF         COND(&PASSWORD *EQ 'cz3c') THEN(CHGVAR VAR(&OTHER) VALUE('keptD'))
+             CALL       PGM(SIGNON) PARM(&OTHER 'cz4d' &PASSWORD)
+             ENDPGM
+"""
+    for text, path, secrets, kept in ((rpg, "qrpglesrc/LOGON.rpgle", ("rz2b", "rz3c", "rz4d", "rz5e", "rz6f", "rz7g"), ("keptA", "keptB", "keptC")),
+                                      (cl, "qclsrc/LOGON.clle", ("cz2b", "cz3c", "cz4d"), ("keptD",))):
+        out = run(text, path)
+        blob = json.dumps([o.payload for o in out.observations]) + json.dumps(messages(out))
+        for value in secrets:
+            assert value not in blob, (path, value)
+        for value in kept:
+            assert value in blob, (path, value)  # the nested statements are judged on their own
+        for unit in units(out).values():
+            assert validate_unit(unit) == []
+    call = next(n for n in walk(units(run(cl, "qclsrc/LOGON.clle"))["LOGON"]["body"]) if n["op"] == "call")
+    assert call["call"]["callee"]["name"] == "SIGNON"  # the program called is a name, not a value
+
+
+def test_values_of_a_credential_field_are_never_copied():
+    pf = """     A          R AUTHREC
+     A            AUTHUSR       10A
+     A            AUTHPWD        8A         VALUES('pz7w' 'pz6v')
+     A            AUTHSTAT       1A         VALUES('A' 'I')
+"""
+    out = run(pf, "qddssrc/AUTH.pf")
+    blob = json.dumps([o.payload for o in out.observations])
+    assert "pz7w" not in blob and "pz6v" not in blob
+    ents = entities(out)
+    codes = key("CodeList", platform="ibmi", name="auth.authpwd")
+    assert ents[codes].get("values", []) == [] and ents[codes]["redacted"] is True  # empty values are not written
+    assert (key("Field", table="auth", name="authpwd"), "BINDS_TO", codes) in relations(out)
+    assert ents[key("CodeList", platform="ibmi", name="auth.authstat")]["values"] == ["A", "I"]
