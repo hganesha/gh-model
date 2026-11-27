@@ -29,12 +29,16 @@ and gives at least what that gave, with the same kinds and keys):
   data. Referbacks (`*.STEP.DD`) take the data set of the DD they name; an unnamed DD
   continues a concatenation; `//procstep.ddname` overrides or adds to a procedure step.
   For each DD of a step that runs a program, a `dd_binding` observation `{task, program,
-  dd, dataset, disp}` lets the linker join the program's own DD names to data sets
-  (`link_dd_datasets`, contract 11.1 item 5).
-- A call of an in-stream procedure is expanded: the calling step carries the data sets,
-  bindings and control cards of every procedure step, with the call's symbolics and DD
-  overrides applied. A cataloged procedure in another file is not read; the calling step
-  RUNS it, and only the DDs the call itself states are bound.
+  dd, dataset, disp, job, step}` lets the linker join the program's own DD names to data
+  sets (`link_dd_datasets`, contract 11.1 item 5). An IKJEFT01 step gives one for each
+  program its SYSTSIN runs: the `RUN PROGRAM(P)` load module and each REXX exec or CLIST
+  (`Program {platform: "tso"}`), since all of them see the step's DDs.
+- A call of an in-stream procedure is expanded (contract 11.3 item 5): the procedure's steps
+  are `Task {job: <procedure>}` under the procedure's Job, and the calling step carries the
+  data sets, bindings and control cards of every procedure step, with the call's symbolics
+  and DD overrides applied; a binding's `step` is `<calling step>.<procedure step>`. A
+  cataloged procedure in another file is not read; the calling step RUNS it, and only the
+  DDs the call itself states are bound.
 - Control cards in-stream: IDCAMS `DEFINE CLUSTER`, `GDG`, `AIX` and `PATH` declare their
   data sets with organisation, keys and record size; `DELETE` and `REPRO` are writes and
   reads of the step. DFSORT and ICETOOL statements give transform shapes (`language
@@ -50,10 +54,12 @@ and gives at least what that gave, with the same kinds and keys):
 **What a definition file gives** (`zos.definitions`, files under `.rkp/inputs/zos/` and
 files with a control-card or definition suffix, recognised by content): CICS CSD exports
 (transactions as `Endpoint`s their program EXPOSES, files as the data set their DSNAME
-names), DCLGEN members, BIND cards, DB2 DDL outside `.sql` files, IDCAMS and DFSORT
-control-card members (shapes owned by the file, with the DD names as `{placeholder}`
-inputs, since the JCL that runs the member binds them), and JCL that sits there without a
-JCL suffix.
+names), DCLGEN members (copybooks: `DataSchema {kind: "copybook", name: <member>}` with
+`Field {table: "cobol:<member>"}`, contract 11.3 item 4), BIND cards, DB2 DDL outside
+`.sql` files (tables and columns lower-cased, as `data.sql_ddl` keys them, contract 11.3
+item 1), IDCAMS and DFSORT control-card members (shapes owned by the file, with the DD
+names as `{placeholder}` inputs, since the JCL that runs the member binds them), and JCL
+that sits there without a JCL suffix.
 
 PARM values, accounting information, programmer names, NOTIFY user ids, OWNER and
 QUALIFIER authorisation ids, CSD descriptions and in-stream data other than control cards
@@ -269,6 +275,32 @@ def if_expression(text: str) -> dict[str, Any]:
 # ------------------------------------------------------------------------------- JCL
 
 
+class Symbols:
+    """The symbols in force at each statement of a job or procedure: `base` (the PROC defaults,
+    or a call's resolved values), then each SET before the statement, applied in order.
+
+    Statements are asked for in file order, so each SET is applied once: the dict `at`
+    returns is updated in place by the next call and is read, never kept, by the caller.
+    Asking for an earlier offset starts again from `base`."""
+
+    def __init__(self, u: jcl.Unit, base: dict[str, str | None]):
+        self.sets = [(st.start, p) for st, p in u.sets if p.key]
+        self.base = base
+        self.found: dict[str, str | None] = dict(base)
+        self.next = 0
+        self.offset = -1
+
+    def at(self, offset: int) -> dict[str, str | None]:
+        if offset < self.offset:
+            self.found, self.next = dict(self.base), 0
+        self.offset = offset
+        while self.next < len(self.sets) and self.sets[self.next][0] < offset:
+            p = self.sets[self.next][1]
+            self.found[p.key] = literal(p.value, self.found)
+            self.next += 1
+        return self.found
+
+
 class _Context:
     """Where a step's data sets are emitted: the task that carries them, the symbols in force,
     the job and step names of the `via` qualifier, and the DDs seen so far (for referbacks)."""
@@ -282,6 +314,7 @@ class JclReader:
         self.out, self.path, self.text = out, path, text
         self.member = member_of(path)
         self.history: dict[tuple[str, str], list[tuple[str, dict[str, Any]]]] = {}  # (step label, dd) -> data sets
+        self._called: dict[int, frozenset[str]] = {}
 
     # -- entry
     def read(self) -> bool:
@@ -301,6 +334,9 @@ class JclReader:
             return False
         names = [u.name for u in parsed.units]
         for u in parsed.units:
+            # A referback names a DD of the same job: start each job's history afresh, so a
+            # file holding two jobs of one name does not join them.
+            self.history = {}
             self.unit(u, None, alias=(u is parsed.units[0] and self.member not in names))
         return True
 
@@ -345,19 +381,19 @@ class JclReader:
             out.construct(head, "member_alias", True)
         for proc in u.procs.values():
             self.unit(proc, u)
-        called = {s.proc.value.upper() for s in (parent.steps if parent else []) if s.pgm is None and s.proc is not None}
-        data_here = not (u.in_stream and u.name in called)
+        data_here = not (u.in_stream and parent is not None and u.name in self.called(parent))
         previous = None
-        defaults = proc_defaults(u)
+        in_force = Symbols(u, proc_defaults(u))  # the PROC defaults and the SET values before each step
+        job_sets = Symbols(u, {})  # the SET values alone, which a call of an in-stream procedure starts from
         for step in u.steps:
-            task = self.step(u, step, previous)
+            symbols = in_force.at(step.stmt.start)
+            task = self.step(u, step, previous, symbols)
             previous = task
-            symbols = self.symbols_at(u, step.stmt.start, defaults)
             programs = self.programs(step, symbols)
             if step.pgm is None and step.proc is not None:
                 target = u.procs.get(step.proc.value.upper())
                 if target is not None:
-                    self.expand(u, step, task, target)
+                    self.expand(step, task, target, job_sets.at(step.stmt.start), u.name)
                     continue
                 self.data(_Context(task, symbols, u.name, step.name), step, step.dds + step.overrides, [], bind=False)
                 continue
@@ -365,20 +401,19 @@ class JclReader:
                 self.data(_Context(task, symbols, u.name, step.name), step, step.dds, programs, bind=True)
         self.flow(u, me)
 
-    def symbols_at(self, u: jcl.Unit, offset: int, base: dict[str, str | None]) -> dict[str, str | None]:
-        found = dict(base)
-        for st, p in u.sets:
-            if st.start < offset and p.key:
-                found[p.key] = literal(p.value, found)
+    def called(self, parent: jcl.Unit) -> frozenset[str]:
+        """The procedures a job's steps call, found once per job."""
+        found = self._called.get(id(parent))
+        if found is None:
+            found = self._called[id(parent)] = frozenset(s.proc.value.upper() for s in parent.steps if s.pgm is None and s.proc is not None)
         return found
 
     # -- steps
-    def step(self, u: jcl.Unit, step: jcl.Step, previous: dict[str, Any] | None) -> dict[str, Any]:
+    def step(self, u: jcl.Unit, step: jcl.Step, previous: dict[str, Any] | None, symbols: dict[str, str | None]) -> dict[str, Any]:
         out = self.out
         at = (step.stmt.start, step.stmt.end)
         attrs: dict[str, Any] = {}
         pgm, proc = step.pgm, step.proc if step.pgm is None else None
-        symbols = self.symbols_at(u, step.stmt.start, proc_defaults(u))
         runs: dict[str, Any] | None = None
         if pgm is not None:
             raw = pgm.value.upper()
@@ -458,20 +493,28 @@ class JclReader:
         if missing or not _MEMBER.match(name):
             return []
         if name in TSO_PROGRAMS:
-            return [_program(p) for p in self.tso_programs(step)]
+            return [_program(n, platform) for platform, n in self.tso_programs(step)]
         return [] if name in SYSTEM_PROGRAMS else [_program(name)]
 
-    def tso_programs(self, step: jcl.Step) -> list[str]:
+    def tso_programs(self, step: jcl.Step) -> list[tuple[str, str]]:
+        """(platform, name) of each program an IKJEFT01 step's in-stream SYSTSIN runs: a
+        `RUN PROGRAM(P)` load module (`mainframe`) and a REXX exec or CLIST run by `%NAME`,
+        `EX` or `EXEC` (`tso`, contract 11.1 item 2). The step's DDs are allocated for all of
+        them, so each gets the step's `dd_binding`s."""
         sysin = next((d for d in step.dds if d.ddname == "SYSTSIN" and d.stmt.data is not None), None)
         if sysin is None:
             return []
-        found = []
+        found: set[tuple[str, str]] = set()
         for c in cards.commands(sysin.stmt.data.lines, "tso"):
             if c.verb == "RUN":
                 prog = cards.value_text(cards.keyword(c.items(), "PROGRAM", "PROG"))
                 if prog and _MEMBER.match(prog.upper()):
-                    found.append(prog.upper())
-        return sorted(set(found))
+                    found.add(("mainframe", prog.upper()))
+            elif c.verb.startswith("%") or c.verb in ("EX", "EXEC"):
+                name = tso_exec(c)
+                if name:
+                    found.add(("tso", name))
+        return sorted(found)
 
     def tso(self, u: jcl.Unit, step: jcl.Step, attrs: dict[str, Any]) -> None:
         out = self.out
@@ -521,20 +564,23 @@ class JclReader:
         attrs["_runs"] = runs
         attrs["_plans"] = plans
 
-    def expand(self, u: jcl.Unit, call: jcl.Step, task: dict[str, Any], proc: jcl.Unit) -> None:
+    def expand(self, call: jcl.Step, task: dict[str, Any], proc: jcl.Unit, job_syms: dict[str, str | None], job: str) -> None:
         """A call of an in-stream procedure: each procedure step's data on the calling task."""
-        job_syms = self.symbols_at(u, call.stmt.start, {})
         # The values in force: the job's SET values, the PROC defaults, the EXEC overrides,
         # each later one replacing an earlier; a value that names other symbolics takes
         # theirs (a default HLQ=&ENV, an override CYCLE=&RUN).
         raw = {p.key: p.value for p in proc.params if p.key}
         raw.update({p.key: p.value for p in call.params[1:] if p.key and p.key not in EXEC_KEYWORDS and "." not in p.key})
         resolved = settle(raw, job_syms)
+        in_force = Symbols(proc, resolved)
+        by_step: dict[str, list[jcl.DD]] = {}
+        for d in call.overrides:
+            by_step.setdefault(d.procstep or "", []).append(d)
         for i, ps in enumerate(proc.steps):
-            symbols = self.symbols_at(proc, ps.stmt.start, resolved)
-            overrides = [d for d in call.overrides if d.procstep == ps.name] + ([d for d in call.dds] if i == 0 else [])
+            symbols = in_force.at(ps.stmt.start)
+            overrides = by_step.get(ps.name, []) + (list(call.dds) if i == 0 else [])
             dds = merge(ps.dds, overrides)
-            self.data(_Context(task, symbols, u.name, f"{call.name}.{ps.name}", ps.name), ps, dds, self.programs(ps, symbols), bind=True)
+            self.data(_Context(task, symbols, job, f"{call.name}.{ps.name}", ps.name), ps, dds, self.programs(ps, symbols), bind=True)
 
     # -- data sets
     def data(self, ctx: _Context, step: jcl.Step, dds: list[jcl.DD], programs: list[dict[str, Any]], bind: bool) -> None:
@@ -711,9 +757,13 @@ def merge(base: list[jcl.DD], overrides: list[jcl.DD]) -> list[jcl.DD]:
     override's keywords (all of it, when the override is in-stream, DUMMY or another kind of
     DD); a DD the step does not have is added."""
     out = list(base)
+    index: dict[tuple[str, int], int] = {}  # (DD name, place in its concatenation) -> the first such DD
+    for i, d in enumerate(out):
+        index.setdefault((d.ddname, d.concat), i)
     for o in overrides:
-        idx = next((i for i, d in enumerate(out) if d.ddname == o.ddname and d.concat == o.concat), None)
+        idx = index.get((o.ddname, o.concat))
         if idx is None:
+            index[(o.ddname, o.concat)] = len(out)
             out.append(jcl.DD(o.stmt, o.ddname, o.procstep, o.concat, o.params))
             continue
         b = out[idx]
@@ -884,11 +934,15 @@ def read_dclgen(out: Out, path: str, text: str) -> bool:
         return False
     member = member_of(path)
     table = clean_name(found.table)
-    layout = f"zos:{member}"
+    # A DCLGEN member is a copybook (contract 11.3 item 4): the key and the field table are
+    # the ones the cobol pack gives a copybook, so `COPY <member>` and `EXEC SQL INCLUDE
+    # <member>` in a program link to it.
+    key = {"kind": "copybook", "name": member}
+    layout = f"cobol:{member}"
     attrs: dict[str, Any] = {"table": table, "columns": len(found.columns), "language": found.language}
     if found.record is not None:
         attrs["record"] = found.record.name
-    schema = out.entity(found.table_at, "zos:Dclgen", K.DATA_SCHEMA, {"kind": "dclgen", "name": member}, member, attrs)
+    schema = out.entity(found.table_at, "zos:Dclgen", K.DATA_SCHEMA, key, member, attrs)
     out.construct(found.table_at, "dclgen_table", True)
     if found.language != "cobol":
         out.construct(found.table_at, "dclgen_other_language", False)
@@ -899,19 +953,20 @@ def read_dclgen(out: Out, path: str, text: str) -> bool:
     if tops and not column_of:
         out.info(f"DCLGEN {member}: {len(tops)} host variables for {len(found.columns)} columns: columns not matched to fields")
     count = 0
-    for name, item, top in db2.flatten(found.record):
+    for name, item, parent, top in db2.flatten(found.record):
         fa = db2.attributes_of(item)
+        if parent is not None:
+            fa["parent"] = parent.name
         col = column_of.get(id(item))
         if col is not None:
             fa.update({"column": col.name, "sql_type": col.sql_type, "nullable": col.nullable})
         elif top is not None and id(top) in column_of and item is not top:
             fa["column"] = column_of[id(top)].name
-        key = {"table": layout, "name": name}
-        f = out.entity((item.start, item.end), "zos:DclgenField", K.FIELD, key, name, fa)
+        f = out.entity((item.start, item.end), "zos:DclgenField", K.FIELD, {"table": layout, "name": name}, name, fa)
         out.relation((item.start, item.end), schema, P.CONTAINS, f)
         out.construct((item.start, item.end), "dclgen_field", True)
         count += 1
-    out.attrs_of(K.DATA_SCHEMA, {"kind": "dclgen", "name": member})["fields"] = count
+    out.attrs_of(K.DATA_SCHEMA, key)["fields"] = count
     if found.indicator is not None:
         out.construct((found.indicator.start, found.indicator.end), "dclgen_indicator", False)
     return True
@@ -1330,7 +1385,7 @@ def idcams_step(out: Out, task: dict[str, Any], step: jcl.Step, dds: list[jcl.DD
 
 class ZosJcl:
     id = "zos.jcl"
-    version = "1.0.0"
+    version = "1.1.0"
 
     def matches(self, path: str) -> bool:
         return path.lower().endswith(JCL_SUFFIXES)
@@ -1355,7 +1410,7 @@ _BIND_CONTENT = re.compile(r"(?im)^\s*(?:BIND|REBIND|FREE)\s+(?:PACKAGE|PLAN)\s*
 
 class ZosDefinitions:
     id = "zos.definitions"
-    version = "1.0.0"
+    version = "1.1.0"
 
     def matches(self, path: str) -> bool:
         low = path.lower()

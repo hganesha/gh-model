@@ -1,6 +1,6 @@
 {
  "fixture": "F38-zos-definitions",
- "description": "Daily account posting on z/OS: a job whose member name (ACCTDLY) differs from its JOB name (ACCTD01), with a SET, an in-stream procedure whose defaults name a SET symbolic and that the job calls with an override of a symbolic and of a procedure step's DD, an IDCAMS step (DELETE, DEFINE CLUSTER with keys and record size, REPRO), a DFSORT step (INCLUDE, INREC, SORT, SUM) reading the procedure step's output by referback and writing a data set named through a symbolic with no value, an IKJEFT01 step (RUN PROGRAM with a plan, a REXX exec), IF/THEN/ELSE around a call of the cataloged procedure in jcl/ACCTARCH.prc (a GDG generation from a symbolic) and a program; small COBOL programs; and under .rkp/inputs/zos/ a CICS CSD export (a transaction, its program, a file, a DB2ENTRY), a DCLGEN member, BIND PACKAGE and PLAN cards, DB2 DDL in a .ddl member and a DFSORT control member. Only what the zos pack emits is asserted; RUNS and EXPOSES name the COBOL programs by the shared key (contract 11.1 item 2). 'since' names the milestone whose compiler must produce the item.",
+ "description": "Daily account posting on z/OS: a job whose member name (ACCTDLY) differs from its JOB name (ACCTD01), with a SET, an in-stream procedure whose defaults name a SET symbolic and that the job calls with an override of a symbolic and of a procedure step's DD, an IDCAMS step (DELETE, DEFINE CLUSTER with keys and record size, REPRO), a DFSORT step (INCLUDE, INREC, SORT, SUM) reading the procedure step's output by referback and writing a data set named through a symbolic with no value, an IKJEFT01 step (RUN PROGRAM with a plan, a REXX exec), IF/THEN/ELSE around a call of the cataloged procedure in jcl/ACCTARCH.prc (a GDG generation from a symbolic) and a program; small COBOL programs; and under .rkp/inputs/zos/ a CICS CSD export (a transaction, its program, a file, a DB2ENTRY), a DCLGEN member, BIND PACKAGE and PLAN cards, DB2 DDL in a .ddl member and a DFSORT control member. Only what the zos pack emits is asserted, plus links that resolve once the cobol pack runs too: RUNS and EXPOSES name the COBOL programs by the shared key (contract 11.1 item 2), ACCTPOST's EXEC SQL INCLUDE DACCT DEPENDS_ON the DCLGEN member as a copybook (11.3 item 4), its SELECT ... ASSIGN TO ACCTIN reads the data set the POST step binds to ACCTIN (link_dd_datasets, 11.1 item 5), and its embedded UPDATE writes the Table the DDL declares, one lower-cased entity that CONTAINS the DDL's columns (11.3 item 1). 'since' names the milestone whose compiler must produce the item.",
  "entities": [
   {
    "kind": "Job",
@@ -300,7 +300,7 @@
   {
    "kind": "DataSchema",
    "natural_key": {
-    "kind": "dclgen",
+    "kind": "copybook",
     "name": "DACCT"
    },
    "since": "M2",
@@ -309,13 +309,28 @@
     "table": "acct.account",
     "record": "DCLACCOUNT",
     "columns": 4,
-    "fields": 6
+    "fields": 7
    }
   },
   {
    "kind": "Field",
    "natural_key": {
-    "table": "zos:DACCT",
+    "table": "cobol:DACCT",
+    "name": "DCLACCOUNT"
+   },
+   "since": "M2",
+   "attributes": {
+    "level": 1,
+    "group": true,
+    "offset": 0,
+    "length": 68,
+    "platform_kind": "zos:DclgenField"
+   }
+  },
+  {
+   "kind": "Field",
+   "natural_key": {
+    "table": "cobol:DACCT",
     "name": "ACCT-ID"
    },
    "since": "M2",
@@ -332,7 +347,7 @@
   {
    "kind": "Field",
    "natural_key": {
-    "table": "zos:DACCT",
+    "table": "cobol:DACCT",
     "name": "ACCT-NAME"
    },
    "since": "M2",
@@ -348,7 +363,7 @@
   {
    "kind": "Field",
    "natural_key": {
-    "table": "zos:DACCT",
+    "table": "cobol:DACCT",
     "name": "ACCT-NAME-TEXT"
    },
    "since": "M2",
@@ -362,7 +377,7 @@
   {
    "kind": "Field",
    "natural_key": {
-    "table": "zos:DACCT",
+    "table": "cobol:DACCT",
     "name": "BALANCE"
    },
    "since": "M2",
@@ -901,7 +916,7 @@
    "subject": {
     "kind": "DataSchema",
     "natural_key": {
-     "kind": "dclgen",
+     "kind": "copybook",
      "name": "DACCT"
     }
    },
@@ -909,8 +924,79 @@
    "object": {
     "kind": "Field",
     "natural_key": {
-     "table": "zos:DACCT",
+     "table": "cobol:DACCT",
      "name": "BALANCE"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "mainframe",
+     "name": "ACCTPOST"
+    }
+   },
+   "predicate": "DEPENDS_ON",
+   "object": {
+    "kind": "DataSchema",
+    "natural_key": {
+     "kind": "copybook",
+     "name": "DACCT"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Table",
+    "natural_key": {
+     "datastore": "default",
+     "name": "acct.account"
+    }
+   },
+   "predicate": "CONTAINS",
+   "object": {
+    "kind": "Field",
+    "natural_key": {
+     "table": "acct.account",
+     "name": "acct_id"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "mainframe",
+     "name": "ACCTPOST"
+    }
+   },
+   "predicate": "WRITES_TO",
+   "object": {
+    "kind": "Table",
+    "natural_key": {
+     "datastore": "default",
+     "name": "acct.account"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "mainframe",
+     "name": "ACCTPOST"
+    }
+   },
+   "predicate": "READS_FROM",
+   "object": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "prod.acct.daily.extract"
     }
    },
    "since": "M2"
@@ -992,6 +1078,22 @@
     "name": "ACCTTS"
    },
    "why": "a table space is storage, not a table"
+  },
+  {
+   "kind": "Table",
+   "natural_key": {
+    "datastore": "default",
+    "name": "ACCT.ACCOUNT"
+   },
+   "why": "DDL table names are lower-cased (contract 11.3 item 1): the DDL and the embedded SQL name one table"
+  },
+  {
+   "kind": "DataSchema",
+   "natural_key": {
+    "kind": "dclgen",
+    "name": "DACCT"
+   },
+   "why": "a DCLGEN member is a copybook (contract 11.3 item 4)"
   }
  ],
  "exclusions": [],
@@ -1007,10 +1109,6 @@
   {
    "since": "M2",
    "detail": "POST runs the REXX exec ACCTRPT, which the repository does not hold: RUNS Program {tso, ACCTRPT} is kept only when another file declares it"
-  },
-  {
-   "since": "M2",
-   "detail": "the COBOL programs' DD names join to these data sets through link_dd_datasets only once a pack emits dd_file observations (W8.1)"
   }
  ],
  "expected_conflicts": [],

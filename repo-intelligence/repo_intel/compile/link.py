@@ -768,8 +768,13 @@ class _Linker:
         (i-o); with no mode, the DISP decides as it does for the step (NEW and MOD write,
         anything else reads). Each relation carries `via: {job, step}` and both
         observations as evidence (E3); a program run by two jobs gets one relation per
-        step. Nothing is joined across units: a binding whose program has no `dd_file` in
-        this unit is left as the step's own READS_FROM or WRITES_TO.
+        step. A step of an in-stream procedure is a Task of the procedure (contract 11.3
+        item 5), but its data sets are bound where the job calls it, with the call's
+        overrides applied: `via` names the calling job and `<calling step>.<procedure
+        step>`. The program may be a load module (`Program {platform: "mainframe"}`) or a
+        REXX exec or CLIST an IKJEFT01 step runs (`Program {platform: "tso"}`); the keys
+        are compared as given. Nothing is joined across units: a binding whose program has
+        no `dd_file` in this unit is left as the step's own READS_FROM or WRITES_TO.
         """
         def key(program: Mapping[str, Any], dd: Any) -> tuple[str, str, str]:
             nk = program.get("natural_key") or {}
