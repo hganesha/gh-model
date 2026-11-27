@@ -210,3 +210,25 @@ def test_mainframe_credentials_are_found_but_references_and_short_words_are_not(
     assert _flagged(pli) == [("pli_init_credential", b"fixture-pli-init-03")]
     cl = b"SBMJOB CMD(CALL PGM(X)) USER(BATCHUSR)\nRUNRMTCMD CMD('x') RMTPWD('fixture-cl-pwd-04')\nRUNRMTCMD CMD('x') RMTPWD(&PWD)\n"
     assert _flagged(cl) == [("cl_password_keyword", b"fixture-cl-pwd-04")]
+
+
+def test_url_placeholders_and_secret_names_are_not_findings(store):
+    # A product default, the user name again or a reference to another value is no secret;
+    # treating `postgres` as one failed the publish gate wherever the word named the driver.
+    source = (
+        b"DATABASE_URL=postgres://postgres:postgres@db:5432/app\n"
+        b"QUEUE_URL=amqp://app:guest@mq\n"
+        b"CACHE_URL=redis://app:${REDIS_PASSWORD}@cache\n"
+        b"OTHER_URL=postgres://app:hunter2@db/x\n"
+    )
+    assert [f["detector"] for f in secrets.scan(source)] == ["url_credentials"]
+    assert secrets.values(source, secrets.scan(source)) == [b"hunter2"]
+    # A setting mapped to the Key Vault secret of its own name; a real value is still found.
+    names = b'const SECRETS = { DATABASE_MIGRATOR_PASSWORD: "database-migrator-password" };\nDB_TOKEN=db-token-for-the-local-stack\n'
+    assert [f["detector"] for f in secrets.scan(names)] == ["env_assignment"]
+    assert secrets.scan(b'MODEL_PROVIDER_TOKEN="model-provider-token"\n') == []
+    assert len(secrets.scan(b'MODEL_PROVIDER_TOKEN="model-provider-token-1234"\n')) == 1
+    entry = {"path": "compose.yaml", "blob_sha256": store.put_bytes(source).split(":", 1)[1], "secret_findings": secrets.scan(source)}
+    published = [{"name": "postgres", "url": "postgres://postgres:postgres@db:5432/app", "kv": "database-migrator-password"}]
+    assert leaked_secrets(store, {"entries": [entry]}, published) == []
+    assert leaked_secrets(store, {"entries": [entry]}, [{"url": "postgres://app:hunter2@db/x"}]) == ["compose.yaml"]
