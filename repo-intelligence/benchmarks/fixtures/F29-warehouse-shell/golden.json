@@ -1,6 +1,6 @@
 {
   "fixture": "F29-warehouse-shell",
-  "description": "A warehouse estate driven by scripts: a ksh nightly job (an SFTP get from a here-document, SQL*Plus and BTEQ here-documents, FastLoad, SAS, dsjob, pmcmd with a folder and spark-submit steps, a planted password in a shell variable), a bash export job (FastExport, scp, a Connect:Direct copy, psql -c, mail), a batch file (sqlcmd -Q and -i, dtexec /F), a PowerShell Invoke-Sqlcmd here-string, FastLoad, MultiLoad (an upsert label and a table named through an ACCEPTed variable), FastExport and TPT scripts, a DB2 SQL PL procedure and trigger, a Netezza NZPLSQL procedure and Sybase procedures and a trigger. 'since' names the milestone whose compiler must produce the item. Until foundation supersession lands, data.sql_lineage and plsql.source also read the DB2 and Sybase .sql files (Program {teradata|tsql|oracle, ...}); the golden asserts only the ALIAS_OF link that joins them.",
+  "description": "A warehouse estate driven by scripts: a ksh nightly job (an SFTP get from a here-document, SQL*Plus and BTEQ here-documents, FastLoad, SAS, dsjob, pmcmd with a folder and spark-submit steps, a planted password in a shell variable), a bash export job (FastExport, scp, a Connect:Direct copy, psql -c, mail), a batch file (sqlcmd -Q and -i, dtexec /F), a PowerShell Invoke-Sqlcmd here-string, FastLoad, MultiLoad (an upsert label and a table named through an ACCEPTed variable), FastExport and TPT scripts, a DB2 SQL PL procedure and trigger, a Netezza NZPLSQL procedure and Sybase procedures and a trigger. 'since' names the milestone whose compiler must produce the item. The dbproc pack supersedes data.sql_lineage, data.sql_ddl and plsql.source on the DB2 and Sybase .sql files it reads, so each routine is one Program under its engine.",
   "entities": [
     {
       "kind": "Program",
@@ -1275,24 +1275,6 @@
       "subject": {
         "kind": "Program",
         "natural_key": {
-          "platform": "teradata",
-          "name": "fin.refresh_balances"
-        }
-      },
-      "predicate": "ALIAS_OF",
-      "object": {
-        "kind": "Program",
-        "natural_key": {
-          "platform": "db2",
-          "name": "fin.refresh_balances"
-        }
-      },
-      "since": "M2"
-    },
-    {
-      "subject": {
-        "kind": "Program",
-        "natural_key": {
           "platform": "netezza",
           "name": "mart.load_daily_sales"
         }
@@ -1414,24 +1396,6 @@
         }
       },
       "since": "M2"
-    },
-    {
-      "subject": {
-        "kind": "Program",
-        "natural_key": {
-          "platform": "tsql",
-          "name": "dbo.post_trades"
-        }
-      },
-      "predicate": "ALIAS_OF",
-      "object": {
-        "kind": "Program",
-        "natural_key": {
-          "platform": "sybase",
-          "name": "dbo.post_trades"
-        }
-      },
-      "since": "M2"
     }
   ],
   "absent_entities": [
@@ -1488,6 +1452,30 @@
         "name": "/var/log/etl/nightly_orders.log"
       },
       "why": "a log the script appends to is output, not a dataset it moves"
+    },
+    {
+      "kind": "Program",
+      "natural_key": {
+        "platform": "teradata",
+        "name": "fin.refresh_balances"
+      },
+      "why": "dbproc reads db2/refresh_balances.sql, so data.sql_lineage's guess at the platform is dropped"
+    },
+    {
+      "kind": "Program",
+      "natural_key": {
+        "platform": "oracle",
+        "name": "fin.refresh_balances"
+      },
+      "why": "a DB2 SQL PL file is not Oracle PL/SQL"
+    },
+    {
+      "kind": "Program",
+      "natural_key": {
+        "platform": "tsql",
+        "name": "dbo.post_trades"
+      },
+      "why": "dbproc reads sybase/post_trades.sql, so data.sql_lineage's guess at the platform is dropped"
     }
   ],
   "exclusions": [],

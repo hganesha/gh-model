@@ -15,9 +15,9 @@ procedures stay with `sql_lineage`.
 
 Each procedure, function and trigger is a `Program {platform: <engine>, name: <lower-case
 name>}` with one behaviour unit (kind `function`, or `trigger`), the tables its statements
-write and read, and CALLS to the procedures it calls. `sql_lineage` also declares a
-procedure in a `.sql` file, under the platform its scanner guesses (`sql`, `teradata` or `tsql`); that
-Program is ALIAS_OF this one.
+write and read, and CALLS to the procedures it calls. A file this extractor reads is not
+also read by `sql_lineage`, `sql_ddl` or `plsql.source` (per-file supersession, contract
+10.3), so the procedure has this one Program and no alias under another platform.
 """
 
 from __future__ import annotations
@@ -58,11 +58,10 @@ def engine_of(path: str, text: str) -> str | None:
 class Routines:
     id = "dbproc.routines"
     version = "1.0.0"
-    # Other readers of the same `.sql` files: `data.sql_lineage` declares a DB2 procedure as
-    # Program {sql | teradata | tsql, name}, `data.sql_ddl` reads its DDL, and `plsql.source`
-    # reads a DB2 `CREATE OR REPLACE PROCEDURE` as Oracle. Once the foundation honours this, a
-    # file this extractor parses (it parses only files whose content names its engine) is not
-    # read by them. Until then the attribute changes nothing.
+    # Other readers of the same `.sql` files: `data.sql_lineage` would declare a DB2 procedure
+    # as Program {sql | teradata | tsql, name}, `data.sql_ddl` reads its DDL, and `plsql.source`
+    # may read a DB2 `CREATE OR REPLACE PROCEDURE` as Oracle. A file this extractor parses (it
+    # parses only files whose content names its engine) is not read by them.
     supersedes_when_parsed = ("data.sql_lineage", "data.sql_ddl", "plsql.source")
     SUFFIXES = (".sql", ".db2", ".nzpl", ".nzsql", ".sp", ".spl", ".proc")
 
@@ -169,7 +168,6 @@ class Routine:
             out.construct("dbp:parameter", a, b, True)
         out.behavior(rstart, rend, ref, self.engine, body, "trigger" if self.kind == "trigger" else "function", params)
         self.lineage(ctx, ref)
-        self.alias(name, a, b, ref)
         return end
 
     # -- headers
@@ -353,7 +351,7 @@ class Routine:
                     return k
         return len(self.toks) - 1
 
-    # -- lineage and the alias
+    # -- lineage
 
     def lineage(self, ctx: Ctx, me: dict[str, Any]) -> None:
         from repo_intel.extractors.sql_lineage import DIALECT, lineage
@@ -368,23 +366,6 @@ class Routine:
                         continue
                     out.table(a, b, me, predicate, name)
             out.unresolved += found.unresolved
-
-    def alias(self, name: str, a: int, b: int, me: dict[str, Any]) -> None:
-        """`sql_lineage` declares the procedures of a `.sql` file as Program {sql|tsql, name}."""
-        if self.kind != "procedure" or not self.path.lower().endswith(".sql"):
-            return
-        from repo_intel.extractors.contracts_data import migration_identity
-        from repo_intel.extractors.sql_lineage import _PROCEDURE, clean_name, scrub_commands, sql_platform
-
-        if migration_identity(self.path) is not None or "{{" in self.text or "{%" in self.text:
-            return
-        try:
-            self.text.encode("utf-8")
-        except UnicodeEncodeError:
-            return
-        platform = sql_platform(self.path, self.text)
-        if any(clean_name(m.group(2)) == name for m in _PROCEDURE.finditer(scrub_commands(self.text))):
-            self.out.rel(a, b, program_ref(platform, name, declare=False), P.ALIAS_OF, me)
 
 
 def _compound_end(toks: list[Tok], begin: int) -> int:

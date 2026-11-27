@@ -209,6 +209,11 @@ def test_an_oracle_prc_is_recognised_by_its_content():
     "CREATE OR REPLACE FUNCTION f(p integer) RETURNS integer AS $$\nBEGIN\n  RETURN 1;\nEND;\n$$ LANGUAGE plpgsql;\n",
     "SELECT * FROM orders;\nINSERT INTO t SELECT * FROM s;\n",
     "CREATE TRIGGER t BEFORE INSERT ON x FOR EACH ROW EXECUTE FUNCTION f();\n",
+    # no sign only Oracle gives: T-SQL and generic SQL write a procedure this way too
+    "create procedure dim.load_history\nas\nbegin\n  update dim.history set is_current = 0;\nend;\n",
+    # DB2 SQL PL
+    "CREATE TRIGGER fin.trg_audit\n  AFTER UPDATE OF balance ON fin.balances\n  REFERENCING NEW AS n\n  FOR EACH ROW MODE DB2SQL\nBEGIN ATOMIC\n  INSERT INTO fin.audit VALUES (n.id);\nEND@\n",
+    "CREATE OR REPLACE PROCEDURE fin.p (IN d DATE)\n  SPECIFIC p\n  LANGUAGE SQL\nP1: BEGIN\n  DELETE FROM fin.t WHERE as_of = d;\nEND P1@\n",
 ])
 def test_other_sql_files_are_left_to_the_sql_extractors(text):
     assert not recognise("db/x.sql", text)
@@ -220,6 +225,15 @@ def test_an_oracle_procedure_in_a_sql_file_is_recognised():
     assert recognise("db/p.sql", text)
     out = run(text, "db/p.sql")
     assert prog("p") in entities(out) and (prog("p"), "WRITES_TO", table("t")) in relations(out)
+
+
+@pytest.mark.parametrize("text", [
+    "create procedure p is\nbegin\n  delete from t;\nend;\n",
+    "create procedure p as\n  n number := 0;\nbegin\n  delete from t;\nend;\n",
+    "create procedure p as\nbegin\n  delete from t;\nend p;\n",
+])
+def test_a_procedure_with_a_sign_only_oracle_gives_is_recognised(text):
+    assert recognise("db/p.sql", text)
 
 
 # ---------------------------------------------------------------------- packages and units

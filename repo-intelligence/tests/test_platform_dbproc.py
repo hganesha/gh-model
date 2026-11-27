@@ -267,8 +267,8 @@ def test_sybase_procedure_and_trigger():
     assert (me, "READS_FROM", key("Table", datastore="default", name="trades")) in rels
     assert (me, "WRITES_TO", key("Table", datastore="default", name="positions")) in rels
     assert rels[(me, "CALLS", key("Program", platform="sybase", name="dbo.count_posted"))]["declare"] is False
-    # sql_lineage declares the same procedure from the .sql file under the platform it guesses
-    assert (key("Program", platform="tsql", name="dbo.post_day"), "ALIAS_OF", me) in rels
+    # supersession keeps sql_lineage off the file, so there is no alias under the platform it guesses
+    assert not any(r[1] == "ALIAS_OF" for r in rels)
     trg = key("Program", platform="sybase", name="dbo.trg_trades")
     assert ents[trg]["on"] == {"table": "dbo.trades", "events": ["insert", "update"], "timing": "after"}
     assert (trg, "WRITES_TO", key("Table", datastore="default", name="trade_audit")) in rels

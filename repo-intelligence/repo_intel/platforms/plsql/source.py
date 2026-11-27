@@ -3,8 +3,13 @@
 Reads `.pks`, `.pkb`, `.pls`, `.plb`, `.fnc` and `.trg` files, and `.prc` and `.sql` files
 whose content is Oracle's (`recognise`): a `.prc` is also a JCL procedure suffix, so one
 is read only when it creates a PL/SQL unit and has no JCL statements; a `.sql` file only
-when it creates a package, procedure, function or trigger in Oracle's syntax, or holds
-statements only Oracle has (synonyms, database links, DBMS_SCHEDULER and DBMS_JOB calls).
+when it creates a package or trigger in Oracle's syntax, holds statements only Oracle has
+(synonyms, database links, DBMS_SCHEDULER and DBMS_JOB calls), or creates a procedure or
+function in Oracle's syntax with a sign only Oracle gives (`OR REPLACE`, `IS`, a `/` line,
+`%TYPE`, `:=`, `DBMS_`, `EXCEPTION WHEN`, `VARCHAR2`, `END <name>;` and the like). A bare
+`CREATE PROCEDURE p AS BEGIN ... END;` is also T-SQL and generic SQL, so it stays with the
+SQL lineage extractor; a file with DB2 markers (`--#SET TERMINATOR`, `MODE DB2SQL`,
+`LANGUAGE SQL`, `BEGIN ATOMIC`, `DYNAMIC RESULT SETS`, `SPECIFIC`) is the dbproc pack's.
 
 What it declares (natural keys in `vocabulary`):
 
@@ -47,10 +52,15 @@ _NATIVE = (".pks", ".pkb", ".pls", ".plb", ".fnc", ".trg")
 _JCL = re.compile(r"^//[A-Za-z0-9@#$]*\s+(?:JOB|PROC|EXEC|DD|PEND|SET|INCLUDE|JCLLIB)\b", re.M | re.I)
 _HEAD = r"^[ \t]*create\s+(?:or\s+replace\s+)?(?:(?:editionable|noneditionable)\s+)?"
 _PACKAGE = re.compile(_HEAD + r"package\b", re.I | re.M)
-_SUBPROGRAM = re.compile(_HEAD + r"(?:procedure|function)\s+[\w$#.\"]+(.{0,4000}?)\b(?:is|as)\b(\s*\$\$|\s*'|\s*begin\b)?", re.I | re.M | re.S)
+_SUBPROGRAM = re.compile(_HEAD + r"(?:procedure|function)\s+[\w$#.\"]+(.{0,4000}?)\b(is|as)\b(\s*\$\$|\s*'|\s*begin\b)?", re.I | re.M | re.S)
 _TRIGGER = re.compile(_HEAD + r"trigger\s+[\w$#.\"]+\s+(?:before|after|instead\s+of|for)\b(.{0,2000}?)\b(?:begin|declare|call|compound\s+trigger)\b", re.I | re.M | re.S)
 _ORACLE_ONLY = re.compile(r"\bcreate\s+(?:or\s+replace\s+)?(?:public\s+)?synonym\b|\bcreate\s+(?:shared\s+)?(?:public\s+)?database\s+link\b|\bdbms_(?:scheduler|job)\s*\.", re.I)
 _OR_REPLACE = re.compile(r"\bcreate\s+or\s+replace\b", re.I)
+# Signs that a procedure or function is Oracle's and not T-SQL's or generic SQL's, which
+# share `CREATE PROCEDURE p AS BEGIN ... END;` with it.
+_ORACLE_SIGN = re.compile(r"\bcreate\s+or\s+replace\b|^[ \t]*/[ \t]*$|%(?:row)?type\b|:=|\bdbms_\w+\s*\.|\bexception\s+when\b|\bvarchar2\b"
+                          r"|\bpragma\b|\braise_application_error\b|\bsysdate\b|\bnvl\s*\(|\bend\s+(?!if\b|loop\b|case\b)[\w$#]+\s*;", re.I | re.M)
+_DB2 = re.compile(r"--#SET\s+TERMINATOR|\bMODE\s+DB2SQL\b|\bLANGUAGE\s+SQL\b|\bBEGIN\s+ATOMIC\b|\bDYNAMIC\s+RESULT\s+SETS\b|^\s*SPECIFIC\s+\w+", re.I | re.M)
 _SYSTEM_PRIVILEGES = frozenset({"SYSDBA", "SYSOPER", "SYSBACKUP", "SYSDG", "SYSKM", "SYSRAC", "ALL", "ALL PRIVILEGES"})
 
 
@@ -68,15 +78,23 @@ def recognise(path: str, text: str) -> bool:
         # which `create or replace procedure` also contains, so that phrase is set aside first.
         if sql_platform(path, _OR_REPLACE.sub("create", text)) != "sql":
             return False  # T-SQL or Teradata: the SQL lineage extractor's
-        return bool(_PACKAGE.search(text) or _oracle_subprogram(text) or _oracle_trigger(text) or _ORACLE_ONLY.search(text))
+        if _PACKAGE.search(text) or _ORACLE_ONLY.search(text):
+            return True
+        if _DB2.search(text):
+            return False  # DB2 SQL PL: the dbproc pack's
+        return _oracle_trigger(text) or _oracle_subprogram(text, sign_needed=True)
     return False
 
 
-def _oracle_subprogram(text: str) -> bool:
+def _oracle_subprogram(text: str, sign_needed: bool = False) -> bool:
+    """Whether the text creates a procedure or function in Oracle's syntax. With
+    `sign_needed` (a `.sql` file), `... AS BEGIN` also needs a sign only Oracle gives."""
     for m in _SUBPROGRAM.finditer(text):
-        head, after = m.group(1), m.group(2)
+        head, keyword, after = m.group(1), m.group(2), m.group(3)
         if after and after.strip().lower() != "begin" or re.search(r"\b(?:returns|language|begin|declare)\b|@\w", head, re.I):
             continue  # PostgreSQL ($$ or a quoted body, RETURNS, LANGUAGE), MySQL or DB2 (BEGIN with no IS), T-SQL (@parameters)
+        if sign_needed and keyword.lower() != "is" and not _ORACLE_SIGN.search(text):
+            continue  # `CREATE PROCEDURE p AS BEGIN ... END;` is also T-SQL and generic SQL
         return True
     return False
 
@@ -360,7 +378,7 @@ class _Emit:
 
 class PlsqlSource:
     id = "plsql.source"
-    version = "1.1.0"
+    version = "1.2.0"
     # A `.sql` file this extractor reads as PL/SQL is not also read by the generic SQL
     # lineage extractor, whose output for it would duplicate and contradict this one's.
     supersedes_when_parsed = ("data.sql_lineage",)

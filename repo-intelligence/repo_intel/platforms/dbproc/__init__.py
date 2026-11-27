@@ -7,9 +7,10 @@ Keys:
   `params`, `result_sets`, `specific`, `returns`, and for a trigger `on` {table, events,
   timing};
 - a table: `Table {datastore: "default", name}`, as `sql_lineage` names it;
-- a called procedure: `Program {platform: <same engine>, name}`, not declared (CALLS);
-- the Program `sql_lineage` declares for the same procedure in a `.sql` file, `{platform:
-  "sql" | "teradata" | "tsql", name}` (the platform its scanner guesses), is ALIAS_OF the engine's Program.
+- a called procedure: `Program {platform: <same engine>, name}`, not declared (CALLS).
+
+A file the pack reads is not also read by `sql_lineage`, `sql_ddl` or `plsql.source`
+(`supersedes_when_parsed`), so a routine has one Program.
 
 Each routine has one behaviour unit (language `db2`, `netezza` or `sybase`; kind `function`
 or `trigger`). Transform shapes come from its `query` nodes, as for every behaviour unit.
