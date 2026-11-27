@@ -214,6 +214,26 @@ def test_maps_forms_and_fields():
             assert check_relation(Predicate(o.payload["predicate"]), EntityKind(o.payload["subject"]["kind"]), EntityKind(o.payload["object"]["kind"])) is None
 
 
+
+def test_the_initial_text_of_a_credential_field_is_never_copied():
+    data = deck(
+        "LOGSET   DFHMSD TYPE=&SYSPARM,MODE=INOUT,LANG=COBOL",
+        "LOGMAP   DFHMDI SIZE=(24,80),LINE=1,COLUMN=1",
+        "         DFHMDF POS=(3,1),LENGTH=9,ATTRB=ASKIP,INITIAL='PASSWORD:'",
+        "PASSWD   DFHMDF POS=(3,14),LENGTH=8,ATTRB=(UNPROT,DRK),INITIAL='pz9x'",
+        "USRTOKEN DFHMDF POS=(4,14),LENGTH=8,ATTRB=UNPROT,INITIAL='pz9y'",
+        "TITLE    DFHMDF POS=(5,14),LENGTH=8,ATTRB=ASKIP,INITIAL='kept'",
+        "         DFHMSD TYPE=FINAL",
+    )
+    out = run(data, "cics/maps/LOGSET.bms")
+    blob = json.dumps([o.payload for o in out.observations])
+    assert "pz9x" not in blob and "pz9y" not in blob
+    ents = entities(out)
+    pw = ents[control("LOGSET.LOGMAP", "PASSWD")]
+    assert "initial" not in pw and pw["initial_redacted"] is True and pw["label"] == "PASSWORD"
+    assert ents[control("LOGSET.LOGMAP", "USRTOKEN")]["initial_redacted"] is True
+    assert ents[control("LOGSET.LOGMAP", "TITLE")]["initial"] == "kept"
+
 def test_unnamed_fields_are_counted_and_never_declared():
     out = run(MAPSET)
     names = {json.loads(k[1])["name"] for k in entities(out) if k[0] == "UIControl"}

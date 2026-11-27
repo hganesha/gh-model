@@ -13,7 +13,9 @@ What it declares (natural keys in `vocabulary`, contract 11.1 item 7):
 - each named field (`DFHMDF` with a label) as a `UIControl` the Screen CONTAINS, named by
   its label, with `pos`, `length`, `attrb`, `picin`, `picout`, `initial`, `occurs`,
   `group`, `justify`, `validation`, `color` and `hilight` as written, and `control`
-  (`input` for an unprotected field, else `display`).
+  (`input` for an unprotected field, else `display`). The INITIAL text of a field whose
+  label is named for a password, secret, token or key is not copied (`initial_redacted`):
+  it is that field's value (contract rule 7, 11.3 item 3).
 
 A field with no label is not declared and is counted: a literal field (one with INITIAL)
 is screen text, and when it is short and comes just before a named field its text is that
@@ -27,6 +29,7 @@ item 7).
 from __future__ import annotations
 
 import posixpath
+import re
 from typing import Any
 
 from repo_intel.compile.ontology import Predicate as P
@@ -37,6 +40,8 @@ from repo_intel.platforms.bms.vocabulary import PLATFORM
 SUFFIXES = (".bms", ".mac", ".asm")
 LABEL_MAX = 40  # a literal longer than this is screen text, not a field's label
 _LISTING = frozenset({"PRINT", "TITLE", "EJECT", "SPACE", "END", "ICTL", "PUNCH"})
+# A field label that says the field holds a credential: its INITIAL text is not copied.
+CREDENTIAL = re.compile(r"PASSW|PASWD|PSWD|PWD|SECRET|TOKEN|CREDENT|API-?KEY|PASSPHRASE", re.I)
 _EXTENDED = ("COLOR", "HILIGHT", "PS", "OUTLINE", "SOSI", "TRANSP", "CASE", "EXTATT", "MAPATTS", "DSATTS")
 
 
@@ -190,7 +195,10 @@ class _Reader:
             attrs["attrb"] = words(attrb)
         attrs["control"] = "input" if "UNPROT" in attrs.get("attrb", []) else "display"
         if isinstance(initial, Quoted):
-            attrs["initial"] = str(initial)
+            if CREDENTIAL.search(s.name):
+                attrs["initial_redacted"] = True
+            else:
+                attrs["initial"] = str(initial)
         for key, cid in (("XINIT", "hex"), ("GINIT", "graphic")):
             if s.get(key):
                 attrs["initial_encoded"] = cid
@@ -288,7 +296,7 @@ class _Reader:
 
 class BmsMaps:
     id = "bms.maps"
-    version = "1.0.0"
+    version = "1.1.0"
     # A map source in `.mac` or `.asm` is not also read as assembler (contract 11.1 item 1).
     supersedes_when_parsed = ("hlasm.source",)
 
