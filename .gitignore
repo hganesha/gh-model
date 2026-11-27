@@ -5,3 +5,4 @@ packages/*/out/
 *.vsix
 .vscode-test/
 packages/vscode-extension/engine/
+.claude
