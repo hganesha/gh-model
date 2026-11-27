@@ -170,6 +170,10 @@ def test_display_names_for_server_pages_the_data_estate_and_documents():
     for language in ("markdown", "text", "csv", "html", "docx", "xlsx", "pdf"):
         assert profile.language_name(language) != language, language
     assert profile.language_name("docx") == "Word document (DOCX)" and profile.language_name("yaml") == "yaml"
+    # A component's stack names its primary language through language_name.
+    assert profile._stack({"attributes": {"primary_language": "plsql", "frameworks": []}}) == "Oracle PL/SQL"
+    assert profile._stack({"attributes": {"primary_language": "markdown", "frameworks": []}}) == "Markdown"
+    assert profile._stack({"attributes": {"primary_language": "yaml", "frameworks": []}}) == "yaml"
     # Documents name a format; they are never counted as what the application is written in.
     coverage = [{"domain": "parse", "scope": "a", "detail": {"by_language": {"plsql": {"files": 3}, "markdown": {"files": 9}, "docx": {"files": 2}}}}]
     languages, _ = profile._languages(coverage)

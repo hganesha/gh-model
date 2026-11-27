@@ -1,7 +1,7 @@
 // Run with `npm test` (node --test; Node strips the types).
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { countByDocument, designation, documentOf, effectiveFeatures, matches, otherEntries, problemText, producingPaths, sameEntries, toggle, unreadableDocuments } from "./documents.ts";
+import { countByDocument, designation, documentOf, effectiveFeatures, matches, otherEntries, problemText, producingPaths, sameEntries, saveBody, saveFailureText, STALE_DESIGNATIONS, toggle, unreadableDocuments } from "./documents.ts";
 import type { DocumentEntry } from "./documents.ts";
 import type { CoverageRow } from "./types.ts";
 
@@ -66,4 +66,14 @@ test("unreadable documents and problems read from the shapes the engine may writ
   assert.deepEqual(unreadableDocuments(rows), [{ path: "a.pdf", needs: null }, { path: "b.pdf", needs: "Markdown, DOCX or text" }]);
   assert.equal(problemText({ path: "x/*.md", message: "matches no file" }), "x/*.md: matches no file");
   assert.equal(problemText("unknown feature"), "unknown feature");
+});
+
+test("a save sends the version the entries were edited from, and a 409 asks for a reload", () => {
+  assert.deepEqual(saveBody(entries, { version: 4096 }), { documents: entries, expected_version: 4096 });
+  assert.deepEqual(saveBody([], { version: 0 }), { documents: [], expected_version: 0 }, "0 is the version of a missing file, and is still checked");
+  assert.deepEqual(saveBody(entries, {}), { documents: entries }, "an engine without versions gets no expected_version");
+  assert.equal(saveFailureText(409, "The designations changed since they were read; reload and try again."), STALE_DESIGNATIONS);
+  assert.equal(STALE_DESIGNATIONS, "These designations changed since you opened them. Reload and try again.");
+  assert.equal(saveFailureText(422, "unknown feature: summaries"), "unknown feature: summaries");
+  assert.equal(saveFailureText(undefined, undefined), "The designations could not be saved.");
 });

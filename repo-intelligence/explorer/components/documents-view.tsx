@@ -13,6 +13,8 @@ import {
   PRODUCED_KINDS,
   producingPaths,
   sameEntries,
+  saveBody,
+  saveFailureText,
   toggle,
   unreadableDocuments,
   type DocumentCounts,
@@ -88,7 +90,7 @@ export function DocumentsView({ hash, summary, repositoryId }: { hash: string; s
   const [text, setText] = useState("");
   const [designatedOnly, setDesignatedOnly] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null);
+  const [status, setStatus] = useState<{ ok: boolean; text: string; stale?: boolean } | null>(null);
 
   // An engine from before designated documents answers 404: the snapshot's counts are still shown.
   const unavailable = listing.error instanceof ApiError && listing.error.status === 404;
@@ -127,12 +129,15 @@ export function DocumentsView({ hash, summary, repositoryId }: { hash: string; s
     setSaving(true);
     setStatus(null);
     try {
-      await api(`repositories/${repositoryId}/documents`, { method: "PUT", body: { documents: entries } });
+      await api(`repositories/${repositoryId}/documents`, { method: "PUT", body: saveBody(entries, data) });
       setDraft(null);
       listing.reload();
       setStatus({ ok: true, text: "Saved to .rkp/documents.json. It takes effect at the next compile: recompile to see the results." });
     } catch (err) {
-      setStatus({ ok: false, text: err instanceof ApiError ? err.message : "The designations could not be saved." });
+      // On 409 the file changed since it was read and the engine wrote nothing. The draft stays
+      // on screen until the owner reloads, so this save never overwrites the newer file.
+      const known = err instanceof ApiError ? err : undefined;
+      setStatus({ ok: false, stale: known?.status === 409, text: saveFailureText(known?.status, known?.message) });
     } finally {
       setSaving(false);
     }
@@ -251,7 +256,14 @@ export function DocumentsView({ hash, summary, repositoryId }: { hash: string; s
           {entries.some((e) => e.features.includes("rules")) && <span className="muted">Rules are named by a model only when the business rules setting is on; it sends the document&apos;s text to the configured model provider.</span>}
         </div>
       )}
-      {status && <p className={status.ok ? "group-note" : "form-error"} role={status.ok ? "status" : "alert"}>{status.text}</p>}
+      {status && (
+        <p className={status.ok ? "group-note" : "form-error"} role={status.ok ? "status" : "alert"}>
+          {status.text}
+          {status.stale && (
+            <> <button type="button" className="link-btn" onClick={() => { setDraft(null); setStatus(null); listing.reload(); }}>Reload</button></>
+          )}
+        </p>
+      )}
     </section>
   );
 }
