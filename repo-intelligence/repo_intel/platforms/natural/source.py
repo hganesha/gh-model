@@ -30,7 +30,9 @@
 
 Where a database loop updates the record it reads, or stores what it read into another
 file, the unit's transform shapes (language `natural`) say so. Initial values, parameter
-values and the database and file numbers of a DDM are never copied.
+values and the database and file numbers of a DDM are never copied, nor is a literal
+assigned to, compared with or passed beside a field named for a password, key, user or
+host: it becomes a `nat:sensitive_value` node (`scrub_sensitive`).
 """
 
 from __future__ import annotations
@@ -42,7 +44,7 @@ from typing import Any
 from repo_intel.platforms.natural import data as natdata
 from repo_intel.platforms.natural import ddm as natddm
 from repo_intel.platforms.natural import maps as natmaps
-from repo_intel.platforms.natural.lexer import prepare, tokens
+from repo_intel.platforms.natural.lexer import Lines, prepare, tokens
 from repo_intel.platforms.natural.parse import Module, Parser, Unit, detect_mode
 from repo_intel.platforms.natural.vocabulary import ADABAS, DATA_AREA_KINDS, MAINFRAME, OBJECT_TYPES, PLATFORM, USING_KINDS
 
@@ -83,6 +85,13 @@ class _Emit:
         self.items: list = []
         self.diagnostics: list = []
         self.resolved = self.unresolved = 0
+        self._lines: Lines | None = None
+
+    def line(self, offset: int) -> int:
+        """The 1-based line of a character offset, for diagnostics."""
+        if self._lines is None:
+            self._lines = Lines(self.text)
+        return self._lines.index(offset) + 1
 
     def span(self, a: int, b: int):
         return self.base.span(self.data, self.to_byte(a), self.to_byte(max(a, b)))
@@ -220,7 +229,7 @@ class _Emit:
                         "program": owner, "view": d.view, "statement": d.op, "data_areas": sorted({u.name for u in usings})}, self.EC.E2))
                     if once("unresolved", d.view):
                         where = "a data area in another file" if usings else "no view this object defines"
-                        self.note(f"view {d.view} at line {self.text.count(chr(10), 0, d.start) + 1} is defined in {where}: its DDM is not read here")
+                        self.note(f"view {d.view} at line {self.line(d.start)} is defined in {where}: its DDM is not read here")
                 continue
             self.resolved += 1
             if once("db", predicate, ddm):
@@ -230,7 +239,7 @@ class _Emit:
             try:
                 found = self.sql.lineage(s.text, None, views=False)  # DB2: read as generic SQL (contract 11.1 item 12)
             except Exception as exc:  # a scanner fault on hostile input: counted, not read
-                self.note(f"SQL at line {self.text.count(chr(10), 0, s.start) + 1} not read: {type(exc).__name__}", "warning")
+                self.note(f"SQL at line {self.line(s.start)} not read: {type(exc).__name__}", "warning")
                 self.unresolved += 1
                 continue
             self.unresolved += found.unresolved
@@ -260,23 +269,59 @@ class _Emit:
             self.note(f"behaviour of {owner['name']} not emitted: {str(exc)[:120]}", "warning")
 
     def scrub_sensitive(self, statements: list) -> None:
-        """A literal assigned to a field whose name says it holds a password, key, user or
-        host is a value that must not be copied: the assignment keeps its target, its value
-        becomes a `nat:sensitive_value` platform node."""
+        """Values of fields whose names say they hold a password, key, user or host are not
+        copied. An assignment of a literal to such a field keeps its target and its value
+        becomes a `nat:sensitive_value` platform node, and so does every other assignment
+        of the same statement (`MOVE 'x' TO #A #PASSWORD`). Any other statement that names
+        such a field (a comparison, a DECIDE value, a database search value, a CALLNAT
+        argument, an output list, Natural SQL) has its string literals replaced the same
+        way, since a literal compared to or passed beside a credential is its value."""
         from repo_intel.compile.behavior import walk
 
+        groups: dict[tuple, list[dict[str, Any]]] = {}
         for node in walk(statements):
-            if node.get("op") not in ("assign", "declare"):
+            if node.get("op") in ("assign", "declare") and isinstance(node.get("at"), list):
+                groups.setdefault(tuple(node["at"]), []).append(node)
+        for nodes in groups.values():
+            if not any(_SENSITIVE.search(_target_name(n)) and _literal_value(n.get("value")) for n in nodes):
                 continue
-            target = node.get("target") or {"name": node.get("name")}
-            while isinstance(target, dict) and target.get("e") == "index":
-                target = target.get("object") or {}  # #PASSWORDS(2): the field #PASSWORDS
-            name = str(target.get("name") or "")
-            value = node.get("value")
-            if _SENSITIVE.search(name) and isinstance(value, dict) and value.get("e") in ("lit", "template", "array", "call"):
-                a, b = node["at"]
-                node["value"] = {"e": "platform", "construct": "nat:sensitive_value"}
+            for node in nodes:
+                if _literal_value(node.get("value")):
+                    a, b = node["at"]
+                    node["value"] = {"e": "platform", "construct": "nat:sensitive_value"}
+                    self.items.append(self.platforms.construct(self.blob, self.base.span(self.data, a, b), "nat:sensitive_value", True, self.EC.E2))
+        self._scrub_block(statements)
+
+    def _scrub_block(self, block: list) -> None:
+        for stmt in block:
+            if not isinstance(stmt, dict):
+                continue
+            own = [{k: v for k, v in stmt.items() if k not in _BLOCKS and k != "at"}]
+            sql = stmt.get("sql") if stmt.get("op") == "query" and isinstance(stmt.get("sql"), str) else None
+            masked = False
+            if _names_sensitive(own) or (sql is not None and _SENSITIVE.search(_SQL_STRING.sub("", sql))):
+                masked = _mask(own)
+                if sql is not None:
+                    stmt["sql"] = _SQL_STRING.sub("''", sql)
+                    masked = masked or stmt["sql"] != sql
+            cases = stmt.get("cases")
+            if isinstance(cases, list):
+                on_sensitive = _names_sensitive([stmt.get("on")])
+                for case in cases:
+                    if isinstance(case, dict) and (on_sensitive or _names_sensitive([case.get("match")])):
+                        masked = _mask([case.get("match")]) or masked
+            if masked and isinstance(stmt.get("at"), list):
+                a, b = stmt["at"]
                 self.items.append(self.platforms.construct(self.blob, self.base.span(self.data, a, b), "nat:sensitive_value", True, self.EC.E2))
+            for k in _BLOCKS:
+                v = stmt.get(k)
+                if isinstance(v, list):
+                    if k in ("cases", "catches"):
+                        for case in v:
+                            if isinstance(case, dict) and isinstance(case.get("body"), list):
+                                self._scrub_block(case["body"])
+                    else:
+                        self._scrub_block(v)
 
     def shapes(self, owner: dict[str, Any], unit: Unit, views: dict[str, str], mode: str, usings) -> None:
         """Transform shapes of the database loops that write: a loop that UPDATEs the record it
@@ -430,6 +475,65 @@ class _Emit:
             self.note(f"DDM {name}: no field lines found")
 
 
+# Keys of a statement that hold statement lists (or cases and catches that hold them).
+_BLOCKS = ("body", "then", "else", "default", "finally", "cases", "catches")
+_SQL_STRING = re.compile(r"'(?:[^'\n]|'')*'")
+
+
+def _target_name(node: dict[str, Any]) -> str:
+    target = node.get("target") or {"name": node.get("name")}
+    while isinstance(target, dict) and target.get("e") == "index":
+        target = target.get("object") or {}  # #PASSWORDS(2): the field #PASSWORDS
+    return str(target.get("name") or "") if isinstance(target, dict) else ""
+
+
+def _literal_value(value: Any) -> bool:
+    return isinstance(value, dict) and value.get("e") in ("lit", "template", "array", "call")
+
+
+def _names_sensitive(values: list) -> bool:
+    """Whether the expressions in `values` name a sensitive field: a variable, a view field,
+    a database loop's descriptor or a query's host variable."""
+    stack = list(values)
+    while stack:
+        x = stack.pop()
+        if isinstance(x, dict):
+            if x.get("e") in ("var", "member") and _SENSITIVE.search(str(x.get("name") or "")):
+                return True
+            if isinstance(x.get("descriptor"), str) and _SENSITIVE.search(x["descriptor"]):
+                return True
+            hosts = x.get("host_vars")
+            if isinstance(hosts, dict) and any(isinstance(h, str) and _SENSITIVE.search(h) for v in hosts.values() if isinstance(v, list) for h in v):
+                return True
+            stack.extend(v for k, v in x.items() if k not in _BLOCKS)
+        elif isinstance(x, list):
+            stack.extend(x)
+    return False
+
+
+def _mask(values: list) -> bool:
+    """Replace the string literals in `values` with `nat:sensitive_value` nodes, in place;
+    whether any was replaced."""
+    found = False
+    stack = list(values)
+    while stack:
+        x = stack.pop()
+        if isinstance(x, list):
+            stack.extend(x)
+        elif isinstance(x, dict):
+            e = x.get("e")
+            text = x.get("text")
+            quoted = isinstance(text, str) and ("'" in text or '"' in text)
+            if (e == "lit" and isinstance(x.get("value"), str)) or e == "template" or (
+                    e == "platform" and x.get("construct") == "nat:unrecognised_expression" and quoted):
+                x.clear()
+                x.update({"e": "platform", "construct": "nat:sensitive_value"})
+                found = True
+                continue
+            stack.extend(v for k, v in x.items() if k not in _BLOCKS)
+    return found
+
+
 def _params(defn: natdata.DataDefinition | None) -> list[dict[str, Any]]:
     """The behaviour unit's parameters: the level-1 fields of the PARAMETER section."""
     if defn is None:
@@ -523,7 +627,7 @@ def _writes(body: list[dict[str, Any]]):
 
 class NaturalSource:
     id = "natural.source"
-    version = "1.0.0"
+    version = "1.1.0"
     SUFFIXES = tuple(OBJECT_TYPES)
 
     def matches(self, path: str) -> bool:

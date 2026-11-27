@@ -75,7 +75,7 @@ def element(rec: str, name: str, schema: str = "EMPSCHM") -> tuple:
 
 def test_pack_is_registered_and_valid():
     assert packs()["idms"] is PACK
-    assert PACK.prefix == "idms" and PACK.version == "1.0.0"
+    assert PACK.prefix == "idms" and PACK.version == "1.1.0"
     assert validate_pack(PACK) == []
     assert {e.id for e in PACK.extractors} == {"idms.source"}
     assert PACK.inputs == (".rkp/inputs/idms/**",)
@@ -247,6 +247,47 @@ def test_values_are_never_copied_except_condition_values():
     blob = json.dumps([o.payload for o in out.observations])
     assert "fixture-secret-value-1" not in blob
     assert entities(out)[element("R", "PW", "V")]["initialized"] is True
+
+
+def test_a_credentials_condition_values_are_not_copied():
+    # short values, which admission's secret detectors would not flag: the pack must blank them itself
+    text = ("ADD SCHEMA NAME IS V.\nADD RECORD NAME IS R.\n    02 DB-PASSWORD PIC X(4).\n       88 PW-DEFAULT VALUE 'k9z'.\n"
+            "    02 AUTH.\n       03 API-TOKEN-CODE PIC X(3).\n          88 TOKEN-TEST VALUE 'q7x' 'w2y'.\n"
+            "    02 ST PIC X.\n       88 SECRET-MODE VALUE 'm4v'.\n    02 KIND PIC X.\n       88 OK VALUE 'Y'.\n")
+    out = run(text, "v.schema")
+    blob = json.dumps([o.payload for o in out.observations])
+    for value in ("k9z", "q7x", "w2y", "m4v"):
+        assert value not in blob
+    ents = entities(out)
+    for field, conditions in (("DB-PASSWORD", ["PW-DEFAULT"]), ("API-TOKEN-CODE", ["TOKEN-TEST"]), ("ST", ["SECRET-MODE"])):
+        attrs = ents[key("CodeList", platform="idms", name=f"V.R.{field}")]
+        assert attrs["redacted"] is True and "values" not in attrs and attrs["conditions"] == conditions
+        assert (element("R", field, "V"), "BINDS_TO", key("CodeList", platform="idms", name=f"V.R.{field}")) in relations(out)
+    assert ents[key("CodeList", platform="idms", name="V.R.KIND")]["values"] == ["Y"]
+    assert "redacted" not in ents[key("CodeList", platform="idms", name="V.R.KIND")]
+
+
+def test_many_areas_and_occurs_clauses_are_read_in_linear_time():
+    import time
+
+    def timed(make, n: int) -> float:
+        text = make(n)
+        best = 1e9
+        for _ in range(2):
+            t = time.perf_counter()
+            run(text, "big.schema")
+            best = min(best, time.perf_counter() - t)
+        return best
+
+    def areas(n: int) -> str:
+        return "ADD SCHEMA NAME IS S.\n" + "".join(f"ADD AREA NAME IS AREA-{i}.\n" for i in range(n))
+
+    def occurs(n: int) -> str:
+        return "ADD SCHEMA NAME IS S.\nADD RECORD NAME IS R.\n    02 A" + " OCCURS 2" * n + " PIC X.\n"
+
+    for make in (areas, occurs):
+        small, large = timed(make, 2000), timed(make, 8000)
+        assert large < max(small, 0.01) * 8  # 4x the input: linear, with room for noise
 
 
 def test_picture_lengths():

@@ -116,6 +116,7 @@ class Source:
     schema: str | None = None
     schema_at: tuple[int, int] = (0, 0)
     areas: list[str] = field(default_factory=list)
+    area_names: set[str] = field(default_factory=set)  # the areas, for a lookup that does not scan the list
     records: list[Record] = field(default_factory=list)
     sets: list[Set] = field(default_factory=list)
     subschemas: list[Subschema] = field(default_factory=list)
@@ -248,7 +249,8 @@ def read(text: str) -> Source:
                     sub.areas.append(name)
                 src.constructs.append(("idms:subschema_area", a, b, True))
                 continue
-            if name and name not in src.areas:
+            if name and name not in src.area_names:
+                src.area_names.add(name)
                 src.areas.append(name)
             src.constructs.append(("idms:area", a, b, True))
             ctx = "area"
@@ -539,7 +541,9 @@ def _element(words: list[Word], rec: Record, stack: list[Element], src: Source) 
                 if k + 2 < n and up[k + 1] == "TO" and up[k + 2].isdigit():
                     el.occurs = int(up[k + 2])
             m = k
-            while m < n and up[m] not in ("DEPENDING",) and up[m] not in ("PIC", "PICTURE", "USAGE", "VALUE", "REDEFINES"):
+            # to DEPENDING, or to the next clause (another OCCURS stops the scan, so a
+            # statement of many clauses is read once)
+            while m < n and up[m] not in ("DEPENDING", "PIC", "PICTURE", "USAGE", "VALUE", "VALUES", "REDEFINES", "OCCURS"):
                 m += 1
             if m + 1 < n and up[m] == "DEPENDING":
                 d = m + 1 + (1 if m + 2 < n and up[m + 1] == "ON" else 0)

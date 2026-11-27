@@ -8,7 +8,9 @@ programs with IDMS DML are left to the COBOL pack. A schema is a
 `Field {table: "idms:<schema>.<record>", name}` (contract 11.1 item 8). Sets are
 `attributes.sets` on their owner record, `[{set, member, order}]` (one entry per member),
 and `attributes.member_of` on each member, `[{set, owner}]`. An element's 88-level
-conditions are a `CodeList` the Field BINDS_TO (item 4). A subschema is a
+conditions are a `CodeList` the Field BINDS_TO (item 4); under an element named for a
+password, secret, token or key the code list keeps its condition names, not its values
+(`redacted: true`). A subschema is a
 `DataSchema {kind: "idms-subschema", name}` that CONTAINS the records it includes, and the
 elements it names, without declaring them: they link when the schema is in the repository.
 
@@ -19,6 +21,7 @@ counted and not declared.
 from __future__ import annotations
 
 import posixpath
+import re
 from typing import Any
 
 from repo_intel.platforms.idms import ddl
@@ -39,7 +42,7 @@ def _decode(data: bytes) -> str:
 
 class IdmsSource:
     id = "idms.source"
-    version = "1.0.0"
+    version = "1.1.0"
 
     def matches(self, path: str) -> bool:
         where = path.replace("\\", "/")
@@ -122,10 +125,15 @@ class IdmsSource:
                     field = term(el.start, el.end, "idms:Element", {"table": f"{PLATFORM}:{layout}", "name": name}, name, fattrs)
                     rel(el.start, el.end, table, P.CONTAINS, field)
                     if el.conditions:
-                        values = [v for _, vs in el.conditions for v in vs]
-                        cattrs: dict[str, Any] = {"values": values[: ddl.MAX_VALUES], "conditions": [c for c, _ in el.conditions]}
-                        if len(values) > ddl.MAX_VALUES:
-                            cattrs["truncated"] = True
+                        cattrs: dict[str, Any] = {"conditions": [c for c, _ in el.conditions]}
+                        if _credential(el):
+                            # the values of a credential's conditions are its values: never copied
+                            cattrs["redacted"] = True
+                        else:
+                            values = [v for _, vs in el.conditions for v in vs]
+                            cattrs["values"] = values[: ddl.MAX_VALUES]
+                            if len(values) > ddl.MAX_VALUES:
+                                cattrs["truncated"] = True
                         cl_name = f"{layout}.{name}"
                         codes = term(el.start, el.end, "idms:Condition", {"platform": PLATFORM, "name": cl_name}, cl_name, cattrs)
                         rel(el.start, el.end, field, P.BINDS_TO, codes)
@@ -152,6 +160,23 @@ class IdmsSource:
         if schema is None and not src.subschemas and not src.records:
             notes.append(base.diagnostic(self.id, "info", f"{posixpath.basename(path)}: no schema, subschema or record statements found"))
         return base.Extraction(items, diagnostics=notes)
+
+
+# Names that say an element holds a credential (as the COBOL pack reads them).
+_CREDENTIAL = re.compile(r"PASSW|PASWD|PSWD|PWD|SECRET|TOKEN|CREDENT|API-?KEY|PASSPHRASE", re.I)
+
+
+def _credential(el: ddl.Element) -> bool:
+    """Whether the element, a group it is in, or one of its condition names is named for
+    a password, secret, token or key."""
+    if any(_CREDENTIAL.search(c) for c, _ in el.conditions):
+        return True
+    e: ddl.Element | None = el
+    while e is not None:
+        if _CREDENTIAL.search(e.name):
+            return True
+        e = e.parent
+    return False
 
 
 def _field_names(elements: list[ddl.Element]):
