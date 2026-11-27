@@ -182,6 +182,23 @@ def _module_index(module_name: str) -> tuple[dict[str, list[tuple[str, frozenset
     return assigns, imports
 
 
+_SOURCES: dict[Any, str] = {}
+
+
+def _source(obj: Any) -> str:
+    """inspect.getsource(obj), kept per object: every extractor's walk reaches the same shared
+    helpers, and getsource tokenises the block again on each call. A loaded function's or
+    class's source does not change while the process runs; a reloaded module gives new objects."""
+    try:
+        return _SOURCES[obj]
+    except KeyError:
+        pass
+    except TypeError:  # an unhashable object: read it each time
+        return inspect.getsource(obj)
+    _SOURCES[obj] = text = inspect.getsource(obj)
+    return text
+
+
 def code_parts(root: Any, skip: frozenset[str] = frozenset()) -> dict[str, Any]:
     """Source text reachable from `root`, keyed by qualified name (see `code_digest`).
 
@@ -266,7 +283,7 @@ def code_parts(root: Any, skip: frozenset[str] = frozenset()) -> dict[str, Any]:
         if label in parts:
             continue
         try:
-            parts[label] = inspect.getsource(obj)
+            parts[label] = _source(obj)
         except (OSError, TypeError):
             parts[label] = label
         if isinstance(obj, types.FunctionType):
