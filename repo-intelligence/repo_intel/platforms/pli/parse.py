@@ -27,7 +27,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable
 
 from repo_intel.platforms.pli import declare as D
-from repo_intel.platforms.pli.common import host_variables, query_node, sql_verb
+from repo_intel.platforms.pli.common import credential_name, host_variables, query_node, sql_verb
 from repo_intel.platforms.pli.lexer import ID, NUM, OP, STR, Token
 
 KEYWORDS = frozenset({
@@ -165,7 +165,7 @@ def collect(toks: list[Token]) -> Info:
         if t.is_("PROC", "PROCEDURE", "ENTRY") and not (a + 1 < b and toks[a + 1].op(*ASSIGN_OPS)):
             info.procs.update(labels)
         elif t.is_("DCL", "DECLARE") and not (a + 1 < b and toks[a + 1].op(*ASSIGN_OPS)):
-            items, _ = D.elements(toks[: b + 1], a + 1)
+            items, _ = D.elements(toks[a: b + 1], 1)  # the statement's own tokens: no copy from token 0
             for e in items:
                 kind = D.kind_of(e)
                 if kind == "data":
@@ -182,7 +182,7 @@ def collect(toks: list[Token]) -> Info:
                     info.builtins.add(e.name)
             for root in D.tree(items):
                 v = D.init_string(root)
-                if v is not None:
+                if v is not None and not credential_name(root.name):
                     info.inits[root.name] = v
     return info
 

@@ -11,7 +11,7 @@ from repo_intel.compile.transforms import validate_shape
 from repo_intel.platforms import packs, validate_pack
 from repo_intel.platforms.easytrieve import PACK
 from repo_intel.platforms.easytrieve.reader import statements
-from test_platform_pli import check_all, constructs, entities, key, of, relations, units
+from test_platform_pli import check_all, constructs, doubling_ratio, entities, key, of, relations, units
 
 FIXTURE = Path(__file__).resolve().parents[1] / "benchmarks" / "fixtures" / "F41-pli-easytrieve"
 PROGRAM = key("Program", platform="mainframe", name="CUSTRPT")
@@ -68,6 +68,7 @@ def test_reports_are_produced():
     ents, rels = entities(out), relations(out)
     report = key("Report", platform="easytrieve", name="CUSTRPT.NORTHRPT")
     r = ents[report]
+    assert r["platform"] == "easytrieve" and r["platform_kind"] == "ezt:Report" and r["fidelity"] == "lossy"  # declared through its term
     assert r["printer"] == "RPTOUT" and r["control"] == ["SRT-REGION"] and r["sum"] == ["SRT-BAL", "WS-OVER"] and r["titles"] == 1 and r["job"] == "CUSTLIST"
     assert r["sequence"] == [{"field": "SRT-REGION", "desc": False}, {"field": "SRT-ID", "desc": False}]
     assert (PROGRAM, "PRODUCES", report) in rels
@@ -193,3 +194,45 @@ def test_output_is_deterministic():
     data = (FIXTURE / "base/ezt/CUSTRPT.ezt").read_bytes()
     a, b = run("x/CUSTRPT.ezt", data), run("x/CUSTRPT.ezt", data)
     assert [o.row() for o in a.observations] == [o.row() for o in b.observations]
+
+
+def test_extraction_is_linear_with_many_fields_lines_and_notes():
+    # Redefinitions looked their base up in a list, LINE fields were checked against a list
+    # and each note counted lines from the start of the file.
+    def make(n: int) -> str:
+        fields = "".join(f"  F{i} * 2 A\n  R{i} F{i} 2 A\n" for i in range(n))
+        job = "".join(f"  SQL PREPARE S{i} FROM :X\n" for i in range(n))
+        lines = "".join(f"  LINE F{i} R{i}\n" for i in range(n))
+        return f"FILE IN1 FB(80 800)\n{fields}JOB INPUT IN1\n{job}REPORT R1 LINESIZE 132\n{lines}"
+
+    out = run("lib/BIG.ezt", make(50))
+    assert sum("dynamic SQL" in d.message for d in out.diagnostics) == 50
+    assert doubling_ratio(lambda t: run("lib/BIG.ezt", t), make, 1200) < 3
+
+
+CREDENTIALS = """FILE IN1 FB(80 800)
+  I-ID      1  8 A
+WS-PASSWD  W  8 A VALUE 'pw4x'
+WS-TOKEN   W  8 A VALUE 'tk9q'
+WS-NAME    W  8 A VALUE 'ACME'
+JOB INPUT IN1 NAME LOGON
+  WS-PASSWD = 'as5y'
+  MOVE 'mb3w' TO WS-TOKEN
+  IF WS-PASSWD EQ 'cp8r'
+     WS-NAME = 'NONE'
+  END-IF
+  CALL SIGNON USING I-ID WS-PASSWD
+"""
+
+
+def test_literals_given_to_credential_named_fields_are_not_copied():
+    out = run("lib/LOGON.ezt", CREDENTIALS)
+    check_all(out)
+    text = str([o.payload for o in out.observations]) + str([d.message for d in out.diagnostics])
+    for value in ("pw4x", "tk9q", "as5y", "mb3w", "cp8r"):  # short values: under 8 characters
+        assert value not in text, value
+    nodes = list(walk(units(out)[0]["body"]))
+    assigns = [n for n in nodes if n.get("op") == "assign"]
+    assert [(n["target"]["name"], n["value"]["value"], n.get("redacted")) for n in assigns] == [
+        ("WS-PASSWD", "", "credential"), ("WS-TOKEN", "", "credential"), ("WS-NAME", "NONE", None)]
+    assert next(n for n in nodes if n.get("op") == "if")["redacted"] == "credential"

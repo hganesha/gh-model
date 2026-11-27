@@ -10,7 +10,7 @@ from repo_intel.platforms import packs, validate_pack
 from repo_intel.platforms.rexx import PACK
 from repo_intel.platforms.rexx.source import strip_comments
 from repo_intel.platforms.rexx.tso import DYN, Command, operands
-from test_platform_pli import check_all, constructs, entities, key, of, relations, units
+from test_platform_pli import check_all, constructs, doubling_ratio, entities, key, of, relations, units
 
 FIXTURE = Path(__file__).resolve().parents[1] / "benchmarks" / "fixtures" / "F41-pli-easytrieve"
 RUNRPT = key("Program", platform="tso", name="RUNRPT")
@@ -161,8 +161,47 @@ def test_a_clist():
 
 
 def test_a_member_without_suffix_is_rexx_by_its_first_comment():
-    rexx = run("lib/clist/DRIVER", "/* REXX */\n\"CALL 'A.B(PGM1)'\"\n")
-    clist = run("lib/clist/DRIVER", "CALL 'A.B(PGM1)'\n")
+    rexx = run("lib/clist/DRIVER", "\n  \n/* REXX */\n\"CALL 'A.B(PGM1)'\"\n")  # the first non-blank line
+    clist = run("lib/clist/DRIVER", "PROC 0\nCALL 'A.B(PGM1)'\n")
     assert entities(rexx)[key("Program", platform="tso", name="DRIVER")]["language"] == "rexx"
     assert entities(clist)[key("Program", platform="tso", name="DRIVER")]["language"] == "clist"
     assert DYN not in str([o.payload for o in rexx.observations])
+    assert entities(run("prod/exec/RUNRPT", "/* rexx driver */\nADDRESS LINKMVS 'CUSTUPD'\n"))[key("Program", platform="tso", name="RUNRPT")]["language"] == "rexx"
+
+
+def test_extraction_is_linear_with_many_notes():
+    # Each note (an INTERPRET, an allocation built at run time) counted lines from the start
+    # of the file.
+    def rexx(n: int) -> str:
+        return "/* REXX */\n" + "".join(f"interpret 'say' x{i}\n\"ALLOC FI(D{i % 90}) DA('\"p\".X') SHR\"\n" for i in range(n))
+
+    def clist(n: int) -> str:
+        return "PROC 0\n" + "".join(f"OPENFILE &D{i}\nSET &A{i} = 1 /* a */ /* b */\n" for i in range(n))
+
+    out = run("rexx/BIG.rexx", rexx(50))
+    assert sum("INTERPRET" in d.message for d in out.diagnostics) == 50
+    assert doubling_ratio(lambda t: run("rexx/BIG.rexx", t), rexx, 2000) < 3
+    assert sum("OPENFILE" in d.message for d in run("prod/clist/BIG", clist(50)).diagnostics) == 50
+    assert doubling_ratio(lambda t: run("prod/clist/BIG", t), clist, 2000) < 3
+
+
+def test_a_member_without_suffix_and_without_evidence_gives_nothing():
+    script = "#!/bin/sh\nset -e\nexit 0\n"
+    x = PACK.extractors[0]
+    assert x.matches("docker/exec/entrypoint")  # the path alone cannot tell
+    for path, text in (
+        ("docker/exec/entrypoint", script),  # a shell script in an exec directory
+        ("tools/clist/entrypoint", script),  # starts with #!, even in a CLIST directory
+        ("tools/clist/ENTRY", "#!/bin/sh\nPROC 0\nEXIT CODE(0)\n"),
+        ("prod/exec/NOTES", "Run the nightly batch first.\nThen the report.\n"),  # no REXX comment
+        ("prod/sysproc/README", "set -e\nexit 0\nwrite the docs\n"),  # no CLIST statement: lower-case shell words
+        ("prod/clist/CALLONLY", "CALL 'A.B(PGM1)'\n"),  # a TSO command alone is not a CLIST statement
+    ):
+        out = run(path, text)
+        assert out.observations == [] and out.diagnostics == [] and out.parsed is False, path
+    # One CLIST statement is enough in a CLIST directory; a comment holding one is not.
+    for body in ("CONTROL NOMSG", "SET &A = 1", "&A = 1", "WRITE HELLO", "ALLOC FI(X) DA('A.B') SHR", "EXIT", "EXIT CODE(4)", "L1: GOTO L1"):
+        out = run("prod/clist/ONE", body + "\n")
+        assert entities(out)[key("Program", platform="tso", name="ONE")]["language"] == "clist", body
+    assert run("prod/clist/ONE", "/* CONTROL NOMSG */\nCALL 'A.B(P)'\n").observations == []
+    assert run("prod/exec/ONE", "CONTROL NOMSG\n").observations == []  # not a CLIST directory

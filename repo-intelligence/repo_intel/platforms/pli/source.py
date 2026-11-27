@@ -32,7 +32,7 @@ from __future__ import annotations
 from typing import Any
 
 from repo_intel.platforms.pli import declare as D
-from repo_intel.platforms.pli.common import MAINFRAME, Emit, dd_mode, decode, member_name
+from repo_intel.platforms.pli.common import MAINFRAME, Emit, dd_mode, decode, member_name, scrub_credentials
 from repo_intel.platforms.pli.lexer import source, tokens
 from repo_intel.platforms.pli.parse import Proc, Result, parse
 
@@ -43,7 +43,7 @@ MAX_BYTES = 4 * 1024 * 1024
 
 class PliSource:
     id = "pli.source"
-    version = "1.0.0"
+    version = "1.1.0"
 
     def matches(self, path: str) -> bool:
         return path.lower().endswith(SUFFIXES)
@@ -182,9 +182,9 @@ def _programs(e: Emit, res: Result) -> None:
         owner[id(t)] = refs[id(t)]
         names = _symbol_names(t)
         by_name[id(t)] = {}
-        stack = list(t.children)
+        stack = list(reversed(t.children))  # depth first, in source order: the next is at the end
         while stack:
-            p = stack.pop(0)
+            p = stack.pop()
             name = names[id(p)]
             attrs = {"language": LANGUAGE}
             if p.params:
@@ -198,11 +198,15 @@ def _programs(e: Emit, res: Result) -> None:
             owner[id(p)] = sym
             for label in [p.name, *p.labels, *p.entries]:
                 by_name[id(t)].setdefault(label, sym)
-            stack = list(p.children) + stack
+            stack += reversed(p.children)
     for p in res.procs:
+        scrub_credentials(p.body)
         params = [{"name": x} for x in p.params]
         e.behavior(p.start, p.end, owner[id(p)], LANGUAGE, p.body, params, kind="function")
 
+    top_by_name: dict[str, Proc] = {}
+    for x in res.tops:
+        top_by_name.setdefault(x.name, x)
     for f in res.facts:
         t = top_of(f.proc)
         prog = refs[id(t)]
@@ -216,9 +220,9 @@ def _programs(e: Emit, res: Result) -> None:
                 e.construct(a, b, "pli:call", True)
             elif f.data.get("via") is None and (name in res.info.entry_vars or name in _params(f.proc) or (name in res.info.data and name not in res.info.entries)):
                 e.construct(a, b, "pli:call_dynamic", False)
-                e.note(f"CALL {name} at line {e.text.count(chr(10), 0, f.start) + 1} goes through a variable or parameter: the program is decided at run time")
-            elif name in {x.name for x in res.tops} and name != t.name:
-                e.rel(f.start, f.end, prog, P.CALLS, refs[id(next(x for x in res.tops if x.name == name))])
+                e.note(f"CALL {name} at line {e.line(f.start)} goes through a variable or parameter: the program is decided at run time")
+            elif name in top_by_name and name != t.name:
+                e.rel(f.start, f.end, prog, P.CALLS, refs[id(top_by_name[name])])
                 if f.data.get("via") is None:
                     e.construct(a, b, "pli:call", True)
             else:
@@ -227,7 +231,7 @@ def _programs(e: Emit, res: Result) -> None:
                 if f.data.get("via") is None:
                     e.construct(a, b, "pli:call", True)
         elif f.kind == "dynamic_call":
-            e.note(f"EXEC CICS at line {e.text.count(chr(10), 0, f.start) + 1} names its program through a variable: not resolved")
+            e.note(f"EXEC CICS at line {e.line(f.start)} names its program through a variable: not resolved")
         elif f.kind == "include":
             member = f.data["member"]
             for target in ([t] if f.proc is not None else res.tops):
@@ -237,7 +241,7 @@ def _programs(e: Emit, res: Result) -> None:
                 e.embedded_sql(refs[id(target)], f.data["text"], f.data["offset"])
         elif f.kind == "dynamic_sql":
             e.unresolved += 1
-            e.note(f"dynamic SQL at line {e.text.count(chr(10), 0, f.start) + 1}: its statement is built at run time and is not read for tables")
+            e.note(f"dynamic SQL at line {e.line(f.start)}: its statement is built at run time and is not read for tables")
         elif f.kind == "map" and f.data.get("send"):
             name = f"{f.data['mapset']}.{f.data['map']}"
             e.rel(f.start, f.end, prog, P.RENDERS, e.base.ref(K.SCREEN, {"platform": "bms", "name": name}, name, declare=False))

@@ -16,6 +16,7 @@ discovery runs while that package loads.
 
 from __future__ import annotations
 
+import bisect
 import re
 from typing import Any
 
@@ -100,6 +101,19 @@ class Emit:
         self.diagnostics: list = []
         self.resolved = self.unresolved = 0
         self._seen_rel: set[str] = set()
+        self._line_starts: list[int] | None = None
+
+    def line(self, a: int) -> int:
+        """The 1-based line of character offset `a`, by bisecting the line starts (found once
+        per file), so a diagnostic does not count newlines from the start of the file."""
+        if self._line_starts is None:
+            starts = [0]
+            at = self.text.find("\n")
+            while at >= 0:
+                starts.append(at + 1)
+                at = self.text.find("\n", at + 1)
+            self._line_starts = starts
+        return bisect.bisect_right(self._line_starts, max(0, a))
 
     # -------------------------------------------------------------- spans
 
@@ -181,7 +195,7 @@ class Emit:
         try:
             found = self.sql.lineage(blanked, self.sql.DIALECT[DB2])
         except Exception as exc:  # a scanner fault on odd input: counted, not read
-            self.note(f"SQL at line {self.text.count(chr(10), 0, offset) + 1} not read: {type(exc).__name__}", "warning")
+            self.note(f"SQL at line {self.line(offset)} not read: {type(exc).__name__}", "warning")
             self.unresolved += 1
             return
         self.unresolved += found.unresolved
@@ -207,6 +221,83 @@ def query_node(at: list[int], sql: str) -> dict[str, Any]:
     if params:
         node["params"] = params
     return node
+
+
+# Names that say a variable holds a credential: a password, secret, token, credential or key.
+# `KEY` counts at the end of a name part (`API_KEY`, `ENCKEY`, `CUST-KEY`), not inside a
+# longer word (`KEYED`, `KEYTO`). A literal given to such a name is never copied (rule 7).
+_CREDENTIAL = re.compile(r"PASSW|PASWD|PSWD|PWD|SECRET|TOKEN|CREDENT|PASSPHRASE|KEY(?![A-Z0-9])", re.I)
+_NESTED = ("body", "then", "else", "cases", "default", "catches", "finally")
+
+
+def credential_name(name: str) -> bool:
+    return bool(_CREDENTIAL.search(name))
+
+
+def _names(node: Any, out: set[str]) -> None:
+    """Variable and member names a statement reads or sets, outside its nested statements."""
+    if isinstance(node, list):
+        for x in node:
+            _names(x, out)
+    elif isinstance(node, dict):
+        if node.get("e") in ("var", "member", "name") and isinstance(node.get("name"), str):
+            out.add(node["name"])
+        if node.get("op") == "declare" and isinstance(node.get("name"), str):
+            out.add(node["name"])
+        for k, v in node.items():
+            if k not in _NESTED:
+                _names(v, out)
+
+
+def _blank(node: Any, done: set[int], only_done: bool = False) -> int:
+    """Blank the string literals of a statement outside its nested statements and return how
+    many it holds; `done` keeps the literals blanked so far. With `only_done`, count only
+    those, blanking nothing: a literal one statement shares with another (`A, PWD = 'x'`
+    gives two assignments of one value) is redacted in both."""
+    n = 0
+    if isinstance(node, list):
+        for x in node:
+            n += _blank(x, done, only_done)
+    elif isinstance(node, dict):
+        if node.get("e") == "lit" and isinstance(node.get("value"), str) and node.get("type") in ("string", "binary", None):
+            if only_done:
+                return 1 if id(node) in done else 0
+            node["value"] = ""
+            done.add(id(node))
+            return 1
+        for k, v in node.items():
+            if k not in _NESTED:
+                n += _blank(v, done, only_done)
+    return n
+
+
+def scrub_credentials(body: list[Any], done: set[int] | None = None) -> None:
+    """Blank the string literals of each behaviour statement that names a credential-named
+    variable (`DCL PWD CHAR(8) INIT('...')`, `PWD = '...'`, `MOVE '...' TO WS-TOKEN`) and
+    mark it `redacted`, as the cobol pack does: names are kept, values never (rule 7)."""
+    done = set() if done is None else done
+    for stmt in body:
+        if not isinstance(stmt, dict):
+            continue
+        names: set[str] = set()
+        _names(stmt, names)
+        flagged = any(credential_name(n) for n in names)
+        blanked = _blank(stmt, done, only_done=not flagged)
+        for case in stmt.get("cases") or []:  # `SELECT (PWD); WHEN ('...')`: the values compared
+            if isinstance(case, dict):
+                blanked += _blank(case.get("match"), done, only_done=not flagged)
+        if blanked:
+            stmt["redacted"] = "credential"
+        for k in _NESTED:
+            v = stmt.get(k)
+            if not isinstance(v, list):
+                continue
+            if k in ("cases", "catches"):
+                for case in v:
+                    if isinstance(case, dict) and isinstance(case.get("body"), list):
+                        scrub_credentials(case["body"], done)
+            else:
+                scrub_credentials(v, done)
 
 
 def dd_mode(modes: set[str]) -> str | None:
