@@ -5,7 +5,9 @@ The script's top level is one unit (`open_code`) owned by its Program; a functio
 
 - `NAME=value`, `export`, `readonly` -> `assign`; `local`, `typeset`, `declare` -> `declare`;
   a value assigned to a variable named like a password, key, user, host or connection is
-  never copied (`sh:sensitive-value`).
+  never copied (`sh:sensitive-value`), nor is one assigned to an environment variable
+  (`export`, `typeset -x`, `declare -x`, or `NAME=value cmd`): its value is
+  `{e: platform, construct: sh:export}` (contract 2.2).
 - `if`/`elif`/`else` -> `if`; `[ ]`, `[[ ]]` and `test` become comparisons and file tests;
   any other condition command runs first and the test is its exit status (`$? == 0`).
 - `a && b` and `a || b` -> `a`, then `if $? == 0` (or `!= 0`) `b`.
@@ -147,11 +149,32 @@ def _after(w: Word, n: int) -> Word | None:
 # ------------------------------------------------------------------ lowering
 
 
+def exported_names(script: posix.Script, text: str) -> set[str]:
+    """Names the script puts in the environment: `export NAME[=...]`, `typeset -x` and
+    `declare -x`. Their values are configuration, so no assignment to them is copied."""
+    names: set[str] = set()
+
+    def visit(n: posix.Node, depth: int) -> None:
+        if not isinstance(n, Command) or not n.words:
+            return
+        head = n.words[0].literal()
+        flags = [w.literal() or "" for w in n.words[1:] if (w.literal() or "").startswith("-")]
+        if head == "export" or (head in ("typeset", "declare") and any("x" in f for f in flags)):
+            for w in n.words[1:]:
+                m = re.match(r"([A-Za-z_]\w*)", w.raw(text))
+                if m and not (w.literal() or "").startswith("-"):
+                    names.add(m.group(1))
+
+    _walk(script.body, 0, visit)
+    return names
+
+
 class Lowering:
-    def __init__(self, ctx: Context, text: str):
+    def __init__(self, ctx: Context, text: str, exported: set[str] | None = None):
         self.ctx = ctx
         self.out = ctx.out
         self.text = text
+        self.exported = exported or set()
         ctx.expand_cmd = lambda p: SCRIPT_DIR if script_dir_cmd(p.text) else None
 
     def at(self, n: Any) -> list[int]:
@@ -374,6 +397,11 @@ class Lowering:
     def command(self, c: Command, stdin: Expanded | None = None, stdin_at: tuple[int, int] | None = None) -> list[dict[str, Any]]:
         if not c.words:
             return [self.assign(name, value, a, b) for name, value, a, b in c.assigns]
+        # `NAME=value cmd`: NAME is in the command's environment, so it is an export.
+        env = [self.assign(name, value, a, b, export=True) for name, value, a, b in c.assigns]
+        return env + self._command(c, stdin, stdin_at)
+
+    def _command(self, c: Command, stdin: Expanded | None = None, stdin_at: tuple[int, int] | None = None) -> list[dict[str, Any]]:
         head = c.words[0]
         name = head.literal()
         if name is None:
@@ -458,10 +486,15 @@ class Lowering:
 
     def assign(self, name: str, value: Word | None, a: int, b: int, local: bool = False, export: bool = False) -> dict[str, Any]:
         sensitive = bool(_SENSITIVE.search(name))
+        export = export or name in self.exported
         self.out.construct("sh:sensitive-value" if sensitive else "sh:export" if export else "sh:assignment", a, b, True)
         expr = self.word(value, sensitive)
         if value is not None and len(value.parts) == 1 and value.parts[0].kind == "cmd" and script_dir_cmd(value.parts[0].text):
             expr = {"e": "name", "name": "script_dir", "kind": "builtin"}
+        if export and not sensitive:
+            # An environment variable is configuration (contract 2.2): its name is kept, its
+            # value never copied. The resolver still reads it to name files and tables.
+            expr = {"e": "platform", "construct": "sh:export"}
         if local:
             return {"op": "declare", "at": self.out.at(a, b), "name": name, "scope": "local", "value": expr}
         node = {"op": "assign", "at": self.out.at(a, b), "target": var_expr(name), "value": expr}
@@ -471,7 +504,7 @@ class Lowering:
 
 
 def lower(ctx: Context, script: posix.Script) -> list[dict[str, Any]]:
-    return Lowering(ctx, ctx.out.text).block(script.body)
+    return Lowering(ctx, ctx.out.text, exported_names(script, ctx.out.text)).block(script.body)
 
 
 __all__ = ["Lowering", "lower", "resolver", "script_dir_cmd"]

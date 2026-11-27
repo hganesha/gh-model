@@ -53,6 +53,12 @@ def decode(data: bytes) -> str:
     return data.decode("latin-1")
 
 
+def pack_input(path: str) -> bool:
+    """Whether `path` is under `.rkp/inputs/`: a file there belongs to the pack its next
+    directory names (Ab Initio graph scripts, scheduler exports), not to the shell pack."""
+    return path.startswith(".rkp/inputs/")
+
+
 def table_ref(name: str, declare: bool = True) -> dict[str, Any]:
     return _base().ref(K.TABLE, {"datastore": "default", "name": name}, name, declare=declare)
 
@@ -244,4 +250,4 @@ def param_name(var: str) -> str:
     return re.sub(r"\W", "_", var).lower() or "value"
 
 
-__all__ = ["E1", "E2", "Expanded", "K", "Out", "P", "PLACEHOLDER", "Piece", "artifact_ref", "decode", "param_name", "program_ref", "table_ref"]
+__all__ = ["E1", "E2", "Expanded", "K", "Out", "P", "PLACEHOLDER", "Piece", "artifact_ref", "decode", "pack_input", "param_name", "program_ref", "table_ref"]

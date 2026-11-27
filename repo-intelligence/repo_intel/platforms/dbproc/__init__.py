@@ -9,7 +9,7 @@ Keys:
 - a table: `Table {datastore: "default", name}`, as `sql_lineage` names it;
 - a called procedure: `Program {platform: <same engine>, name}`, not declared (CALLS);
 - the Program `sql_lineage` declares for the same procedure in a `.sql` file, `{platform:
-  "sql" | "tsql", name}`, is ALIAS_OF the engine's Program.
+  "sql" | "teradata" | "tsql", name}` (the platform its scanner guesses), is ALIAS_OF the engine's Program.
 
 Each routine has one behaviour unit (language `db2`, `netezza` or `sybase`; kind `function`
 or `trigger`). Transform shapes come from its `query` nodes, as for every behaviour unit.

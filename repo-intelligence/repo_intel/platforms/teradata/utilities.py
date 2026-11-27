@@ -73,6 +73,9 @@ class Utilities:
 
     id = "teradata.utilities"
     version = "1.0.0"
+    # `data.sql_lineage` also reads `.tpt` files, as SQL. Once the foundation honours this, a
+    # file this extractor reads as a TPT job is not read again as a SQL script.
+    supersedes_when_parsed = ("data.sql_lineage",)
     # .fastload, .mload and .fexp are the `teradata` language (contract 10.1.1); the others are
     # names sites use. The utility is recognised by content, so another file with one of these
     # suffixes is left alone.

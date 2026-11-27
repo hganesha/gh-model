@@ -7,7 +7,7 @@ import re
 
 from repo_intel.platforms.shell import posix
 from repo_intel.platforms.shell.commands import Context
-from repo_intel.platforms.shell.emit import Out, decode
+from repo_intel.platforms.shell.emit import Out, decode, pack_input
 from repo_intel.platforms.shell.lower import lower, resolver
 from repo_intel.platforms.shell.vocabulary import PLATFORM
 
@@ -23,11 +23,11 @@ class ShellSource:
     """`.sh`, `.ksh`, `.bash`: the script as a Program, its behaviour, and what its commands do."""
 
     id = "shell.source"
-    version = "1.0.0"
+    version = "1.1.0"
     SUFFIXES = (".sh", ".ksh", ".bash")
 
     def matches(self, path: str) -> bool:
-        return path.lower().endswith(self.SUFFIXES)
+        return path.lower().endswith(self.SUFFIXES) and not pack_input(path)
 
     def extract(self, path: str, data: bytes, blob: str):
         text = decode(data)

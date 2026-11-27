@@ -126,6 +126,11 @@ def arg_expr(arg: Arg, sensitive: bool = False) -> dict[str, Any]:
     return {"e": "template", "parts": [p.text if p.kind == "lit" else part_expr(p) for p in arg.parts]}
 
 
+def _job_ref(framework: str, name: str) -> dict[str, Any]:
+    """A Job another pack declares, referred to without declaring it."""
+    return {"kind": "Job", "natural_key": {"framework": framework, "name": name}, "name": posixpath.basename(name), "declare": False}
+
+
 def literal(arg: Arg | None) -> str | None:
     if arg is None or not all(p.kind == "lit" for p in arg.parts):
         return None
@@ -242,8 +247,9 @@ def step(ctx: Context, cmd: Cmd, tool: str, construct: str, targets: list[dict[s
             "task": name}
 
 
-def file_step(ctx: Context, cmd: Cmd, tool: str, construct: str, arg: Arg | None, make_ref: Callable[[str], dict[str, Any]], attrs: dict[str, Any] | None = None) -> dict[str, Any]:
-    """A step that runs a file: RUNS the ref `make_ref` gives each repository path it can name."""
+def file_step(ctx: Context, cmd: Cmd, tool: str, construct: str, arg: Arg | None, make_ref: Callable[[str], dict[str, Any] | list[dict[str, Any]]], attrs: dict[str, Any] | None = None) -> dict[str, Any]:
+    """A step that runs a file: RUNS the ref (or each of the refs) `make_ref` gives each
+    repository path it can name."""
     value = ctx.value(arg)
     if value is None:
         return step(ctx, cmd, tool, construct, [], tool, attrs, dynamic=True)
@@ -251,7 +257,11 @@ def file_step(ctx: Context, cmd: Cmd, tool: str, construct: str, arg: Arg | None
     base = posixpath.basename(value.replace("\\", "/")) or tool
     if not candidates:
         ctx.out.note(f"{tool} runs {base} from outside the repository: not linked")
-    return step(ctx, cmd, tool, construct, [make_ref(c) for c in candidates], f"{tool}:{base}", attrs)
+    targets: list[dict[str, Any]] = []
+    for c in candidates:
+        made = make_ref(c)
+        targets += made if isinstance(made, list) else [made]
+    return step(ctx, cmd, tool, construct, targets, f"{tool}:{base}", attrs)
 
 
 def _options(args: list[Arg], ctx: Context, with_value: set[str], prefix: str = "-") -> tuple[dict[str, Arg | None], list[Arg]]:
@@ -334,22 +344,31 @@ def _tool(ctx: Context, cmd: Cmd, tool: str) -> dict[str, Any] | None:
         wf = ctx.value(pos[-1]) if pos else None
         if not wf or not re.fullmatch(r"[\w.$-]+", wf):
             return step(ctx, cmd, "pmcmd", construct, [], "pmcmd", dynamic=True)
+        # The informatica pack keys a workflow `<folder>/<workflow>`. Without a folder the file
+        # gives, the workflow cannot be named, so the step stays dynamic and links nothing.
         folder = ctx.value(opts.get("-f") or opts.get("-folder"))
-        ref = {"kind": "Job", "natural_key": {"framework": "informatica", "name": wf}, "name": wf, "declare": False}
-        return step(ctx, cmd, "pmcmd", construct, [ref], f"pmcmd:{wf}", {"folder": folder})
+        if not folder or not re.fullmatch(r"[\w.$-]+", folder):
+            ctx.out.note("pmcmd starts a workflow whose folder is not in the file: the workflow is not resolved")
+            return step(ctx, cmd, "pmcmd", construct, [], "pmcmd", {"workflow": wf}, dynamic=True)
+        name = f"{folder}/{wf}"
+        ref = {"kind": "Job", "natural_key": {"framework": "informatica", "name": name}, "name": wf, "declare": False}
+        return step(ctx, cmd, "pmcmd", construct, [ref], f"pmcmd:{name}", {"folder": folder, "workflow": wf})
     if base == "dtexec":
         opts, _ = _options(cmd.args, ctx, _DTEXEC_VALUE, prefix="/-")
         file_arg = opts.get("/f") or opts.get("/file") or opts.get("-f") or opts.get("-file")
         if file_arg is not None:
-            return file_step(ctx, cmd, "dtexec", construct, file_arg, artifact_ref)
+            # The ssis pack keys a package's Job by its .dtsx path in the repository.
+            return file_step(ctx, cmd, "dtexec", construct, file_arg, lambda p: [artifact_ref(p), _job_ref("ssis", p)])
         stored = opts.get("/sql") or opts.get("/sq") or opts.get("/isserver") or opts.get("/is") or opts.get("-sql") or opts.get("-isserver")
         value = ctx.value(stored)
         if value is None:
             return step(ctx, cmd, "dtexec", construct, [], "dtexec", dynamic=True)
         package = re.split(r"[\\/]", value.strip("\"'"))[-1]
         package = re.sub(r"(?i)\.dtsx$", "", package)
-        ref = {"kind": "Job", "natural_key": {"framework": "ssis", "name": package}, "name": package, "declare": False}
-        return step(ctx, cmd, "dtexec", construct, [ref], f"dtexec:{package}", {"catalog_path": value.replace("\\", "/")})
+        # A package stored in msdb or the SSIS catalog has no repository path, and the ssis
+        # pack keys a package's Job by that path: the step keeps the catalog path only.
+        ctx.out.note("dtexec runs a package stored in msdb or the SSIS catalog: it has no path in the repository and is not linked")
+        return step(ctx, cmd, "dtexec", construct, [], f"dtexec:{package}", {"catalog_path": value.replace("\\", "/")})
     if base == "tbuild":
         opts, _ = _options(cmd.args, ctx, {"-f", "-v", "-u", "-j", "-l", "-c", "-r", "-z", "-h", "-s", "-o", "-t", "-n", "-m", "-p", "-e", "-x"})
         return file_step(ctx, cmd, "tbuild", construct, opts.get("-f"), lambda p: program_ref("teradata", p, declare=False))
@@ -457,7 +476,7 @@ def sql_text(ctx: Context, cmd: Cmd, tool: str, x: Expanded) -> list[dict[str, A
             if x.dynamic_in(s + m.start(1), s + m.end(1)):
                 out.note(f"{tool} calls a procedure named at run time: not resolved")
                 out.unresolved += 1
-                body.append({"op": "call", "at": out.at(a, b), "call": {"e": "call", "callee": {"e": "platform", "construct": "sql.dynamic"}}})
+                body.append({"op": "call", "at": out.at(a, b), "call": {"e": "call", "callee": {"e": "platform", "construct": "sh:sql.dynamic"}}})
             else:
                 body.append(_procedure_call(ctx, engine, m.group(1), name_a, name_b))
             continue
@@ -509,6 +528,11 @@ def _procedure_call(ctx: Context, engine: str, raw: str, a: int, b: int) -> dict
     platform = _ENGINE_PLATFORM.get(engine)
     if platform and PLACEHOLDER not in name:
         ctx.out.rel(a, b, ctx.me, P.CALLS, program_ref(platform, name, declare=False))
+        if engine == "oracle" and name.count(".") == 1:
+            # `a.b` names a schema's procedure or a package's: the plsql pack declares the
+            # second as Symbol {oracle, program: a, name: b}. Each links only when declared.
+            package, member = name.split(".")
+            ctx.out.rel(a, b, ctx.me, P.CALLS, ctx.out.base.ref(K.SYMBOL, {"platform": "oracle", "program": package, "name": member}, member, declare=False))
     return {"op": "call", "at": ctx.out.at(a, b), "call": {"e": "call", "callee": {"e": "name", "name": name, "kind": "procedure"}}}
 
 
@@ -607,7 +631,9 @@ def _sql_client(ctx: Context, cmd: Cmd, tool: str) -> list[dict[str, Any]]:
     nodes: list[dict[str, Any]] = []
     script = _script_file(ctx, cmd, tool)
     if script is not None:
-        nodes.append(file_step(ctx, cmd, tool, "sh:sql.client-file", script, artifact_ref))
+        # The hadoop pack declares a Hive or Impala script as Program {hive, <path>}.
+        make = (lambda p: [artifact_ref(p), program_ref("hive", p, declare=False)]) if tool in ("hive", "beeline", "impala-shell") else artifact_ref
+        nodes.append(file_step(ctx, cmd, tool, "sh:sql.client-file", script, make))
         ctx.out.construct(construct, cmd.start, cmd.end, True)
     inline = _inline_sql(ctx, cmd, tool)
     if inline is None and tool == "db2" and script is None and cmd.stdin is None:
