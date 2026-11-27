@@ -1,0 +1,112 @@
+{
+  "fixture": "F40-ibmi-rpg",
+  "description": "An IBM i customer desk kept as source members: a physical file with a VALUES list and a key, a logical file over it with a select test, a display file with two record formats (an input field, fields referring to the physical file, command keys, constants), a printer file, a fixed-form RPG IV inquiry (F-specs, *ENTRY PLIST, DOW, EXFMT, CHAIN with a resulting indicator, a subroutine), a fully free SQLRPGLE update (a printer file, embedded SELECT INTO, UPDATE and INSERT, an EXTPGM prototype and a procedure) and the CL program that calls the inquiry, submits the update to batch, overrides a file, reads and changes a data area, monitors messages and calls a program it names at run time. 'since' names the milestone whose compiler must produce the item.",
+  "entities": [
+    {"kind": "Program", "natural_key": {"platform": "mainframe", "name": "CUSTINQ"}, "since": "M2", "attributes": {"language": "rpg", "rpg_version": "IV", "form": ["fixed"], "params": ["pcust"], "platform": "ibmi", "platform_kind": "ibmi:RpgProgram"}},
+    {"kind": "Program", "natural_key": {"platform": "mainframe", "name": "CUSTUPD"}, "since": "M2", "attributes": {"language": "rpg", "form": ["free", "fully_free"], "sql": true, "params": ["pcust", "plimit"]}},
+    {"kind": "Program", "natural_key": {"platform": "mainframe", "name": "CUSTJOB"}, "since": "M2", "attributes": {"language": "cl", "params": ["cust", "limit"], "monmsg": 1, "platform_kind": "ibmi:ClProgram", "overrides": [{"command": "OVRDBF", "file": "CUSTMAST", "tofile": "CUSTMAST", "library": "CUSTLIB", "line": 11}, {"command": "DLTOVR", "file": "CUSTMAST", "line": 23}]}},
+    {"kind": "Symbol", "natural_key": {"platform": "mainframe", "program": "CUSTINQ", "name": "INIT"}, "since": "M2", "attributes": {"symbol_kind": "subroutine", "platform_kind": "ibmi:Subroutine"}},
+    {"kind": "Symbol", "natural_key": {"platform": "mainframe", "program": "CUSTUPD", "name": "LOGCHANGE"}, "since": "M2", "attributes": {"symbol_kind": "procedure", "params": ["cust", "amount"], "platform_kind": "ibmi:Procedure"}},
+    {"kind": "Table", "natural_key": {"datastore": "default", "name": "custmast"}, "since": "M2", "attributes": {"record_format": "CUSTREC", "keys": ["cusno"], "unique": true, "platform_kind": "ibmi:PhysicalFile"}},
+    {"kind": "Field", "natural_key": {"table": "custmast", "name": "cusno"}, "since": "M2", "attributes": {"type": "DECIMAL(7, 0)", "dds_type": "P", "bytes": 4, "offset": 0, "key": 1}},
+    {"kind": "Field", "natural_key": {"table": "custmast", "name": "cusname"}, "since": "M2", "attributes": {"type": "CHAR(30)", "offset": 4}},
+    {"kind": "Field", "natural_key": {"table": "custmast", "name": "cuslimit"}, "since": "M2", "attributes": {"type": "DECIMAL(9, 2)", "bytes": 5, "offset": 34}},
+    {"kind": "Field", "natural_key": {"table": "custmast", "name": "cusstat"}, "since": "M2", "attributes": {"type": "CHAR(1)", "offset": 39}},
+    {"kind": "CodeList", "natural_key": {"platform": "ibmi", "name": "custmast.cusstat"}, "since": "M2", "attributes": {"values": ["A", "I", "H"], "platform_kind": "ibmi:FieldValues"}},
+    {"kind": "DataSchema", "natural_key": {"kind": "ibmi-lf", "name": "custl1"}, "since": "M2", "attributes": {"based_on": ["custmast"], "keys": ["cusname"], "select_omit": [{"type": "select", "field": "cusstat", "tests": ["COMP(EQ 'A')"]}], "platform_kind": "ibmi:LogicalFile"}},
+    {"kind": "Table", "natural_key": {"datastore": "default", "name": "custhist"}, "since": "M2"},
+    {"kind": "Screen", "natural_key": {"platform": "ibmi", "name": "CUSTDSP.CUSTINQ1"}, "since": "M2", "attributes": {"file": "CUSTDSP", "record_format": "CUSTINQ1", "command_keys": ["CA03"], "constants": 2, "platform_kind": "ibmi:DisplayRecord"}},
+    {"kind": "Screen", "natural_key": {"platform": "ibmi", "name": "CUSTDSP.CUSTINQ2"}, "since": "M2", "attributes": {"command_keys": ["CA03", "CA12"]}},
+    {"kind": "Form", "natural_key": {"screen": "CUSTDSP.CUSTINQ1", "name": "CUSTINQ1"}, "since": "M2", "attributes": {"fields": ["CUSNO"], "platform_kind": "ibmi:DisplayForm"}},
+    {"kind": "Form", "natural_key": {"screen": "CUSTDSP.CUSTINQ2", "name": "CUSTINQ2"}, "since": "M2", "attributes": {"fields": ["CUSLIMIT", "CUSSTAT"]}},
+    {"kind": "UIControl", "natural_key": {"container": "CUSTDSP.CUSTINQ1", "name": "CUSNO"}, "since": "M2", "attributes": {"row": 5, "column": 20, "usage": "both", "length": 7, "dds_type": "Y", "platform_kind": "ibmi:DisplayField"}},
+    {"kind": "UIControl", "natural_key": {"container": "CUSTDSP.CUSTINQ1", "name": "MSG"}, "since": "M2", "attributes": {"row": 23, "column": 2, "usage": "output"}},
+    {"kind": "UIControl", "natural_key": {"container": "CUSTDSP.CUSTINQ2", "name": "CUSNO"}, "since": "M2", "attributes": {"row": 3, "usage": "output", "reference": true}},
+    {"kind": "UIControl", "natural_key": {"container": "CUSTDSP.CUSTINQ2", "name": "CUSNAME"}, "since": "M2"},
+    {"kind": "UIControl", "natural_key": {"container": "CUSTDSP.CUSTINQ2", "name": "CUSLIMIT"}, "since": "M2", "attributes": {"usage": "both"}},
+    {"kind": "UIControl", "natural_key": {"container": "CUSTDSP.CUSTINQ2", "name": "CUSSTAT"}, "since": "M2"},
+    {"kind": "UIControl", "natural_key": {"container": "CUSTDSP.CUSTINQ2", "name": "MSG"}, "since": "M2", "attributes": {"conditioned": true}},
+    {"kind": "CodeList", "natural_key": {"platform": "ibmi", "name": "CUSTDSP.CUSTINQ2.CUSSTAT"}, "since": "M2", "attributes": {"values": ["A", "I", "H"]}},
+    {"kind": "Report", "natural_key": {"platform": "ibmi", "name": "CUSTRPT"}, "since": "M2", "attributes": {"record_formats": [{"name": "RPTHEAD", "fields": []}, {"name": "RPTLINE", "fields": ["CUSNO", "CUSNAME", "CUSLIMIT"]}], "platform_kind": "ibmi:PrinterFile"}},
+    {"kind": "Artifact", "natural_key": {"path": "qrpglesrc/CUSTINQ.rpgle"}, "since": "M2", "attributes": {"language": "rpg", "parsed": true}},
+    {"kind": "Artifact", "natural_key": {"path": "qclsrc/CUSTJOB.clle"}, "since": "M2", "attributes": {"language": "cl", "parsed": true}},
+    {"kind": "Artifact", "natural_key": {"path": "qddssrc/CUSTMAST.pf"}, "since": "M2", "attributes": {"language": "dds", "parsed": true}}
+  ],
+  "edges": [
+    {"subject": {"kind": "Program", "natural_key": {"platform": "mainframe", "name": "CUSTINQ"}}, "predicate": "CONTAINS", "object": {"kind": "Symbol", "natural_key": {"platform": "mainframe", "program": "CUSTINQ", "name": "INIT"}}, "since": "M2"},
+    {"subject": {"kind": "Program", "natural_key": {"platform": "mainframe", "name": "CUSTINQ"}}, "predicate": "CALLS", "object": {"kind": "Symbol", "natural_key": {"platform": "mainframe", "program": "CUSTINQ", "name": "INIT"}}, "since": "M2"},
+    {"subject": {"kind": "Program", "natural_key": {"platform": "mainframe", "name": "CUSTINQ"}}, "predicate": "READS_FROM", "object": {"kind": "Table", "natural_key": {"datastore": "default", "name": "custmast"}}, "since": "M2"},
+    {"subject": {"kind": "Program", "natural_key": {"platform": "mainframe", "name": "CUSTINQ"}}, "predicate": "RENDERS", "object": {"kind": "Screen", "natural_key": {"platform": "ibmi", "name": "CUSTDSP.CUSTINQ1"}}, "since": "M2"},
+    {"subject": {"kind": "Program", "natural_key": {"platform": "mainframe", "name": "CUSTINQ"}}, "predicate": "RENDERS", "object": {"kind": "Screen", "natural_key": {"platform": "ibmi", "name": "CUSTDSP.CUSTINQ2"}}, "since": "M2"},
+    {"subject": {"kind": "Form", "natural_key": {"screen": "CUSTDSP.CUSTINQ1", "name": "CUSTINQ1"}}, "predicate": "SUBMITS_TO", "object": {"kind": "Program", "natural_key": {"platform": "mainframe", "name": "CUSTINQ"}}, "since": "M2"},
+    {"subject": {"kind": "Form", "natural_key": {"screen": "CUSTDSP.CUSTINQ2", "name": "CUSTINQ2"}}, "predicate": "SUBMITS_TO", "object": {"kind": "Program", "natural_key": {"platform": "mainframe", "name": "CUSTINQ"}}, "since": "M2"},
+    {"subject": {"kind": "Program", "natural_key": {"platform": "mainframe", "name": "CUSTUPD"}}, "predicate": "CONTAINS", "object": {"kind": "Symbol", "natural_key": {"platform": "mainframe", "program": "CUSTUPD", "name": "LOGCHANGE"}}, "since": "M2"},
+    {"subject": {"kind": "Program", "natural_key": {"platform": "mainframe", "name": "CUSTUPD"}}, "predicate": "CALLS", "object": {"kind": "Symbol", "natural_key": {"platform": "mainframe", "program": "CUSTUPD", "name": "LOGCHANGE"}}, "since": "M2"},
+    {"subject": {"kind": "Program", "natural_key": {"platform": "mainframe", "name": "CUSTUPD"}}, "predicate": "READS_FROM", "object": {"kind": "Table", "natural_key": {"datastore": "default", "name": "custmast"}}, "since": "M2"},
+    {"subject": {"kind": "Program", "natural_key": {"platform": "mainframe", "name": "CUSTUPD"}}, "predicate": "WRITES_TO", "object": {"kind": "Table", "natural_key": {"datastore": "default", "name": "custmast"}}, "since": "M2"},
+    {"subject": {"kind": "Program", "natural_key": {"platform": "mainframe", "name": "CUSTUPD"}}, "predicate": "PRODUCES", "object": {"kind": "Report", "natural_key": {"platform": "ibmi", "name": "CUSTRPT"}}, "since": "M2"},
+    {"subject": {"kind": "Symbol", "natural_key": {"platform": "mainframe", "program": "CUSTUPD", "name": "LOGCHANGE"}}, "predicate": "WRITES_TO", "object": {"kind": "Table", "natural_key": {"datastore": "default", "name": "custhist"}}, "since": "M2"},
+    {"subject": {"kind": "Program", "natural_key": {"platform": "mainframe", "name": "CUSTJOB"}}, "predicate": "CALLS", "object": {"kind": "Program", "natural_key": {"platform": "mainframe", "name": "CUSTINQ"}}, "since": "M2"},
+    {"subject": {"kind": "Program", "natural_key": {"platform": "mainframe", "name": "CUSTJOB"}}, "predicate": "CALLS", "object": {"kind": "Program", "natural_key": {"platform": "mainframe", "name": "CUSTUPD"}}, "since": "M2"},
+    {"subject": {"kind": "Table", "natural_key": {"datastore": "default", "name": "custmast"}}, "predicate": "CONTAINS", "object": {"kind": "Field", "natural_key": {"table": "custmast", "name": "cusno"}}, "since": "M2"},
+    {"subject": {"kind": "Table", "natural_key": {"datastore": "default", "name": "custmast"}}, "predicate": "CONTAINS", "object": {"kind": "Field", "natural_key": {"table": "custmast", "name": "cusstat"}}, "since": "M2"},
+    {"subject": {"kind": "Field", "natural_key": {"table": "custmast", "name": "cusstat"}}, "predicate": "BINDS_TO", "object": {"kind": "CodeList", "natural_key": {"platform": "ibmi", "name": "custmast.cusstat"}}, "since": "M2"},
+    {"subject": {"kind": "DataSchema", "natural_key": {"kind": "ibmi-lf", "name": "custl1"}}, "predicate": "CONTAINS", "object": {"kind": "Field", "natural_key": {"table": "custmast", "name": "cusname"}}, "since": "M2"},
+    {"subject": {"kind": "DataSchema", "natural_key": {"kind": "ibmi-lf", "name": "custl1"}}, "predicate": "CONTAINS", "object": {"kind": "Field", "natural_key": {"table": "custmast", "name": "cusstat"}}, "since": "M2"},
+    {"subject": {"kind": "Screen", "natural_key": {"platform": "ibmi", "name": "CUSTDSP.CUSTINQ1"}}, "predicate": "CONTAINS", "object": {"kind": "Form", "natural_key": {"screen": "CUSTDSP.CUSTINQ1", "name": "CUSTINQ1"}}, "since": "M2"},
+    {"subject": {"kind": "Form", "natural_key": {"screen": "CUSTDSP.CUSTINQ1", "name": "CUSTINQ1"}}, "predicate": "CONTAINS", "object": {"kind": "UIControl", "natural_key": {"container": "CUSTDSP.CUSTINQ1", "name": "CUSNO"}}, "since": "M2"},
+    {"subject": {"kind": "Screen", "natural_key": {"platform": "ibmi", "name": "CUSTDSP.CUSTINQ1"}}, "predicate": "CONTAINS", "object": {"kind": "UIControl", "natural_key": {"container": "CUSTDSP.CUSTINQ1", "name": "MSG"}}, "since": "M2"},
+    {"subject": {"kind": "Form", "natural_key": {"screen": "CUSTDSP.CUSTINQ2", "name": "CUSTINQ2"}}, "predicate": "CONTAINS", "object": {"kind": "UIControl", "natural_key": {"container": "CUSTDSP.CUSTINQ2", "name": "CUSLIMIT"}}, "since": "M2"},
+    {"subject": {"kind": "UIControl", "natural_key": {"container": "CUSTDSP.CUSTINQ2", "name": "CUSLIMIT"}}, "predicate": "BINDS_TO", "object": {"kind": "Field", "natural_key": {"table": "custmast", "name": "cuslimit"}}, "since": "M2"},
+    {"subject": {"kind": "UIControl", "natural_key": {"container": "CUSTDSP.CUSTINQ2", "name": "CUSNO"}}, "predicate": "BINDS_TO", "object": {"kind": "Field", "natural_key": {"table": "custmast", "name": "cusno"}}, "since": "M2"},
+    {"subject": {"kind": "UIControl", "natural_key": {"container": "CUSTDSP.CUSTINQ2", "name": "CUSSTAT"}}, "predicate": "BINDS_TO", "object": {"kind": "CodeList", "natural_key": {"platform": "ibmi", "name": "CUSTDSP.CUSTINQ2.CUSSTAT"}}, "since": "M2"}
+  ],
+  "absent_entities": [
+    {"kind": "Program", "natural_key": {"platform": "mainframe", "name": "CUSTLOG"}, "why": "CUSTUPD calls CUSTLOG through an EXTPGM prototype: the call refers to the program without declaring it, and no member here is CUSTLOG"},
+    {"kind": "Program", "natural_key": {"platform": "mainframe", "name": "NEXTPGM"}, "why": "CUSTJOB calls a program whose name it reads from a data area at run time: the call stays dynamic"},
+    {"kind": "Program", "natural_key": {"platform": "mainframe", "name": "CUSTCTL"}, "why": "CUSTCTL is a data area the CL program reads and changes, not a program"},
+    {"kind": "DataSchema", "natural_key": {"kind": "ibmi-lf", "name": "custmast"}, "why": "an F-spec cannot tell a physical file from a logical one: it refers to both without declaring either, and only the physical file's DDS declares CUSTMAST"},
+    {"kind": "Table", "natural_key": {"datastore": "default", "name": "custlib.custmast"}, "why": "OVRDBF is recorded on the program as written and never applied to a call or a file it might affect"},
+    {"kind": "Table", "natural_key": {"datastore": "default", "name": "CUSTMAST"}, "why": "a physical file is named in lower case, as embedded SQL's tables are, so DDS, F-specs and SQL name one table"},
+    {"kind": "Screen", "natural_key": {"platform": "ibmi", "name": "CUSTDSP.RPTLINE"}, "why": "RPTLINE is a printer record format: a format is a Screen only where a display file declares it"},
+    {"kind": "Field", "natural_key": {"table": "custmast", "name": "cusemail"}, "why": "the mail address field is added by commit 01, not in the base"},
+    {"kind": "Symbol", "natural_key": {"platform": "mainframe", "program": "CUSTINQ", "name": "CHECKSTAT"}, "why": "the CHECKSTAT subroutine is added by commit 02, not in the base"}
+  ],
+  "exclusions": [],
+  "forbidden_kinds": ["Package", "Component"],
+  "expected_unknowns": [
+    {"since": "M2", "detail": "CUSTJOB calls the program named by &NEXTPGM: the call is counted as dynamic and a diagnostic says it is not resolved"}
+  ],
+  "expected_conflicts": [],
+  "secret_probes": [
+    {"path": "qrpglesrc/CUSTUPD.sqlrpgle", "must_never_appear": "fixture-not-a-real-password-0040", "since": "M2"}
+  ],
+  "commits": [
+    {
+      "dir": "01-add-field",
+      "expect": "CUSTMAST gains a mail address field",
+      "added_entities": [
+        {"kind": "Field", "natural_key": {"table": "custmast", "name": "cusemail"}, "since": "M2"}
+      ],
+      "removed_entities": []
+    },
+    {
+      "dir": "02-add-subroutine",
+      "expect": "The inquiry gains a subroutine that warns about customers on hold",
+      "added_entities": [
+        {"kind": "Symbol", "natural_key": {"platform": "mainframe", "program": "CUSTINQ", "name": "CHECKSTAT"}, "since": "M2"}
+      ],
+      "removed_entities": []
+    },
+    {
+      "dir": "03-retire-logical-file",
+      "expect": "The logical file is deleted; the physical file it was based on stays",
+      "added_entities": [],
+      "removed_entities": [
+        {"kind": "DataSchema", "natural_key": {"kind": "ibmi-lf", "name": "custl1"}, "since": "M2"}
+      ]
+    }
+  ],
+  "decision_cases": [],
+  "granularity": {"label": null, "why": "IBM i source members with no build file or deployment a repository shows", "source": "fixture design"}
+}

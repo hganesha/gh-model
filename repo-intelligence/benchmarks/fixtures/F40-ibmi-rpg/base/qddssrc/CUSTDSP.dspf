@@ -1,0 +1,14 @@
+     A                                      DSPSIZ(24 80 *DS3)
+     A                                      CA03(03 'Exit')
+     A          R CUSTINQ1
+     A                                  1 30'Customer Inquiry'
+     A                                  5  2'Customer number:'
+     A            CUSNO          7Y 0B  5 20
+     A            MSG           40A  O 23  2
+     A          R CUSTINQ2
+     A                                      CA12(12 'Cancel')
+     A            CUSNO     R        O  3 20REFFLD(CUSTREC/CUSNO CUSTMAST)
+     A            CUSNAME   R        O  4 20REFFLD(CUSTREC/CUSNAME CUSTMAST)
+     A            CUSLIMIT  R        B  5 20REFFLD(CUSTREC/CUSLIMIT CUSTMAST)
+     A            CUSSTAT        1A  B  6 20VALUES('A' 'I' 'H')
+     A 50         MSG           40A  O 23  2DSPATR(HI)

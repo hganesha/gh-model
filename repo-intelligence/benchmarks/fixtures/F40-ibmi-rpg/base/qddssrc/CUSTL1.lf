@@ -1,0 +1,6 @@
+     A          R CUSTREC                   PFILE(CUSTMAST)
+     A            CUSNO
+     A            CUSNAME
+     A            CUSSTAT
+     A          K CUSNAME
+     A          S CUSSTAT                   COMP(EQ 'A')

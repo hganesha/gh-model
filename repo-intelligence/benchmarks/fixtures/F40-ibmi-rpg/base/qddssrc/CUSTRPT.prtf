@@ -1,0 +1,6 @@
+     A          R RPTHEAD                   SKIPB(1)
+     A                                     2'Customer credit limits'
+     A          R RPTLINE                   SPACEB(1)
+     A            CUSNO          7S 0      2
+     A            CUSNAME       30A       12
+     A            CUSLIMIT       9S 2     45EDTCDE(1)

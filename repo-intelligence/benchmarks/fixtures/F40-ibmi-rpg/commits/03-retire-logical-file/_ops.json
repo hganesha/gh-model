@@ -1,0 +1,1 @@
+{"message": "Nothing reads the active-customer view any more: remove CUSTL1", "delete": ["qddssrc/CUSTL1.lf"]}
