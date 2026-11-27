@@ -1,6 +1,11 @@
 """`rexx.source`: REXX execs and CLISTs (`.rexx`, `.rex`, `.clist`, and members without a
 suffix in an exec or CLIST library directory).
 
+A member without a suffix is read only on evidence in its content (`_language`): a REXX
+comment on its first non-blank line, or, in a CLIST directory only, at least one CLIST
+statement in a file that does not start with `#!`. Without that evidence it gives nothing:
+no Program and no diagnostics (a shell script in `docker/exec/` is not an exec).
+
 What it declares (keys in `vocabulary`):
 
 - the exec as `Program {platform: "tso", name: <member>}` with `attributes.language` `rexx`
@@ -28,7 +33,7 @@ docstring.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Iterator
 
 from repo_intel.platforms.pli.common import MAINFRAME, TSO, Emit, decode, member_name, sql_verb
 from repo_intel.platforms.rexx.tso import DYN, LINK_ENVIRONMENTS, Allocation, Analysis, Command
@@ -73,7 +78,7 @@ class Tok:
 
 class RexxSource:
     id = "rexx.source"
-    version = "1.0.0"
+    version = "1.1.0"
 
     def matches(self, path: str) -> bool:
         p = path.replace("\\", "/").lower()
@@ -92,6 +97,8 @@ class RexxSource:
             return base.Extraction(diagnostics=[base.diagnostic(self.id, "warning", f"not read: larger than {MAX_BYTES} bytes")], parsed=False)
         text = decode(data)
         language = _language(path, text)
+        if language is None:  # a member of an exec or CLIST directory that shows neither: not read
+            return base.Extraction(parsed=False)
         e = Emit(self.id, data, blob, text)
         name = member_name(path)
         if language == "rexx":
@@ -103,21 +110,45 @@ class RexxSource:
         return e.done()
 
 
-def _language(path: str, text: str) -> str:
-    """REXX when the first line holds a comment naming REXX (the TSO rule for a library that
-    holds both) or the member is in a REXX-only library; CLIST otherwise."""
+def _first_line(text: str) -> str:
+    """The first line that is not blank (a byte-order mark ignored)."""
+    pos, n = (1 if text.startswith("﻿") else 0), len(text)
+    while pos < n:
+        nl = text.find("\n", pos)
+        end = n if nl < 0 else nl
+        if text[pos:end].strip():
+            return text[pos:end]
+        pos = end + 1
+    return ""
+
+
+def _rexx_comment(text: str) -> bool:
+    """The TSO rule for a library that holds both: an exec is REXX when its first non-blank
+    line holds a comment naming REXX."""
+    first = _first_line(text)
+    k = first.find("/*")
+    return k >= 0 and "REXX" in first[k:].upper()
+
+
+def _language(path: str, text: str) -> str | None:
+    """`rexx`, `clist`, or None when a member without a suffix shows evidence of neither.
+
+    A `.rexx` or `.rex` file is REXX; a `.clist` file is a CLIST unless its first non-blank
+    line holds a REXX comment. A member without a suffix (in an exec or CLIST library
+    directory) is read only on evidence in its content: REXX when its first non-blank line
+    holds a comment naming REXX; a CLIST only in a CLIST directory, never when it starts with
+    `#!`, and only when it holds at least one CLIST statement (`clist_evidence`). So a shell
+    script at `docker/exec/entrypoint` is neither, and gives nothing."""
     p = path.replace("\\", "/").lower()
     base = p.rsplit("/", 1)[-1]
-    first = text.lstrip("﻿").split("\n", 1)[0]
-    k = first.find("/*")
-    if k >= 0 and "REXX" in first[k:].upper():
-        return "rexx"
-    if base.endswith((".rexx", ".rex")):
+    if _rexx_comment(text) or base.endswith((".rexx", ".rex")):
         return "rexx"
     if base.endswith(".clist"):
         return "clist"
     parents = p.split("/")[:-1]
-    return "clist" if any(d in _CLIST_DIRS for d in parents) else "rexx"
+    if not any(d in _CLIST_DIRS for d in parents) or text.lstrip("﻿ \t\r\n").startswith("#!"):
+        return None
+    return "clist" if clist_evidence(text) else None
 
 
 class Exec:
@@ -135,12 +166,9 @@ class Exec:
     def c(self, a: int, b: int, cid: str, modelled: bool = False) -> None:
         self.e.construct(a, b, cid, modelled)
 
-    def line(self, a: int) -> int:
-        return self.text.count("\n", 0, a) + 1
-
     def dynamic(self, a: int, what: str) -> None:
         self.e.unresolved += 1
-        self.e.note(f"line {self.line(a)}: {what}: not resolved")
+        self.e.note(f"line {self.e.line(a)}: {what}: not resolved")
 
     def read(self) -> None:
         raise NotImplementedError
@@ -656,11 +684,11 @@ class RexxExec(Exec):
 # ------------------------------------------------------------------ CLIST
 
 
-def clist_lines(text: str) -> list[tuple[str, int, int, list[tuple[int, int]]]]:
-    """Logical CLIST lines: comments (to `*/` or the end of the line) blanked, lines ending in
-    `+` (leading blanks of the next dropped) or `-` joined. Each with its span and the spans
-    of its physical pieces."""
-    out: list[tuple[str, int, int, list[tuple[int, int]]]] = []
+def clist_lines(text: str) -> Iterator[tuple[str, int, int, list[tuple[int, int]]]]:
+    """Logical CLIST lines, in order: comments (to `*/` or the end of the line) blanked, lines
+    ending in `+` (leading blanks of the next dropped) or `-` joined. Each with its span and
+    the spans of its physical pieces. A generator, so `clist_evidence` stops at the first
+    CLIST statement."""
     buf: list[str] = []
     pieces: list[tuple[int, int]] = []
     start = -1
@@ -671,11 +699,17 @@ def clist_lines(text: str) -> list[tuple[str, int, int, list[tuple[int, int]]]]:
         end = n if nl < 0 else nl
         raw = text[pos:end]
         k = raw.find("/*")
-        while k >= 0:
-            e = raw.find("*/", k + 2)
-            stop = len(raw) if e < 0 else e + 2
-            raw = raw[:k] + " " * (stop - k) + raw[stop:]
-            k = raw.find("/*", stop)
+        if k >= 0:  # blank each comment, offsets kept, in one pass over the line
+            parts: list[str] = []
+            done = 0
+            while k >= 0:
+                e = raw.find("*/", k + 2)
+                stop = len(raw) if e < 0 else e + 2
+                parts += [raw[done:k], " " * (stop - k)]
+                done = stop
+                k = raw.find("/*", stop)
+            parts.append(raw[done:])
+            raw = "".join(parts)
         line = raw.rstrip()
         if strip_next:
             line = line.lstrip()
@@ -690,14 +724,13 @@ def clist_lines(text: str) -> list[tuple[str, int, int, list[tuple[int, int]]]]:
         if not cont and buf:
             joined = "".join(buf)
             if joined.strip():
-                out.append((joined, start, end, pieces))
+                yield (joined, start, end, pieces)
             buf, pieces, start = [], [], -1
         if nl < 0:
             break
         pos = end + 1
     if buf and "".join(buf).strip():
-        out.append(("".join(buf), start, n, pieces))
-    return out
+        yield ("".join(buf), start, n, pieces)
 
 
 def clist_template(s: str) -> str:
@@ -738,6 +771,41 @@ def clist_template(s: str) -> str:
 _CLIST_CONTROL = frozenset({"IF", "DO", "END", "SELECT", "WHEN", "OTHERWISE", "GOTO", "EXIT", "RETURN", "SYSCALL", "WHILE", "UNTIL"})
 _CLIST_OTHER = frozenset({"PROC", "CONTROL", "GLOBAL", "NGLOBAL", "WRITE", "WRITENR", "READ", "READDVAL", "TERMIN", "TERMING", "DATA", "ENDDATA", "ERROR", "ATTN",
                           "SYSREF", "LISTDSI"})
+
+
+# What only a CLIST says, in upper case as TSO keeps a CLIST: `PROC n`, `CONTROL`, `SET &x`
+# or `&x =`, `WRITE`, `ALLOC` or `FREE` with a parenthesised operand, `EXIT` alone or with
+# CODE() or QUIT, GOTO, GLOBAL, the file statements and the error exits. A shell script's
+# lower-case `exit`, `set` or `write` is not one.
+_CLIST_EVIDENCE = frozenset({"CONTROL", "WRITE", "WRITENR", "GOTO", "GLOBAL", "NGLOBAL", "OPENFILE", "GETFILE", "PUTFILE", "CLOSFILE", "READDVAL",
+                             "TERMIN", "TERMING", "SYSCALL", "ERROR", "ATTN"})
+
+
+def _clist_statement(body: str, depth: int = 0) -> bool:
+    words = body.split(None, 1)
+    if not words:
+        return False
+    head, rest = words[0], (words[1].strip() if len(words) > 1 else "")
+    if head.endswith(":") and len(head) > 1 and depth < 4:  # a label
+        return _clist_statement(rest, depth + 1)
+    if head in _CLIST_EVIDENCE:
+        return True
+    if head == "PROC":
+        return bool(rest) and rest.split(None, 1)[0].isdigit()
+    if head == "SET":
+        return rest.startswith("&")
+    if head.startswith("&") and len(head) > 1:
+        return rest.startswith("=") or head.endswith("=")
+    if head in ("ALLOC", "ALLOCATE", "FREE"):
+        return "(" in rest
+    if head == "EXIT":
+        return not rest or rest.startswith(("CODE(", "CODE (", "QUIT"))
+    return False
+
+
+def clist_evidence(text: str) -> bool:
+    """Whether the text holds at least one CLIST statement (comments are not read)."""
+    return any(_clist_statement(line.strip()) for line, _, _, _ in clist_lines(text))
 
 
 class ClistExec(Exec):

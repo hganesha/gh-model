@@ -30,7 +30,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from repo_intel.platforms.easytrieve.reader import NUM, STR, WORD, Statement, Token, statements
-from repo_intel.platforms.pli.common import MAINFRAME, Emit, dd_mode, decode, member_name, query_node, sql_verb
+from repo_intel.platforms.pli.common import MAINFRAME, Emit, dd_mode, decode, member_name, query_node, scrub_credentials, sql_verb
 
 LANGUAGE = "easytrieve"
 MAX_BYTES = 4 * 1024 * 1024
@@ -66,6 +66,7 @@ class EFile:
     fields: list[EField] = field(default_factory=list)
     modes: set[str] = field(default_factory=set)
     next_offset: int | None = 0
+    by_name: dict[str, EField] = field(default_factory=dict)  # the first field of each name
 
 
 @dataclass
@@ -85,6 +86,7 @@ class EReport:
     attrs: dict[str, Any]
     procs: list[Proc] = field(default_factory=list)
     end: int = 0
+    line_fields: set[str] = field(default_factory=set)  # the fields its LINE statements print, for `lines`
 
 
 @dataclass
@@ -105,7 +107,7 @@ class Activity:
 
 class EasytrieveSource:
     id = "easytrieve.source"
-    version = "1.0.0"
+    version = "1.1.0"
 
     def matches(self, path: str) -> bool:
         return path.lower().endswith(".ezt")
@@ -332,13 +334,15 @@ class Program:
             attrs["offset"] = start
         if redefines is None:  # `*` is the position after the last field that is not a redefinition
             f.next_offset = None if start is None else start + length * (occurs or 1)
-        f.fields.append(EField(name, s, attrs))
+        fd = EField(name, s, attrs)
+        f.fields.append(fd)
+        f.by_name.setdefault(name, fd)
         self.c(s, "ezt:field")
 
     def files_field(self, f: EFile | None, name: str) -> EField | None:
         if f is None:
             return None
-        return next((x for x in f.fields if x.name == name), None)
+        return f.by_name.get(name)
 
     def activity(self, s: Statement) -> Activity:
         h = s.head
@@ -474,8 +478,12 @@ class Program:
         elif h == "HEADING":
             self.c(s, "ezt:report_heading", False)
         elif h == "LINE":
-            fields = [n for n in names if n not in ("COL", "POS")]
-            r.attrs["lines"] = r.attrs.get("lines", []) + [f for f in fields if f not in r.attrs.get("lines", [])]
+            lines = r.attrs.setdefault("lines", [])
+            seen = r.line_fields
+            for n in names:
+                if n not in ("COL", "POS") and n not in seen:
+                    seen.add(n)
+                    lines.append(n)
             self.c(s, "ezt:report_line")
         else:
             self.c(s, "ezt:other_statement", False)
@@ -703,7 +711,7 @@ class Program:
         if verb in ("PREPARE", "EXECUTE", "DESCRIBE"):
             self.c(s, "ezt:sql_dynamic", False)
             self.e.unresolved += 1
-            self.e.note(f"dynamic SQL at line {self.e.text.count(chr(10), 0, s.start) + 1}: its statement is built at run time")
+            self.e.note(f"dynamic SQL at line {self.e.line(s.start)}: its statement is built at run time")
             return [{"op": "platform", "construct": "ezt:sql_dynamic", "at": at, "detail": {"statement": verb}}]
         if verb in ("COMMIT", "ROLLBACK"):
             self.c(s, "ezt:sql")
@@ -872,6 +880,7 @@ class Program:
 
         # Procedures as Symbols, qualified when two activities use one name.
         procs = [(a, p) for a in self.activities for p in a.procs] + [(a, p) for a, r in reports for p in r.procs]
+        position = {id(a): k + 1 for k, a in enumerate(self.activities)}
         counts: dict[str, int] = {}
         for a, p in procs:
             base = f"{p.report}.{p.name}" if p.report else p.name
@@ -879,7 +888,7 @@ class Program:
         symbols: dict[int, dict[str, Any]] = {}
         for a, p in procs:
             base = f"{p.report}.{p.name}" if p.report else p.name
-            p.symbol = base if counts[base] == 1 else f"{a.name or a.kind.upper() + str(self.activities.index(a) + 1)}.{base}"
+            p.symbol = base if counts[base] == 1 else f"{a.name or a.kind.upper() + str(position[id(a)])}.{base}"
             symbols[id(p)] = e.base.ref(e.K.SYMBOL, {"platform": MAINFRAME, "program": self.name, "name": p.symbol}, p.symbol)
 
         # Behaviour first: how the activities use each file decides its mode.
@@ -951,10 +960,11 @@ class Program:
             rattrs = dict(r.attrs)
             if a.name:
                 rattrs["job"] = a.name
-            rep = e.entity(r.stmt.start, r.stmt.end, e.K.REPORT, {"platform": "easytrieve", "name": name}, name, rattrs)
+            rep = e.term(r.stmt.start, r.stmt.end, "ezt:Report", {"platform": "easytrieve", "name": name}, name, rattrs)
             e.rel(r.stmt.start, r.stmt.end, prog, P.PRODUCES, rep)
 
         for start, end, owner, body, kind in units:
+            scrub_credentials(body)
             e.behavior(start, end, owner, LANGUAGE, body, kind=kind)
 
         # SORT activities as transform shapes.

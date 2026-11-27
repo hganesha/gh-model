@@ -9,7 +9,7 @@ from repo_intel.platforms import CONSTRUCTS, packs, validate_pack
 from repo_intel.platforms.hlasm import PACK
 from repo_intel.platforms.hlasm.reader import split_operands, statements
 from repo_intel.platforms.hlasm.vocabulary import LISTED_MACROS
-from test_platform_pli import check_all, constructs, entities, key, of, relations, units
+from test_platform_pli import check_all, constructs, doubling_ratio, entities, key, of, relations, units
 
 FIXTURE = Path(__file__).resolve().parents[1] / "benchmarks" / "fixtures" / "F41-pli-easytrieve"
 DATEUTIL = key("Program", platform="mainframe", name="DATEUTIL")
@@ -102,6 +102,21 @@ def test_calls_files_cics_and_sql():
     counts = constructs(out)
     assert counts[("asm:call_dynamic", False)] == 2 and counts[("asm:user_macro", False)] == 1 and counts[("asm:dcb", False)] == 1
     assert "NODD" in " ".join(d.message for d in out.diagnostics)
+
+
+def test_extraction_is_linear_with_many_externals_and_notes():
+    # Each external name was checked against a list, and each note counted lines from the
+    # start of the file.
+    def make(n: int) -> str:
+        rows = [line("BIG", "CSECT")]
+        for i in range(n):
+            rows += [line("", "EXTRN", f"X{i}"), line("", "DC", f"V(Y{i})"), line("", "LINK", "EPLOC=NAME")]
+        return "\n".join(rows + [line("", "END")]) + "\n"
+
+    out = run("asm/BIG.asm", make(50))
+    assert len(entities(out)[key("Program", platform="mainframe", name="BIG")]["externals"]) == 100
+    assert sum("named at run time" in d.message for d in out.diagnostics) == 50
+    assert doubling_ratio(lambda t: run("asm/BIG.asm", t), make, 2000) < 3
 
 
 def test_a_macro_member_and_a_map_set_are_not_programs():

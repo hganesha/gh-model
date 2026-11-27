@@ -74,6 +74,22 @@ def check_all(out) -> None:
 PROGRAM = key("Program", platform="mainframe", name="CUSTUPD")
 
 
+def doubling_ratio(run_text, make, n: int) -> float:
+    """How much longer `run_text(make(2n))` takes than `run_text(make(n))`, best of two runs
+    each: about 2 when the work is linear in the input."""
+    import time
+
+    def best(text: str) -> float:
+        times = []
+        for _ in range(2):
+            start = time.perf_counter()
+            run_text(text)
+            times.append(time.perf_counter() - start)
+        return min(times)
+
+    return best(make(2 * n)) / max(best(make(n)), 1e-6)
+
+
 def test_the_pack_is_registered_and_valid():
     assert packs()["pli"] is PACK
     assert validate_pack(PACK) == []
@@ -203,3 +219,49 @@ def test_output_is_deterministic():
     data = (FIXTURE / "base/pli/CUSTUPD.pli").read_bytes()
     a, b = run("pli/CUSTUPD.pli", data), run("pli/CUSTUPD.pli", data)
     assert [o.row() for o in a.observations] == [o.row() for o in b.observations]
+
+
+def test_extraction_is_linear_with_many_declarations_and_notes():
+    # Each DCL and each noted CALL once cost a scan from the start of the file, and each
+    # internal procedure a copy of the list of those still to declare.
+    def make(n: int) -> str:
+        body = "".join(f"    DCL X{i} FIXED BIN(31) INIT({i});\n    CALL H;\n Q{i}: PROC; CALL Q{i}; END Q{i};\n" for i in range(n))
+        return " P: PROC OPTIONS(MAIN);\n    DCL H ENTRY VARIABLE;\n" + body + " END P;\n"
+
+    out = run("p.pli", make(50))
+    assert sum("goes through a variable" in d.message for d in out.diagnostics) == 50
+    assert sum(k[0] == "Symbol" for k in entities(out)) == 50
+    assert doubling_ratio(lambda t: run("p.pli", t), make, 1000) < 3
+
+
+CREDENTIALS = """ LOGIN: PROC OPTIONS(MAIN);
+    DCL DB_PWD     CHAR(8) INIT('pw4x');
+    DCL API_TOKEN  CHAR(8) INIT('tk9q');
+    DCL CUST_NAME  CHAR(8) INIT('ACME');
+    DCL 1 CONN,
+          2 USER_ID   CHAR(8) INIT('BATCH'),
+          2 PASSWORD  CHAR(8) INIT('cn7z');
+    DB_PWD = 'as5y';
+    CONN.PASSWORD = 'mb3w';
+    SECRET_KEY, CUST_NAME = 'sk2v';
+    IF API_TOKEN = 'cp8r' THEN CUST_NAME = 'NONE';
+    CALL SIGNON(CONN.USER_ID, CONN.PASSWORD);
+ END LOGIN;
+"""
+
+
+def test_literals_given_to_credential_named_variables_are_not_copied():
+    out = run("src/LOGIN.pli", CREDENTIALS)
+    check_all(out)
+    text = str([o.payload for o in out.observations]) + str([d.message for d in out.diagnostics])
+    for value in ("pw4x", "tk9q", "cn7z", "as5y", "mb3w", "sk2v", "cp8r"):  # short values: under 8 characters
+        assert value not in text, value
+    body = units(out)[0]["body"]
+    by_name = {n["name"]: n for n in body if n["op"] == "declare"}
+    assert by_name["DB_PWD"]["value"] == {"e": "lit", "value": "", "type": "string"} and by_name["DB_PWD"]["redacted"] == "credential"
+    assert by_name["API_TOKEN"]["redacted"] == "credential"
+    assert by_name["CUST_NAME"]["value"]["value"] == "ACME" and "redacted" not in by_name["CUST_NAME"]  # other names keep their values
+    assigns = [n for n in body if n["op"] == "assign"]
+    assert all(n["value"]["value"] == "" and n["redacted"] == "credential" for n in assigns[:4])
+    assert next(n for n in walk(body) if n.get("op") == "if")["redacted"] == "credential"
+    assert next(n for n in walk(body) if n.get("op") == "assign" and n["value"].get("value") == "NONE")  # under the IF: not a credential

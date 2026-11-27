@@ -68,6 +68,21 @@ def _cics_option(text: str, option: str) -> str | None:
     return None
 
 
+class _Ordered(list):
+    """Names in the order first seen, with a set beside them, so a repeated check of whether a
+    name is already listed does not scan the list."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.seen: set[str] = set()
+
+
+def _add(names: _Ordered, name: str) -> None:
+    if name not in names.seen:
+        names.seen.add(name)
+        names.append(name)
+
+
 class HlasmSource:
     id = "hlasm.source"
     version = "1.0.0"
@@ -89,9 +104,9 @@ class HlasmSource:
 class Assembly:
     def __init__(self, e: Emit, member: str, text: str):
         self.e, self.member, self.text = e, member, text
-        self.sections: list[str] = []
-        self.entries: list[str] = []
-        self.externals: list[str] = []
+        self.sections = _Ordered()
+        self.entries = _Ordered()
+        self.externals = _Ordered()
         self.files: dict[str, dict[str, Any]] = {}  # by DCB or ACB label
         self.opens: list[tuple[str, str, Statement]] = []
         self.calls: list[tuple[str, Statement]] = []
@@ -106,7 +121,7 @@ class Assembly:
 
     def note(self, s: Statement, what: str) -> None:
         self.e.unresolved += 1
-        self.e.note(f"line {self.text.count(chr(10), 0, s.start) + 1}: {what}: not resolved")
+        self.e.note(f"line {self.e.line(s.start)}: {what}: not resolved")
 
     def run(self) -> None:
         stmts = statements(self.text)
@@ -136,28 +151,28 @@ class Assembly:
         if op in SECTIONS:
             name = _name(s.name)
             self.c(s, "asm:csect", bool(name))
-            if name and name not in self.sections:
-                self.sections.append(name)
+            if name:
+                _add(self.sections, name)
             return
         if op == "ENTRY":
             self.c(s, "asm:entry", True)
             for o in ops:
                 n = _name(o)
-                if n and n not in self.entries:
-                    self.entries.append(n)
+                if n:
+                    _add(self.entries, n)
             return
         if op in ("EXTRN", "WXTRN"):
             self.c(s, "asm:extrn", True)
             for o in ops:
                 n = _name(o)
-                if n and n not in self.externals:
-                    self.externals.append(n)
+                if n:
+                    _add(self.externals, n)
             return
         if op == "END":
             self.c(s, "asm:directive")
             n = _name(ops[0]) if ops and ops[0] else None
-            if n and n not in self.entries and n not in self.sections:
-                self.entries.append(n)
+            if n and n not in self.sections.seen:
+                _add(self.entries, n)
             return
         if op in ("AMODE", "RMODE"):
             self.c(s, "asm:directive")
@@ -216,8 +231,8 @@ class Assembly:
                 j = up.find(")", k)
                 for part in (up[k + 2:j] if j > 0 else "").split(","):
                     n = _name(part)
-                    if n and n not in self.externals:
-                        self.externals.append(n)
+                    if n:
+                        _add(self.externals, n)
             k = up.find("V(", k + 2)
 
     def call(self, s: Statement, ops: list[str]) -> None:
@@ -255,7 +270,7 @@ class Assembly:
             return
         if dd is None:
             self.c(s, cid)
-            self.e.note(f"line {self.text.count(chr(10), 0, s.start) + 1}: {s.op} {label} names no DDNAME: its DD name is set at run time")
+            self.e.note(f"line {self.e.line(s.start)}: {s.op} {label} names no DDNAME: its DD name is set at run time")
             self.e.unresolved += 1
             return
         self.c(s, cid, True)
@@ -355,9 +370,9 @@ class Assembly:
                 mode = dd_mode(f["modes"])
             f["mode"] = mode
             rows.append({"file": label, "dd": f["dd"], "mode": mode})
-        attrs: dict[str, Any] = {"language": "hlasm", "csects": self.sections}
+        attrs: dict[str, Any] = {"language": "hlasm", "csects": list(self.sections)}
         if self.entries:
-            attrs["entries"] = self.entries
+            attrs["entries"] = list(self.entries)
         if self.externals:
             attrs["externals"] = sorted(self.externals)
         attrs.update(self.modes)

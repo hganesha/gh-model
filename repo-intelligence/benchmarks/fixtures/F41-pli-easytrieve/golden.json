@@ -200,6 +200,8 @@
       },
       "since": "M2",
       "attributes": {
+        "platform": "easytrieve",
+        "platform_kind": "ezt:Report",
         "printer": "RPTOUT",
         "control": [
           "SRT-REGION"

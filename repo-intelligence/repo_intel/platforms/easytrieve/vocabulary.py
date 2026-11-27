@@ -5,11 +5,8 @@ Keys: a program (one member) is `Program {platform: "mainframe", name: <member>}
 the PL/I pack; a FILE with fields is `DataSchema {kind: "easytrieve-file", name:
 "<program>.<file>"}` whose fields are `Field {table: "easytrieve:<program>.<file>", name}`
 (10.1 item 6 with the pack id as platform); a report is
-`Report {platform: "easytrieve", name: "<program>.<report>"}`.
-
-A Report is declared without a platform term: a pack with a term for an experience kind
-(Report among them) must be listed in the Explorer's `UI_PLATFORMS`, which this pack does
-not own. Its attributes still say what the section holds.
+`Report {platform: "easytrieve", name: "<program>.<report>"}`, declared through the
+`ezt:Report` term (`easytrieve` is one of the Explorer's `UI_PLATFORMS`, contract 11.3 item 7).
 """
 
 from __future__ import annotations
@@ -22,6 +19,7 @@ TERMS = (
     Term("ezt:Procedure", K.SYMBOL, "exact", "a procedure (`name. PROC` ... `END-PROC`) of a job, sort or report"),
     Term("ezt:File", K.DATA_SCHEMA, "lossy", "a FILE and its fields: the record layout of the file the DD name binds"),
     Term("ezt:Field", K.FIELD, "lossy", "a field of a FILE: offset, length, data format and decimals in attributes"),
+    Term("ezt:Report", K.REPORT, "lossy", "a REPORT section: its printer file, sequence, control breaks, sums and the fields its lines print in attributes; title text is not copied"),
 )
 
 _CONSTRUCTS = (
