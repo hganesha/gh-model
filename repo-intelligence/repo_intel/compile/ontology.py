@@ -208,7 +208,8 @@ RELATIONS: dict[Predicate, RelationSchema] = {
     P.RENDERS: _r(_CODE, {K.SCREEN, K.REPORT}),
     P.SUBMITS_TO: _r({K.FORM}, {K.ENDPOINT, K.PROGRAM, K.SYMBOL, K.SCREEN}),
     P.NAVIGATES_TO: _r(_UI | {K.PROGRAM, K.SYMBOL}, {K.SCREEN, K.ENDPOINT, K.PROGRAM}),  # code: a server-side redirect
-    P.BINDS_TO: _r({K.UI_CONTROL, K.FORM}, {K.FIELD, K.CODE_LIST, K.CONFIG_KEY}),
+    # A record field takes its values from a code list (a COBOL 88-level, a DDS VALUES keyword; section 11.1).
+    P.BINDS_TO: _r({K.UI_CONTROL, K.FORM, K.FIELD}, {K.FIELD, K.CODE_LIST, K.CONFIG_KEY}),
     P.STYLED_BY: _r(_UI | {K.REPORT}, {K.STYLE_TOKEN}),
     # An Artifact applies a rule when no Program, Component or Package holds the code (section 9.2).
     P.ENFORCES: _r(_CODE | _UI | _WORK | {K.TABLE, K.FIELD, K.ARTIFACT}, {K.BUSINESS_RULE}),
