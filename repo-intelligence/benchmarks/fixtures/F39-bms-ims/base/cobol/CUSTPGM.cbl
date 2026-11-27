@@ -1,0 +1,22 @@
+       IDENTIFICATION DIVISION.
+       PROGRAM-ID. CUSTPGM.
+      * CUSTOMER INQUIRY UNDER IMS: READS THE CUSTOMER SEGMENT NAMED IN
+      * THE INPUT MESSAGE AND SENDS IT BACK.
+       ENVIRONMENT DIVISION.
+       DATA DIVISION.
+       WORKING-STORAGE SECTION.
+       01  GU-FUNC                 PIC X(4)  VALUE 'GU  '.
+       01  ISRT-FUNC               PIC X(4)  VALUE 'ISRT'.
+       01  CUST-SSA                PIC X(9)  VALUE 'CUSTOMER '.
+       01  CUST-SEG                PIC X(120).
+       01  IN-MSG                  PIC X(80).
+       LINKAGE SECTION.
+       01  IO-PCB                  PIC X(32).
+       01  NOTE-PCB                PIC X(32).
+       01  CUST-PCB                PIC X(40).
+       PROCEDURE DIVISION USING IO-PCB NOTE-PCB CUST-PCB.
+       MAIN-PARA.
+           CALL 'CBLTDLI' USING GU-FUNC IO-PCB IN-MSG.
+           CALL 'CBLTDLI' USING GU-FUNC CUST-PCB CUST-SEG CUST-SSA.
+           CALL 'CBLTDLI' USING ISRT-FUNC IO-PCB CUST-SEG.
+           GOBACK.
