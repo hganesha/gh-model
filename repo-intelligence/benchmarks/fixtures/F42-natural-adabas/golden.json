@@ -1,0 +1,116 @@
+{
+  "fixture": "F42-natural-adabas",
+  "description": "A Natural personnel library kept as source exports: a structured-mode program (a map, a local data area, views of two DDMs read through, a record updated in the loop that read it, CALLNAT of a subprogram, PERFORM of an inline subroutine, CALL of a non-Natural program and FETCH RETURN of a program named in a variable), a subprogram with parameter data, GET, UPDATE and a Natural SQL INSERT, a map with a help routine, a local data area with a name used in two groups, two Adabas DDMs with a group, a multiple-value field, a periodic group and descriptors, a reporting-mode report with editor line numbers, and an IDMS schema (two records, an 88-level and a set) with a subschema under .rkp/inputs/idms/. 'since' names the milestone whose compiler must produce the item.",
+  "entities": [
+    {"kind": "Program", "natural_key": {"platform": "natural", "name": "EMPMAINT"}, "since": "M2", "attributes": {"object_type": "program", "mode": "structured", "platform": "natural", "platform_kind": "nat:Program", "views": {"EMP": "EMPLOYEES", "VEH": "VEHICLES"}}},
+    {"kind": "Program", "natural_key": {"platform": "natural", "name": "EMPSAL"}, "since": "M2", "attributes": {"object_type": "subprogram", "platform_kind": "nat:Subprogram"}},
+    {"kind": "Program", "natural_key": {"platform": "natural", "name": "VEHRPT"}, "since": "M2", "attributes": {"object_type": "program", "mode": "reporting"}},
+    {"kind": "Symbol", "natural_key": {"platform": "natural", "program": "EMPMAINT", "name": "SHOW-TOTALS"}, "since": "M2", "attributes": {"symbol_kind": "subroutine", "platform_kind": "nat:InlineSubroutine"}},
+    {"kind": "Screen", "natural_key": {"platform": "natural", "name": "EMPMAP"}, "since": "M2", "attributes": {"object_type": "map", "fields": 3, "platform_kind": "nat:Map"}},
+    {"kind": "UIControl", "natural_key": {"container": "EMPMAP", "name": "#PERSONNEL-ID"}, "since": "M2", "attributes": {"line": 4, "column": 16, "mode": "modifiable", "label": "Personnel ID", "helproutine": "EMPHELP", "format": "A8", "platform_kind": "nat:MapField"}},
+    {"kind": "UIControl", "natural_key": {"container": "EMPMAP", "name": "#NAME"}, "since": "M2", "attributes": {"line": 6, "mode": "output", "label": "Name"}},
+    {"kind": "UIControl", "natural_key": {"container": "EMPMAP", "name": "#MSG"}, "since": "M2", "attributes": {"line": 23, "mode": "output"}},
+    {"kind": "DataSchema", "natural_key": {"kind": "natural-lda", "name": "EMPLDA"}, "since": "M2", "attributes": {"object_type": "local_data_area", "platform_kind": "nat:LocalDataArea"}},
+    {"kind": "Field", "natural_key": {"table": "natural:EMPLDA", "name": "#PERSONNEL-ID"}, "since": "M2", "attributes": {"level": 1, "format": "A8", "length": 8, "platform_kind": "nat:DataField"}},
+    {"kind": "Field", "natural_key": {"table": "natural:EMPLDA", "name": "#WORK"}, "since": "M2", "attributes": {"level": 1, "group": true}},
+    {"kind": "Field", "natural_key": {"table": "natural:EMPLDA", "name": "#WORK.#NAME"}, "since": "M2", "attributes": {"level": 2, "format": "A20", "parent": "#WORK", "offset": 0}},
+    {"kind": "Field", "natural_key": {"table": "natural:EMPLDA", "name": "#ID"}, "since": "M2", "attributes": {"format": "N8", "length": 8, "offset": 20}},
+    {"kind": "Field", "natural_key": {"table": "natural:EMPLDA", "name": "#PREVIOUS.#NAME"}, "since": "M2", "attributes": {"parent": "#PREVIOUS"}},
+    {"kind": "Field", "natural_key": {"table": "natural:EMPLDA", "name": "#SALARY"}, "since": "M2", "attributes": {"format": "P7.2", "length": 5, "offset": 20}},
+    {"kind": "Field", "natural_key": {"table": "natural:EMPLDA", "name": "#CITIES"}, "since": "M2", "attributes": {"format": "A20", "occurs": 5}},
+    {"kind": "Table", "natural_key": {"datastore": "adabas", "name": "EMPLOYEES"}, "since": "M2", "attributes": {"object_type": "ddm", "platform_kind": "nat:Ddm"}},
+    {"kind": "Field", "natural_key": {"table": "adabas:EMPLOYEES", "name": "PERSONNEL-ID"}, "since": "M2", "attributes": {"short_name": "AA", "format": "A8", "length": 8, "descriptor": "unique", "platform_kind": "nat:DdmField"}},
+    {"kind": "Field", "natural_key": {"table": "adabas:EMPLOYEES", "name": "FULL-NAME"}, "since": "M2", "attributes": {"group": true}},
+    {"kind": "Field", "natural_key": {"table": "adabas:EMPLOYEES", "name": "NAME"}, "since": "M2", "attributes": {"level": 2, "descriptor": "descriptor"}},
+    {"kind": "Field", "natural_key": {"table": "adabas:EMPLOYEES", "name": "LANG"}, "since": "M2", "attributes": {"mu": true}},
+    {"kind": "Field", "natural_key": {"table": "adabas:EMPLOYEES", "name": "INCOME"}, "since": "M2", "attributes": {"pe": true, "group": true}},
+    {"kind": "Field", "natural_key": {"table": "adabas:EMPLOYEES", "name": "SALARY"}, "since": "M2", "attributes": {"in_pe": true, "format": "P9", "length": 5}},
+    {"kind": "Table", "natural_key": {"datastore": "adabas", "name": "VEHICLES"}, "since": "M2", "attributes": {"platform_kind": "nat:Ddm"}},
+    {"kind": "Field", "natural_key": {"table": "adabas:VEHICLES", "name": "MAKE"}, "since": "M2", "attributes": {"descriptor": "descriptor"}},
+    {"kind": "Field", "natural_key": {"table": "adabas:VEHICLES", "name": "YEAR"}, "since": "M2", "attributes": {"format": "N4", "length": 4}},
+    {"kind": "Table", "natural_key": {"datastore": "default", "name": "payroll_audit"}, "since": "M2"},
+    {"kind": "DataSchema", "natural_key": {"kind": "idms-schema", "name": "EMPSCHM"}, "since": "M2", "attributes": {"areas": ["EMP-REGION"], "sets": ["DEPT-EMPLOYEE"], "platform_kind": "idms:Schema"}},
+    {"kind": "Table", "natural_key": {"datastore": "idms:EMPSCHM", "name": "DEPARTMENT"}, "since": "M2", "attributes": {"record_id": 410, "location_mode": "calc", "calc_key": ["DEPT-ID"], "area": "EMP-REGION", "length": 52, "sets": [{"set": "DEPT-EMPLOYEE", "member": "EMPLOYEE", "order": "sorted"}], "platform_kind": "idms:Record"}},
+    {"kind": "Table", "natural_key": {"datastore": "idms:EMPSCHM", "name": "EMPLOYEE"}, "since": "M2", "attributes": {"location_mode": "via", "via_set": "DEPT-EMPLOYEE", "length": 36, "member_of": [{"set": "DEPT-EMPLOYEE", "owner": "DEPARTMENT", "membership": "mandatory automatic", "key": ["LAST-NAME"], "key_order": "ascending"}]}},
+    {"kind": "Field", "natural_key": {"table": "idms:EMPSCHM.DEPARTMENT", "name": "DEPT-ID"}, "since": "M2", "attributes": {"level": 2, "pic": "9(4)", "offset": 0, "length": 4, "platform_kind": "idms:Element"}},
+    {"kind": "Field", "natural_key": {"table": "idms:EMPSCHM.DEPARTMENT", "name": "DEPT-NAME"}, "since": "M2", "attributes": {"offset": 4, "length": 45}},
+    {"kind": "Field", "natural_key": {"table": "idms:EMPSCHM.EMPLOYEE", "name": "EMP-NAME"}, "since": "M2", "attributes": {"group": true, "length": 25, "offset": 4}},
+    {"kind": "Field", "natural_key": {"table": "idms:EMPSCHM.EMPLOYEE", "name": "LAST-NAME"}, "since": "M2", "attributes": {"level": 3, "parent": "EMP-NAME", "offset": 14, "length": 15}},
+    {"kind": "Field", "natural_key": {"table": "idms:EMPSCHM.EMPLOYEE", "name": "STATUS-CODE"}, "since": "M2", "attributes": {"pic": "X(2)", "offset": 29}},
+    {"kind": "Field", "natural_key": {"table": "idms:EMPSCHM.EMPLOYEE", "name": "SALARY"}, "since": "M2", "attributes": {"pic": "S9(7)V99", "usage": "COMP-3", "length": 5, "offset": 31}},
+    {"kind": "CodeList", "natural_key": {"platform": "idms", "name": "EMPSCHM.EMPLOYEE.STATUS-CODE"}, "since": "M2", "attributes": {"values": ["01", "02", "03"], "conditions": ["ACTIVE", "RETIRED"], "platform_kind": "idms:Condition"}},
+    {"kind": "DataSchema", "natural_key": {"kind": "idms-subschema", "name": "EMPSS01"}, "since": "M2", "attributes": {"schema": "EMPSCHM", "records": ["DEPARTMENT", "EMPLOYEE"], "sets": ["DEPT-EMPLOYEE"], "platform_kind": "idms:Subschema"}}
+  ],
+  "edges": [
+    {"subject": {"kind": "Program", "natural_key": {"platform": "natural", "name": "EMPMAINT"}}, "predicate": "DEPENDS_ON", "object": {"kind": "DataSchema", "natural_key": {"kind": "natural-lda", "name": "EMPLDA"}}, "since": "M2"},
+    {"subject": {"kind": "Program", "natural_key": {"platform": "natural", "name": "EMPMAINT"}}, "predicate": "RENDERS", "object": {"kind": "Screen", "natural_key": {"platform": "natural", "name": "EMPMAP"}}, "since": "M2"},
+    {"subject": {"kind": "Program", "natural_key": {"platform": "natural", "name": "EMPMAINT"}}, "predicate": "CALLS", "object": {"kind": "Program", "natural_key": {"platform": "natural", "name": "EMPSAL"}}, "since": "M2"},
+    {"subject": {"kind": "Program", "natural_key": {"platform": "natural", "name": "EMPMAINT"}}, "predicate": "CONTAINS", "object": {"kind": "Symbol", "natural_key": {"platform": "natural", "program": "EMPMAINT", "name": "SHOW-TOTALS"}}, "since": "M2"},
+    {"subject": {"kind": "Program", "natural_key": {"platform": "natural", "name": "EMPMAINT"}}, "predicate": "CALLS", "object": {"kind": "Symbol", "natural_key": {"platform": "natural", "program": "EMPMAINT", "name": "SHOW-TOTALS"}}, "since": "M2"},
+    {"subject": {"kind": "Program", "natural_key": {"platform": "natural", "name": "EMPMAINT"}}, "predicate": "READS_FROM", "object": {"kind": "Table", "natural_key": {"datastore": "adabas", "name": "EMPLOYEES"}}, "since": "M2"},
+    {"subject": {"kind": "Program", "natural_key": {"platform": "natural", "name": "EMPMAINT"}}, "predicate": "WRITES_TO", "object": {"kind": "Table", "natural_key": {"datastore": "adabas", "name": "EMPLOYEES"}}, "since": "M2"},
+    {"subject": {"kind": "Program", "natural_key": {"platform": "natural", "name": "EMPMAINT"}}, "predicate": "READS_FROM", "object": {"kind": "Table", "natural_key": {"datastore": "adabas", "name": "VEHICLES"}}, "since": "M2"},
+    {"subject": {"kind": "Program", "natural_key": {"platform": "natural", "name": "EMPSAL"}}, "predicate": "READS_FROM", "object": {"kind": "Table", "natural_key": {"datastore": "adabas", "name": "EMPLOYEES"}}, "since": "M2"},
+    {"subject": {"kind": "Program", "natural_key": {"platform": "natural", "name": "EMPSAL"}}, "predicate": "WRITES_TO", "object": {"kind": "Table", "natural_key": {"datastore": "adabas", "name": "EMPLOYEES"}}, "since": "M2"},
+    {"subject": {"kind": "Program", "natural_key": {"platform": "natural", "name": "EMPSAL"}}, "predicate": "WRITES_TO", "object": {"kind": "Table", "natural_key": {"datastore": "default", "name": "payroll_audit"}}, "since": "M2"},
+    {"subject": {"kind": "Program", "natural_key": {"platform": "natural", "name": "VEHRPT"}}, "predicate": "READS_FROM", "object": {"kind": "Table", "natural_key": {"datastore": "adabas", "name": "VEHICLES"}}, "since": "M2"},
+    {"subject": {"kind": "Screen", "natural_key": {"platform": "natural", "name": "EMPMAP"}}, "predicate": "CONTAINS", "object": {"kind": "UIControl", "natural_key": {"container": "EMPMAP", "name": "#PERSONNEL-ID"}}, "since": "M2"},
+    {"subject": {"kind": "DataSchema", "natural_key": {"kind": "natural-lda", "name": "EMPLDA"}}, "predicate": "CONTAINS", "object": {"kind": "Field", "natural_key": {"table": "natural:EMPLDA", "name": "#WORK.#NAME"}}, "since": "M2"},
+    {"subject": {"kind": "Table", "natural_key": {"datastore": "adabas", "name": "EMPLOYEES"}}, "predicate": "CONTAINS", "object": {"kind": "Field", "natural_key": {"table": "adabas:EMPLOYEES", "name": "SALARY"}}, "since": "M2"},
+    {"subject": {"kind": "Table", "natural_key": {"datastore": "adabas", "name": "VEHICLES"}}, "predicate": "CONTAINS", "object": {"kind": "Field", "natural_key": {"table": "adabas:VEHICLES", "name": "PERSONNEL-ID"}}, "since": "M2"},
+    {"subject": {"kind": "DataSchema", "natural_key": {"kind": "idms-schema", "name": "EMPSCHM"}}, "predicate": "CONTAINS", "object": {"kind": "Table", "natural_key": {"datastore": "idms:EMPSCHM", "name": "DEPARTMENT"}}, "since": "M2"},
+    {"subject": {"kind": "DataSchema", "natural_key": {"kind": "idms-schema", "name": "EMPSCHM"}}, "predicate": "CONTAINS", "object": {"kind": "Table", "natural_key": {"datastore": "idms:EMPSCHM", "name": "EMPLOYEE"}}, "since": "M2"},
+    {"subject": {"kind": "Table", "natural_key": {"datastore": "idms:EMPSCHM", "name": "EMPLOYEE"}}, "predicate": "CONTAINS", "object": {"kind": "Field", "natural_key": {"table": "idms:EMPSCHM.EMPLOYEE", "name": "STATUS-CODE"}}, "since": "M2"},
+    {"subject": {"kind": "Field", "natural_key": {"table": "idms:EMPSCHM.EMPLOYEE", "name": "STATUS-CODE"}}, "predicate": "BINDS_TO", "object": {"kind": "CodeList", "natural_key": {"platform": "idms", "name": "EMPSCHM.EMPLOYEE.STATUS-CODE"}}, "since": "M2"},
+    {"subject": {"kind": "DataSchema", "natural_key": {"kind": "idms-subschema", "name": "EMPSS01"}}, "predicate": "CONTAINS", "object": {"kind": "Table", "natural_key": {"datastore": "idms:EMPSCHM", "name": "EMPLOYEE"}}, "since": "M2"},
+    {"subject": {"kind": "DataSchema", "natural_key": {"kind": "idms-subschema", "name": "EMPSS01"}}, "predicate": "CONTAINS", "object": {"kind": "Field", "natural_key": {"table": "idms:EMPSCHM.EMPLOYEE", "name": "EMP-NAME"}}, "since": "M2"}
+  ],
+  "absent_entities": [
+    {"kind": "Program", "natural_key": {"platform": "mainframe", "name": "AUDITLOG"}, "why": "a CALL target is referred to, not declared: it links when the repository holds that program"},
+    {"kind": "Program", "natural_key": {"platform": "natural", "name": "#NEXT-PROG"}, "why": "FETCH RETURN names its program through a variable: the target stays dynamic"},
+    {"kind": "Field", "natural_key": {"table": "natural:EMPLDA", "name": "#NAME"}, "why": "a name used in two groups of one data area is qualified by its parent"},
+    {"kind": "Field", "natural_key": {"table": "idms:EMPSCHM.DEPARTMENT", "name": "FILLER"}, "why": "FILLER is not declared"},
+    {"kind": "Table", "natural_key": {"datastore": "adabas", "name": "EMP"}, "why": "EMP is a view: database statements name the DDM it is a view of"},
+    {"kind": "Program", "natural_key": {"platform": "natural", "name": "SHOW-TOTALS"}, "why": "PERFORM of a subroutine defined in the object calls its Symbol, not an external subroutine"}
+  ],
+  "exclusions": [],
+  "forbidden_kinds": ["Package", "Component"],
+  "expected_unknowns": [
+    {"since": "M2", "detail": "EMPMAINT's FETCH RETURN names its target in #NEXT-PROG: kept dynamic, with a diagnostic and the construct counted as not modelled"}
+  ],
+  "expected_conflicts": [],
+  "secret_probes": [
+    {"path": "natural/EMPMAINT.nsp", "must_never_appear": "fixture-not-a-real-password-0042", "since": "M2"}
+  ],
+  "commits": [
+    {
+      "dir": "01-employee-department",
+      "expect": "A new DDM field and a new data area field",
+      "added_entities": [
+        {"kind": "Field", "natural_key": {"table": "adabas:EMPLOYEES", "name": "DEPT-CODE"}, "since": "M2"},
+        {"kind": "Field", "natural_key": {"table": "natural:EMPLDA", "name": "#DEPT-CODE"}, "since": "M2"}
+      ],
+      "removed_entities": []
+    },
+    {
+      "dir": "02-salary-history",
+      "expect": "A CALLNAT of a new subprogram that stores into a new Adabas file",
+      "added_entities": [
+        {"kind": "Program", "natural_key": {"platform": "natural", "name": "SALHIST"}, "since": "M2"},
+        {"kind": "Table", "natural_key": {"datastore": "adabas", "name": "SALARY-HISTORY"}, "since": "M2"},
+        {"kind": "Field", "natural_key": {"table": "adabas:SALARY-HISTORY", "name": "OLD-SALARY"}, "since": "M2"}
+      ],
+      "removed_entities": []
+    },
+    {
+      "dir": "03-retire-vehicle-report",
+      "expect": "The reporting-mode vehicle report is removed; the VEHICLES DDM stays",
+      "added_entities": [],
+      "removed_entities": [
+        {"kind": "Program", "natural_key": {"platform": "natural", "name": "VEHRPT"}, "since": "M2"}
+      ]
+    }
+  ],
+  "decision_cases": [],
+  "granularity": {"label": null, "why": "a Natural library and an IDMS schema kept as source exports, with no build file or deployment a repository shows", "source": "fixture design"}
+}

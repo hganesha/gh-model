@@ -1,0 +1,7 @@
+DB: 10 FILE: 13  - SALARY-HISTORY                   DEFAULT SEQUENCE: AA
+TYPE: ADABAS
+T L DB Name                              F Leng  S D Remark
+- - -- -------------------------------- - ----  - - ------------------------
+  1 AA PERSONNEL-ID                      A    8  N D
+  1 AB OLD-SALARY                        P    9  N
+  1 AC CHANGED-ON                        D    4  N D
