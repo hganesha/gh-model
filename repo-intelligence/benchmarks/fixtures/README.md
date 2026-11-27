@@ -95,6 +95,11 @@ can prove the compiler handles it safely.
 | Paths and table names built from parameters (`$INPUT`, `${hivevar:mart_db}`, `${appBaseDir}`) | `F34-hadoop-oozie/base/apps/daily_orders/` | They stay parameterized, marked dynamic, with a diagnostic; parameter values are never substituted |
 | A member set by AutoEdit, a condition no job adds, and scripts at paths outside the repository (`$HOME/bin/...`, `/opt/...`) | `F35-scheduler-exports/base/.rkp/inputs/scheduler/` | Nothing is linked or invented for them; diagnostics say so |
 | Undesignated documents that read like requirements, a code table and a field table; a PDF designated for rules | `F36-designated-documents/base/docs/meeting-notes.md`, `glossary.md`, `scanned-policy.pdf` | Nothing is read from an undesignated document; the PDF is reported as a gap naming the export needed |
+| Made-up database password (`fixture-not-a-real-password-0037`) MOVEd to `WS-DB-PASSWD`, and a program called through `WS-RULE-PGM`, which is given two literals | `F37-cobol-batch-online/base/cobol/ACCTPOST.cbl` and `commits/01-fee-rule/`; the password repeated in its `golden.json` under `secret_probes` | The password is flagged at admission and never reaches output; the two-literal call stays dynamic |
+| JOB statement accounting fields, a DB2 subsystem name and IMS and stage-1 operands | `F38-zos-definitions`, `F39-bms-ims` | Names are kept where 11.1 says, values never |
+| Made-up password (`fixture-not-a-real-password-0040`) assigned in an RPG program | `F40-ibmi-rpg/base/qrpglesrc/CUSTUPD.sqlrpgle`; repeated in its `golden.json` under `secret_probes` | Must never reach output |
+| Made-up password (`fixture-not-a-real-password-0041`) assigned in a REXX exec | `F41-pli-easytrieve/base/rexx/RUNRPT.rexx`; repeated in its `golden.json` under `secret_probes` | Must never reach output |
+| Made-up password (`fixture-not-a-real-password-0042`) assigned in a Natural program | `F42-natural-adabas/base/natural/EMPMAINT.nsp` and `commits/02-salary-history/`; repeated in its `golden.json` under `secret_probes` | Must never reach output |
 
 These paths are excluded from GitHub secret scanning in
 `.github/secret_scanning.yml`. If another scanner flags them, they are safe to

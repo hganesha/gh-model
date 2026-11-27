@@ -26,6 +26,8 @@ is ignored by the generic compiler.
 
 from __future__ import annotations
 
+import bisect
+import functools
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
@@ -53,10 +55,23 @@ class Extractor(Protocol):
     def extract(self, path: str, data: bytes, blob_sha256: str) -> Extraction: ...
 
 
+@functools.lru_cache(maxsize=8)
+def _line_starts(data: bytes) -> tuple[int, ...]:
+    """Byte offset of each line's first byte. Kept for the last few files: an extractor makes
+    many spans over one file, and counting newlines from byte 0 for each made it quadratic."""
+    starts = [0]
+    at = data.find(b"\n")
+    while at >= 0:
+        starts.append(at + 1)
+        at = data.find(b"\n", at + 1)
+    return tuple(starts)
+
+
 def span(data: bytes, start: int, end: int) -> Span:
     """Byte span [start, end) with 1-based lines derived from it."""
     end = max(start, end)
-    return Span(start_byte=start, end_byte=end, start_line=data.count(b"\n", 0, start) + 1, end_line=data.count(b"\n", 0, max(start, end - 1)) + 1)
+    starts = _line_starts(data)
+    return Span(start_byte=start, end_byte=end, start_line=bisect.bisect_right(starts, start), end_line=bisect.bisect_right(starts, max(start, end - 1)))
 
 
 def whole_file(data: bytes) -> Span:

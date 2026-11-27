@@ -422,12 +422,12 @@ def test_sql_tables_fields_and_views():
     assert keys(r, "Table") == [{"datastore": "default", "name": "customers"}, {"datastore": "default", "name": "audit.events"}]
     assert keys(r, "Field") == [
         {"table": "customers", "name": "id"},
-        {"table": "customers", "name": "Email"},
+        {"table": "customers", "name": "email"},  # lower case, as sql_lineage names columns (contract 11.3)
         {"table": "customers", "name": "note"},
         {"table": "audit.events", "name": "id"},
         {"table": "audit.events", "name": "customer_id"},
     ]
-    assert ({"datastore": "default", "name": "customers"}, "CONTAINS", {"table": "customers", "name": "Email"}) in relations(r)
+    assert ({"datastore": "default", "name": "customers"}, "CONTAINS", {"table": "customers", "name": "email"}) in relations(r)
     assert len(relations(r)) == 5
     (view,) = entities(r, "DataSchema")
     assert view.payload["natural_key"] == {"kind": "view", "name": "customer_totals"}

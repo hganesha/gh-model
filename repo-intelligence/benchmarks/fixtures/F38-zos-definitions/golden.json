@@ -418,15 +418,15 @@
    "kind": "Table",
    "natural_key": {
     "datastore": "default",
-    "name": "ACCT.ACCOUNT"
+    "name": "acct.account"
    },
    "since": "M2"
   },
   {
    "kind": "Field",
    "natural_key": {
-    "table": "ACCT.ACCOUNT",
-    "name": "BALANCE"
+    "table": "acct.account",
+    "name": "balance"
    },
    "since": "M2",
    "attributes": {

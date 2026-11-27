@@ -868,7 +868,7 @@ def _unit_link(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, Any]:
     return {"unit": unit["name"], "observations": linker.out, "unknowns": linker.unknowns, "coverage": coverage, "exports": linker.exports(), "symbol_ends": linker.symbol_ends()}
 
 
-UNIT_LINK = Step("unit.link", "0.12.0", _unit_link)
+UNIT_LINK = Step("unit.link", "0.13.0", _unit_link)
 
 
 # ---------------------------------------------------------------- repo-level

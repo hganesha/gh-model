@@ -563,7 +563,7 @@
  "expected_unknowns": [
   {
    "since": "M2",
-   "detail": "CUSTUPD's CALL WS-PGM names its target through a variable: counted as unresolved, not guessed"
+   "detail": "CUSTUPD's CALL WS-PGM names its target through a variable with one literal value: resolved to AUDITLOG, which this repository does not hold"
   },
   {
    "since": "M2",

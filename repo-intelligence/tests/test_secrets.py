@@ -198,3 +198,15 @@ def test_expressions_are_not_secrets_but_env_lines_are():
     env = b"DEBUG=true\nSECRET_KEY=0123456789abcdefghij0123\nSMTP_PASSWORD=${SMTP_PASSWORD}\nFIRST_SUPERUSER_PASSWORD=changethis\n"
     found = secrets.scan(env)
     assert [f["detector"] for f in found] == ["env_assignment"] and env[found[0]["start_byte"]:found[0]["end_byte"]] == b"0123456789abcdefghij0123"
+
+
+def test_mainframe_credentials_are_found_but_references_and_short_words_are_not():
+    cobol = (b"       01  WS-DB-PASSWD PIC X(30) VALUE 'fixture-cobol-value-01'.\n"
+             b"           MOVE 'fixture-cobol-move-02' TO WS-DB-PASSWD.\n"
+             b"           MOVE 'not-a-secret-but-long' TO WS-CUSTOMER-NAME.\n"
+             b"           MOVE 'short' TO WS-PWD.\n")
+    assert _flagged(cobol) == [("cobol_value_credential", b"fixture-cobol-value-01"), ("cobol_move_credential", b"fixture-cobol-move-02")]
+    pli = b" DCL DB_PASSWORD CHAR(30) INIT('fixture-pli-init-03');\n DCL CUST_NAME CHAR(30) INIT('Customer-Name-Default');\n"
+    assert _flagged(pli) == [("pli_init_credential", b"fixture-pli-init-03")]
+    cl = b"SBMJOB CMD(CALL PGM(X)) USER(BATCHUSR)\nRUNRMTCMD CMD('x') RMTPWD('fixture-cl-pwd-04')\nRUNRMTCMD CMD('x') RMTPWD(&PWD)\n"
+    assert _flagged(cl) == [("cl_password_keyword", b"fixture-cl-pwd-04")]

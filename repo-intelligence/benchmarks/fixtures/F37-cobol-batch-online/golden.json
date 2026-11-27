@@ -737,7 +737,9 @@
     }
   ],
   "expected_conflicts": [],
-  "secret_probes": [],
+  "secret_probes": [
+    {"path": "cobol/ACCTPOST.cbl", "must_never_appear": "fixture-not-a-real-password-0037", "since": "M2"}
+  ],
   "commits": [
     {
       "dir": "01-fee-rule",

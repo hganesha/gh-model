@@ -113,7 +113,7 @@ def test_a_platform_transform_names_its_construct_and_owners_may_be_strings():
     unit["transforms"][0]["construct"] = "pyspark:foreach"
     assert tx.validate_shape(unit) == []
     assert tx.validate_shape({**unit, "owner": "@nobody"})
-    assert tx.validate_shape({**unit, "language": "cobol"})
+    assert tx.validate_shape({**unit, "language": "fortran"})
     assert tx.validate_shape({**unit, "transforms": []})
 
 

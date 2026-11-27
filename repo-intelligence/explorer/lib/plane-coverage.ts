@@ -12,7 +12,7 @@ import type { CoverageRow, Entity, Ratio, Summary } from "./types";
  * is simply not shown. tests/test_golden_multi.py checks that every registered pack with
  * such a term is listed.
  */
-export const UI_PLATFORMS = ["aspnet", "cfml", "jsp", "sas", "web"];
+export const UI_PLATFORMS = ["aspnet", "bms", "cfml", "easytrieve", "ibmi", "ims", "jsp", "natural", "sas", "web"];
 
 /** Kinds whose entities carry `attributes.status` (`hypothesis`, or `confirmed` after an owner override). */
 export const STATUS_KINDS = ["BusinessRule", "Workflow"];
