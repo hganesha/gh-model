@@ -280,6 +280,24 @@ def test_lexing_is_linear_on_long_hostile_input():
     assert large < small * 8 * 3 + 0.5  # eight times the input, well under quadratic time
 
 
+def test_diagnostics_and_the_one_literal_rule_are_linear():
+    # Each dynamic CALL looks up its item and writes a diagnostic with a line number: neither
+    # may scan the file or every data item again for each call.
+    def timed(n):
+        items = [f"01  WS-P{k} PIC X(8)." for k in range(n)]
+        calls = [f"    CALL WS-P{k} PERFORM P{k} THRU P{k}" for k in range(n)]
+        paras = [f"P{k}. CONTINUE." for k in range(n)]
+        body = fixed("IDENTIFICATION DIVISION.", "PROGRAM-ID. BIG.", "DATA DIVISION.", "WORKING-STORAGE SECTION.", *items,
+                     "PROCEDURE DIVISION.", "P-MAIN.", *calls, "    GOBACK.", *paras)
+        start = time.perf_counter()
+        out = run(body)
+        assert sum("stays dynamic" in m for m in messages(out)) == n
+        return time.perf_counter() - start
+
+    small, large = timed(300), timed(2400)
+    assert large < small * 8 * 3 + 0.5  # eight times the input, well under quadratic time
+
+
 def test_unterminated_literal_and_binary_input_do_not_fail():
     assert run(fixed("IDENTIFICATION DIVISION.", "PROGRAM-ID. BAD.", "PROCEDURE DIVISION.", "    DISPLAY 'NEVER ENDS")).parsed
     out = run(b"\xff\xfe\x00\x01" * 50)
@@ -392,8 +410,8 @@ def test_file_io_conditions_are_ifs_on_a_platform_condition():
 
 def test_embedded_sql_is_a_query_with_host_variables():
     out = run((F37 / "base/cobol/ACCTINQ.cbl").read_bytes(), "cobol/ACCTINQ.cbl")
-    q = units(out)["1000-LOOKUP"]["body"][0]
-    assert q["op"] == "query"
+    read, q = units(out)["1000-LOOKUP"]["body"][:2]  # the CICS READ of the master, then the SELECT
+    assert read["op"] == "platform" and q["op"] == "query"
     assert q["sql"] == "SELECT ACCT_NAME, BALANCE FROM ACCOUNTS WHERE ACCT_ID = :WS_ACCT_ID"
     assert q["host_vars"] == {"read": ["WS-ACCT-ID"], "set": ["WS-ACCT-NAME", "WS-BALANCE"]}
     assert [i["name"] for i in q["target"]["items"]] == ["WS-ACCT-NAME", "WS-BALANCE"]
@@ -671,3 +689,58 @@ def test_names_never_values():
     ))
     dumped = json.dumps([o.payload for o in out.observations])
     assert "db.internal.example" not in dumped and "BATCHUSR" not in dumped
+
+
+def test_condition_names_of_a_credential_are_never_copied():
+    # A short value (under eight characters) is not one a secret scanner flags, so the
+    # pack itself must leave it out.
+    out = run(fixed(
+        "01  SEC-REC.",
+        "    05  SEC-USER        PIC X(8).",
+        "    05  SEC-PASSWD      PIC X(6).",
+        "        88  SEC-PASSWD-DEFAULT  VALUE 'Zq7!x'.",
+        "        88  SEC-PASSWD-BLANK    VALUE SPACES.",
+        "    05  SEC-MODE        PIC X.",
+        "        88  SEC-MODE-ADMIN      VALUE 'A'.",
+        "    05  SEC-AREA.",
+        "        10  SEC-PIN-TOKEN PIC 9(4).",
+        "            88  SEC-PIN-FIXED   VALUE 4711.",
+    ), "copybooks/SECREC.cpy")
+    ents, rels, counts = entities(out), relations(out), constructs(out)
+    pw = key("Field", table="cobol:SECREC", name="SEC-PASSWD")
+    codes = key("CodeList", platform="cobol", name="SECREC.SEC-PASSWD")
+    assert (pw, "BINDS_TO", codes) in rels
+    assert ents[codes]["values"] == [] and ents[codes]["redacted"] is True
+    assert ents[key("CodeList", platform="cobol", name="SECREC.SEC-PIN-TOKEN")].items() >= {"values": [], "redacted": True}.items()
+    mode = ents[key("CodeList", platform="cobol", name="SECREC.SEC-MODE")]
+    assert mode["values"] == [{"code": "A", "label": "SEC-MODE-ADMIN"}] and "redacted" not in mode
+    assert counts[("cbl:condition_name", False)] == 3 and counts[("cbl:condition_name", True)] == 1
+    dumped = json.dumps([o.payload for o in out.observations]) + json.dumps(messages(out))
+    assert "Zq7!x" not in dumped
+
+    # In a program: a test, a SET and an EVALUATE of such an 88 name it without its value;
+    # an 88 itself named like a credential is treated the same way.
+    out = run(fixed(
+        "IDENTIFICATION DIVISION.", "PROGRAM-ID. LOGON.", "DATA DIVISION.", "WORKING-STORAGE SECTION.",
+        "01  WS-PWD             PIC X(5).",
+        "    88  WS-PWD-OK      VALUE 'Zq7!x'.",
+        "01  WS-IN              PIC X(3).",
+        "    88  WS-IN-SECRET   VALUE 'k9#'.",
+        "PROCEDURE DIVISION.",
+        "MAIN-PARA.",
+        "    IF WS-PWD-OK",
+        "        DISPLAY 'IN'",
+        "    END-IF",
+        "    SET WS-PWD-OK TO TRUE",
+        "    EVALUATE TRUE",
+        "        WHEN WS-IN-SECRET CONTINUE",
+        "    END-EVALUATE",
+        "    GOBACK.",
+    ))
+    unit = units(out)["MAIN-PARA"]
+    validate_unit(unit)
+    dumped = json.dumps([o.payload for o in out.observations]) + json.dumps(messages(out))
+    assert "Zq7!x" not in dumped and "k9#" not in dumped
+    tested = next(n for n in walk(unit["body"]) if n["op"] == "if")
+    assert tested["cond"] == {"e": "var", "name": "WS-PWD-OK", "condition_name": True}
+    assert any(n["op"] == "platform" and n.get("construct") == "cbl:set_condition" for n in walk(unit["body"]))

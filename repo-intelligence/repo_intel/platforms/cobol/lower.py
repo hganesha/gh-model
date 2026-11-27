@@ -36,6 +36,7 @@ nodes named by construct; a statement this reader does not know is an
 
 from __future__ import annotations
 
+import bisect
 import re
 from dataclasses import dataclass, field
 from typing import Any, Callable
@@ -76,6 +77,33 @@ CICS_FILE = {"READ": "read", "READNEXT": "read", "READPREV": "read", "STARTBR": 
 
 Expr = dict[str, Any]
 Stmt = dict[str, Any]
+
+# A data name that holds a credential: its values are never copied (contract rule 7).
+CREDENTIAL = re.compile(r"PASSW|PASWD|PSWD|PWD|SECRET|TOKEN|CREDENT|API-?KEY|PASSPHRASE", re.I)
+
+
+def credential_item(item: DataItem | None) -> bool:
+    """True when the item (an 88-level included), or a group above it, is named like a credential."""
+    while item is not None:
+        if item.name and CREDENTIAL.search(item.name):
+            return True
+        item = item.parent
+    return False
+
+
+def line_of(starts: list[int], offset: int) -> int:
+    """1-based line of a character offset, given the offsets where lines start."""
+    return bisect.bisect_right(starts, offset)
+
+
+def line_starts(text: str) -> list[int]:
+    starts = [0]
+    find = text.find
+    i = find("\n")
+    while i >= 0:
+        starts.append(i + 1)
+        i = find("\n", i + 1)
+    return starts
 
 
 @dataclass
@@ -139,6 +167,7 @@ class Ctx:
     procedure_kinds: dict[str, str]
     items: dict[str, list[DataItem]] = field(default_factory=dict)
     conditions: dict[str, list[DataItem]] = field(default_factory=dict)
+    redefined: set[str] = field(default_factory=set)  # names some item REDEFINES
     records: dict[str, str] = field(default_factory=dict)  # 01-level record name -> its FD's file
     selects: set[str] = field(default_factory=set)
     cursors: dict[str, tuple[str, list[dict[str, Any]], list[str], list[str]]] = field(default_factory=dict)
@@ -154,6 +183,8 @@ class Ctx:
     sql_includes: list[tuple[str, int, int]] = field(default_factory=list)
     constructs: list[tuple[str, int, int, bool]] = field(default_factory=list)
     diagnostics: list[tuple[str, str]] = field(default_factory=list)
+    starts: list[int] | None = field(default=None, repr=False)  # line starts, computed on first use
+    position: dict[str, int] | None = field(default=None, repr=False)  # procedure name -> its first index
 
     def construct(self, cid: str, a: int, b: int, modelled: bool = True) -> None:
         self.constructs.append((cid, a, b, modelled))
@@ -162,7 +193,9 @@ class Ctx:
         self.diagnostics.append((severity, message))
 
     def line(self, offset: int) -> int:
-        return self.code.count("\n", 0, offset) + 1
+        if self.starts is None:
+            self.starts = line_starts(self.code)
+        return line_of(self.starts, offset)
 
     def wrote(self, name: str | None, literal: str | None = None) -> None:
         if name:
@@ -634,7 +667,8 @@ class Lowerer:
         """A condition-name (88-level) test: the field compared with its values when the 88 is in this file."""
         name = ref.get("name") if ref.get("e") in ("var", "member") else None
         found = self.ctx.conditions.get(name or "") or []
-        if len(found) != 1 or found[0].parent is None or not found[0].parent.name or not found[0].values:
+        if len(found) != 1 or found[0].parent is None or not found[0].parent.name or not found[0].values or credential_item(found[0]):
+            # Not one 88 in this file, or one whose values a credential holds: tested by name only.
             return {**ref, "condition_name": True} if ref.get("e") in ("var", "member", "index") else ref
         cond = found[0]
         subject = self.var(cond.parent.name)
@@ -823,10 +857,12 @@ class Lowerer:
             for e, n in tgts:
                 cond = (self.ctx.conditions.get(n) or [None])
                 c = cond[0] if len(cond) == 1 else None
-                if truth and c is not None and c.parent is not None and c.parent.name and c.values:
+                if truth and c is not None and c.parent is not None and c.parent.name and c.values and not credential_item(c):
                     self.ctx.wrote(c.parent.name)
                     out.append({"op": "assign", "at": self.at(t.start, b), "target": self.var(c.parent.name), "value": _value_lit(c.values[0]), "condition_name": n})
                 else:
+                    if truth and c is not None and c.parent is not None and c.parent.name and c.values:
+                        self.ctx.wrote(c.parent.name)  # a credential's 88: written, its value not copied
                     out.append({"op": "platform", "construct": "cbl:set_condition", "at": self.at(t.start, b), "detail": {"condition": n, "to": truth}})
             self.ctx.construct("cbl:set", t.start, b)
             return out
@@ -1018,8 +1054,13 @@ class Lowerer:
 
     def thru_range(self, first: str, last: str) -> list[str]:
         order = self.ctx.procedures
-        if first in order and last in order and order.index(first) <= order.index(last):
-            return order[order.index(first) : order.index(last) + 1]
+        if self.ctx.position is None:
+            self.ctx.position = {}
+            for k, name in enumerate(order):
+                self.ctx.position.setdefault(name, k)  # the first procedure of that name
+        a, b = self.ctx.position.get(first), self.ctx.position.get(last)
+        if a is not None and b is not None and a <= b:
+            return order[a : b + 1]
         return [first, last]
 
     def loop_phrase(self) -> tuple[str, dict[str, Any]] | None:
