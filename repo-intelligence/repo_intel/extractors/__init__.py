@@ -48,6 +48,12 @@ LANGUAGES = {
     ".dtsx": "ssis", ".conmgr": "ssis", ".ispac": "ssis",
     ".dsx": "datastage", ".isx": "datastage", ".dml": "abinitio", ".xfr": "abinitio",
     ".hql": "hive", ".pig": "pig",
+    # Mainframe and midrange packs, wave W8 (docs/solution-ir-contract.md, section 11.1). A BMS map
+    # in a `.mac` or `.asm` file is recognised by the bms pack from its content.
+    ".bms": "bms", ".mfs": "ims", ".dbd": "ims", ".psb": "ims",
+    ".rpg": "rpg", ".rpgle": "rpg", ".sqlrpgle": "rpg", ".clp": "cl", ".clle": "cl", ".pf": "dds", ".lf": "dds", ".dspf": "dds", ".prtf": "dds",
+    ".pli": "pli", ".pl1": "pli", ".ezt": "easytrieve", ".rexx": "rexx", ".rex": "rexx", ".clist": "clist", ".asm": "hlasm", ".hlasm": "hlasm", ".mac": "hlasm",
+    ".nsp": "natural", ".nsn": "natural", ".nss": "natural", ".nsm": "natural", ".nsl": "natural", ".nsh": "natural", ".nsc": "natural", ".nsa": "natural", ".nsg": "natural", ".nsd": "natural",
     # Documents an owner may designate (section 9.1).
     ".txt": "text", ".csv": "csv", ".html": "html", ".htm": "html", ".docx": "docx", ".xlsx": "xlsx", ".pdf": "pdf",
     # More languages, API contracts, and build and infrastructure files.

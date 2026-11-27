@@ -1,0 +1,8 @@
+     A                                      UNIQUE
+     A          R CUSTREC                   TEXT('Customer master')
+     A            CUSNO          7P 0       COLHDG('Customer' 'Number')
+     A            CUSNAME       30A         COLHDG('Name')
+     A            CUSLIMIT       9P 2       TEXT('Credit limit')
+     A            CUSSTAT        1A         VALUES('A' 'I' 'H')
+     A                                      TEXT('Status')
+     A          K CUSNO

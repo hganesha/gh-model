@@ -63,6 +63,15 @@ _IDENTIFIED_BY = re.compile(rb"(?i)\bidentified\s+by\s+(\"?)(?!values\b)([^\s\";
 # `$DBConnection_Pwd=value`: a parameter whose name says it holds a credential.
 _PARAMETER_FILE_CREDENTIAL = re.compile(rb"(?im)^\s*\$\$?\w*(?:password|passwd|pwd|secret)\w*\s*=\s*(\S+)")
 
+# Mainframe and midrange sources (docs/solution-ir-contract.md, section 11): a quoted literal
+# MOVEd to, or given as the VALUE of, a COBOL data item whose name says it holds a credential;
+# a PL/I INIT of such a variable; a CL password keyword (RMTPWD, PASSWORD, PWD).
+_CREDENTIAL_NAME = rb"[\w#@$-]*(?:PASSW|PWD|SECRET|TOKEN)[\w#@$-]*"
+_COBOL_MOVE_CREDENTIAL = re.compile(rb"(?i)\bMOVE\s+(['\"])([^'\"\r\n]{8,160})\1\s+TO\s+" + _CREDENTIAL_NAME)
+_COBOL_VALUE_CREDENTIAL = re.compile(rb"(?i)\b\d{2}\s+" + _CREDENTIAL_NAME + rb"\s+PIC(?:TURE)?\s+(?:IS\s+)?\S+(?:\s+USAGE\s+(?:IS\s+)?\S+)?\s+VALUE\s+(?:IS\s+)?(['\"])([^'\"\r\n]{8,160})\1")
+_PLI_INIT_CREDENTIAL = re.compile(rb"(?i)\b" + _CREDENTIAL_NAME + rb"\s[^;'\r\n]{0,80}?\bINIT(?:IAL)?\s*\(\s*'([^'\r\n]{8,160})'")
+_CL_PASSWORD_KEYWORD = re.compile(rb"(?i)\b(?:RMTPWD|PASSWORD|PWD)\(\s*'?([^)'\s]{8,})'?\s*\)")
+
 
 # (detector id, pattern, group whose span is the secret)
 _DETECTORS: list[tuple[str, re.Pattern[bytes], int]] = [
@@ -79,11 +88,17 @@ _DETECTORS: list[tuple[str, re.Pattern[bytes], int]] = [
     ("connection_string_password", _CONNECTION_PASSWORD, 1),
     ("oracle_identified_by", _IDENTIFIED_BY, 2),
     ("parameter_file_credential", _PARAMETER_FILE_CREDENTIAL, 1),
+    ("cobol_move_credential", _COBOL_MOVE_CREDENTIAL, 2),
+    ("cobol_value_credential", _COBOL_VALUE_CREDENTIAL, 2),
+    ("pli_init_credential", _PLI_INIT_CREDENTIAL, 1),
+    ("cl_password_keyword", _CL_PASSWORD_KEYWORD, 1),
 ]
 # Detectors whose match is a finding only when the value passes a check.
 _VALUE_CHECKS = {
     "servlet_param_value": _secret_like, "connection_string_password": _secret_like,
     "oracle_identified_by": _credential_value, "parameter_file_credential": _credential_value,
+    "cobol_move_credential": _credential_value, "cobol_value_credential": _credential_value,
+    "pli_init_credential": _credential_value, "cl_password_keyword": _credential_value,
 }
 
 

@@ -1,0 +1,12 @@
+ /* CUSTREC: the customer master record, 120 bytes                */
+ DCL 1 CUST_REC UNALIGNED,
+       2 CUST_ID         CHAR(10),
+       2 CUST_NAME       CHAR(40),
+       2 CUST_ACTION     CHAR(1),
+       2 CUST_ADDRESS,
+         3 STREET        CHAR(30),
+         3 CITY          CHAR(20),
+         3 POSTCODE      PIC '99999',
+       2 CUST_BALANCE    FIXED DEC(11,2),
+       2 CUST_OPENED     CHAR(8),
+       2 *               CHAR(0);

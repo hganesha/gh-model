@@ -1,0 +1,14 @@
+DB: 10 FILE: 11  - EMPLOYEES                        DEFAULT SEQUENCE: AE
+TYPE: ADABAS
+T L DB Name                              F Leng  S D Remark
+- - -- -------------------------------- - ----  - - ------------------------
+  1 AA PERSONNEL-ID                      A    8  N U
+G 1 AB FULL-NAME
+  2 AC FIRST-NAME                        A   20  N
+  2 AE NAME                              A   20  N D
+  1 AJ CITY                              A   20  N D
+  1 AK DEPT-CODE                         A    6  N D
+M 1 AZ LANG                              A    3  N D
+P 1 AQ INCOME
+  2 AR CURR-CODE                         A    3  N
+  2 AS SALARY                            P    9  N

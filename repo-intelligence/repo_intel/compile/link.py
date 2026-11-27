@@ -755,6 +755,69 @@ class _Linker:
                 for role in p.get("requires_roles", []):
                     self.relate(path, endpoint, Predicate.REQUIRES_ROLE, role, evidence, {"via": "Authorize"})
 
+    # -- data sets by DD name (contract 11.1 item 5)
+
+    def link_dd_datasets(self) -> None:
+        """A program's files to the data sets the JCL that runs it binds.
+
+        A COBOL `SELECT f ASSIGN TO DD` names a DD, not a data set: the language pack emits a
+        `dd_file` observation ({program, dd, mode, select, record}) and the zos pack, for
+        each DD of a step that runs a program, a `dd_binding` ({task, program, dd, dataset,
+        disp, job, step}). Where both name the same program and DD name, the program
+        READS_FROM the data set (mode input), WRITES_TO it (output or extend), or both
+        (i-o); with no mode, the DISP decides as it does for the step (NEW and MOD write,
+        anything else reads). Each relation carries `via: {job, step}` and both
+        observations as evidence (E3); a program run by two jobs gets one relation per
+        step. A step of an in-stream procedure is a Task of the procedure (contract 11.3
+        item 5), but its data sets are bound where the job calls it, with the call's
+        overrides applied: `via` names the calling job and `<calling step>.<procedure
+        step>`. The program may be a load module (`Program {platform: "mainframe"}`) or a
+        REXX exec or CLIST an IKJEFT01 step runs (`Program {platform: "tso"}`); the keys
+        are compared as given. Nothing is joined across units: a binding whose program has
+        no `dd_file` in this unit is left as the step's own READS_FROM or WRITES_TO.
+        """
+        def key(program: Mapping[str, Any], dd: Any) -> tuple[str, str, str]:
+            nk = program.get("natural_key") or {}
+            return (str(program.get("kind")), "\x00".join(f"{k}={nk[k]}" for k in sorted(nk)), str(dd).upper())
+
+        bindings: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
+        for path in sorted(self.files):
+            for o in _of(self.files[path], "dd_binding"):
+                p = o["payload"]
+                if isinstance(p.get("program"), Mapping) and isinstance(p.get("dataset"), Mapping) and p.get("dd"):
+                    bindings.setdefault(key(p["program"], p["dd"]), []).append(o)
+        if not bindings:
+            return
+        seen: set[tuple[Any, ...]] = set()
+        for path in sorted(self.files):
+            for f in _of(self.files[path], "dd_file"):
+                fp = f["payload"]
+                if not isinstance(fp.get("program"), Mapping) or not fp.get("dd"):
+                    continue
+                program = fp["program"]
+                subject = ref(program["kind"], program["natural_key"], program.get("name") or program["natural_key"].get("name", ""), declare=False)
+                found = bindings.get(key(program, fp["dd"]), [])
+                for b in sorted(found, key=lambda o: (str(o["payload"].get("job")), str(o["payload"].get("step")), o["payload"]["dataset"].get("name") or "")):
+                    bp = b["payload"]
+                    ds = bp["dataset"]
+                    obj = ref(ds["kind"], ds["natural_key"], ds.get("name") or ds["natural_key"].get("name", ""), declare=False)
+                    mode = fp.get("mode")
+                    if mode == "input":
+                        predicates = [Predicate.READS_FROM]
+                    elif mode in ("output", "extend"):
+                        predicates = [Predicate.WRITES_TO]
+                    elif mode == "i-o":
+                        predicates = [Predicate.READS_FROM, Predicate.WRITES_TO]
+                    else:
+                        predicates = [Predicate.WRITES_TO if str(bp.get("disp") or "").upper() in ("NEW", "MOD") else Predicate.READS_FROM]
+                    via = {k: bp[k] for k in ("job", "step") if bp.get(k)}
+                    for predicate in predicates:
+                        ident = (path, key(program, fp["dd"]), str(predicate), str(obj["natural_key"]), via.get("job"), via.get("step"))
+                        if ident in seen:
+                            continue
+                        seen.add(ident)
+                        self.relate(path, subject, predicate, obj, [f["evidence"], b["evidence"]], {"via": via, "dd": str(fp["dd"]).upper()}, evidence_class=EvidenceClass.E3)
+
     # -- exports for repo-level linking
 
     def exports(self) -> dict[str, Any]:
@@ -788,6 +851,7 @@ def _unit_link(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, Any]:
     linker.link_migrations()
     linker.link_model_aliases()
     linker.link_app_relative_routes()
+    linker.link_dd_datasets()
 
     imp = linker.imports
     total_imports = sum(imp.values())
@@ -809,7 +873,7 @@ def _unit_link(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, Any]:
     return {"unit": unit["name"], "observations": linker.out, "unknowns": linker.unknowns, "coverage": coverage, "exports": linker.exports(), "symbol_ends": linker.symbol_ends()}
 
 
-UNIT_LINK = Step("unit.link", "0.12.0", _unit_link)
+UNIT_LINK = Step("unit.link", "0.13.0", _unit_link)
 
 
 # ---------------------------------------------------------------- repo-level

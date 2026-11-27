@@ -137,12 +137,15 @@ def split_statements(text: str) -> list[tuple[int, int]]:
 
 def _qualified(table: Any) -> str:
     db = table.text("db")
-    return table.name if not db or db.lower() == "public" else f"{db}.{table.name}"
+    # Lower case, as sql_lineage names tables, so DDL, embedded SQL and lineage name one Table
+    # (docs/solution-ir-contract.md, section 11.1 items 9 and 12). Columns are lower-cased too.
+    name = table.name if not db or db.lower() == "public" else f"{db}.{table.name}"
+    return name.lower()
 
 
 class SqlDdl:
     id = "data.sql_ddl"
-    version = "1.1.0"
+    version = "1.2.0"
 
     def matches(self, path: str) -> bool:
         return path.lower().endswith(".sql")
@@ -208,7 +211,7 @@ class SqlDdl:
                         if col_at and ascii_only:
                             cursor = col_at.end_byte
                         dtype = column.args.get("kind")
-                        columns[column.name] = (col_at or head, dtype.sql(dialect="postgres") if dtype is not None else None)
+                        columns[column.name.lower()] = (col_at or head, dtype.sql(dialect="postgres") if dtype is not None else None)
                     tables[name] = {"at": head, "created": True, "columns": columns, "dropped": set()}
                     created[len(ops)] = dict(columns)
                     ops.append((head, "create_table", name, None, {}))
@@ -226,27 +229,30 @@ class SqlDdl:
                 for action in tree.args.get("actions") or []:
                     if isinstance(action, exp.ColumnDef) and action.name:
                         dtype = action.args.get("kind")
-                        state["columns"][action.name] = (name_span(action.name, a, b, whole), dtype.sql(dialect="postgres") if dtype is not None else None)
-                        state["dropped"].discard(action.name)
-                        ops.append((whole, "add_column", name, action.name, {"type": state["columns"][action.name][1]}))
+                        col = action.name.lower()
+                        state["columns"][col] = (name_span(action.name, a, b, whole), dtype.sql(dialect="postgres") if dtype is not None else None)
+                        state["dropped"].discard(col)
+                        ops.append((whole, "add_column", name, col, {"type": state["columns"][col][1]}))
                     elif isinstance(action, exp.Drop) and (action.args.get("kind") or "").upper() == "COLUMN":
                         for column in (c for c in action.args.get("tables") or [] if c.name):
-                            state["columns"].pop(column.name, None)
-                            state["dropped"].add(column.name)
-                            ops.append((whole, "drop_column", name, column.name, {}))
+                            state["columns"].pop(column.name.lower(), None)
+                            state["dropped"].add(column.name.lower())
+                            ops.append((whole, "drop_column", name, column.name.lower(), {}))
                     elif isinstance(action, exp.RenameColumn) and action.this is not None and action.args.get("to") is not None:
-                        old, new = action.this.name, action.args["to"].name
+                        old, raw_new = action.this.name.lower(), action.args["to"].name
+                        new = raw_new.lower()
                         kept = state["columns"].pop(old, (None, None))
-                        state["columns"][new] = (name_span(new, a, b, whole), kept[1])
+                        state["columns"][new] = (name_span(raw_new, a, b, whole), kept[1])
                         state["dropped"].add(old)
                         ops.append((whole, "rename_column", name, old, {"new_column_name": new}))
                     elif isinstance(action, exp.AlterColumn) and action.name:
                         dtype = action.args.get("dtype")
-                        if action.name in state["columns"] and dtype is not None:
-                            state["columns"][action.name] = (state["columns"][action.name][0], dtype.sql(dialect="postgres"))
+                        col = action.name.lower()
+                        if col in state["columns"] and dtype is not None:
+                            state["columns"][col] = (state["columns"][col][0], dtype.sql(dialect="postgres"))
                         if dtype is not None:
                             alter_types[len(ops)] = dtype.sql(dialect="postgres")
-                        ops.append((whole, "alter_column", name, action.name, {}))
+                        ops.append((whole, "alter_column", name, col, {}))
                     elif isinstance(action, exp.AlterRename) and isinstance(action.this, exp.Table) and action.this.name:
                         new = _qualified(action.this)
                         tables[new] = {**tables.pop(name), "at": whole}

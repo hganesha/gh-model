@@ -1,0 +1,9 @@
+DB: 10 FILE: 12  - VEHICLES                         DEFAULT SEQUENCE: AA
+TYPE: ADABAS
+T L DB Name                              F Leng  S D Remark
+- - -- -------------------------------- - ----  - - ------------------------
+  1 AA REG-NUM                           A   15  N U
+  1 AC PERSONNEL-ID                      A    8  N D
+  1 AD MAKE                              A   20  N D
+  1 AE MODEL                             A   20  N
+  1 AF YEAR                              N    4  N

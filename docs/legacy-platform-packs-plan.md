@@ -1,6 +1,6 @@
 # Legacy platform packs: waves W7 to W10
 
-Status: 2026-11-26. Waves 1 and 2 are built; wave W7 is folded into sections 9 and 10 of the contract, which bind it. Waves W8 to W10 are proposed. It follows the format of the [solution IR contract](solution-ir-contract.md), which records waves 1 and 2, and is written to be folded into that contract as one section per wave. Sections 1 to 7 of the contract apply to every workstream here.
+Status: 2026-11-26. Waves 1 and 2 are built; wave W7 is folded into sections 9 and 10 of the contract and wave W8 into section 11, which bind them. Waves W9 and W10 are proposed. It follows the format of the [solution IR contract](solution-ir-contract.md), which records waves 1 and 2, and is written to be folded into that contract as one section per wave. Sections 1 to 7 of the contract apply to every workstream here.
 
 A workstream is named by its wave and its place in it: `W8.1` is the first workstream of wave W8. The contract restarts W1 to W6 inside each wave; the wave prefix keeps the names apart.
 
@@ -36,7 +36,7 @@ The integrator makes these in the commit that opens wave W7. They are in shared,
 3. **Transform languages.** `rkp-transform/1` accepts a pack id as `language` (today `sql`, `sas`, `pyspark`), so an ETL mapping or a DFSORT step is described with the same vocabulary.
 4. **Behaviour unit kinds.** Add `paragraph` (COBOL, RPG subroutine), `trigger` and `flow` (an integration or ETL flow) to the unit kinds of section 3.
 5. **Transactions.** A CICS or IMS transaction, an SAP transaction code and a scheduler-invoked entry point are `Endpoint`s with `method: "TRANSACTION"` and the transaction id as route (fidelity `lossy`).
-6. **Record fields.** A copybook, DDS or DCLGEN layout declares `Field {table: "<platform>:<layout name>", name}`, as the web pack does for model types (8.5).
+6. **Record fields.** A copybook, DDS or DCLGEN layout declares `Field {table: "<platform>:<layout name>", name}`, as the web pack does for model types (8.5). Contract 11.1 and 11.3 refine this for wave W8: a DCLGEN is a copybook (`cobol:<member>`) and an IBM i physical file is the table SQL names.
 7. **Triggers.** Decide the relation from a database trigger to its table. Recommended: the trigger is a `Program` with `attributes.on` naming the table and event, and `ENFORCES` any rule lifted from it; no new predicate.
 8. **Binary sources.** A pack never parses a proprietary binary (`.pbl`, `.fmb`, `.rpt`, `.unx`, Ab Initio `.mp`). The owner commits the vendor's text or XML export under `.rkp/inputs/<pack id>/`; the binary itself is inventoried and reported as a coverage gap that names the export needed. Zip containers of text (`.egp`, `.ispac`, `.dsx` archives) are read from the file's bytes, as `egp.py` does.
 

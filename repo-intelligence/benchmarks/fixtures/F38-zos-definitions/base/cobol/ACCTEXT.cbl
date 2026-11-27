@@ -1,0 +1,28 @@
+       IDENTIFICATION DIVISION.
+       PROGRAM-ID. ACCTEXT.
+      * COPIES THE OPEN ACCOUNTS OF THE MASTER TO THE DAILY EXTRACT.
+       ENVIRONMENT DIVISION.
+       INPUT-OUTPUT SECTION.
+       FILE-CONTROL.
+           SELECT ACCT-IN  ASSIGN TO ACCTIN.
+           SELECT ACCT-OUT ASSIGN TO ACCTOUT.
+       DATA DIVISION.
+       FILE SECTION.
+       FD  ACCT-IN.
+       01  ACCT-IN-REC            PIC X(200).
+       FD  ACCT-OUT.
+       01  ACCT-OUT-REC           PIC X(200).
+       WORKING-STORAGE SECTION.
+       01  WS-EOF                 PIC X VALUE 'N'.
+       PROCEDURE DIVISION.
+       MAIN-PARA.
+           OPEN INPUT ACCT-IN
+                OUTPUT ACCT-OUT
+           PERFORM UNTIL WS-EOF = 'Y'
+               READ ACCT-IN
+                   AT END MOVE 'Y' TO WS-EOF
+                   NOT AT END WRITE ACCT-OUT-REC FROM ACCT-IN-REC
+               END-READ
+           END-PERFORM
+           CLOSE ACCT-IN ACCT-OUT
+           GOBACK.

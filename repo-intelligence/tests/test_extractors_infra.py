@@ -422,12 +422,12 @@ def test_sql_tables_fields_and_views():
     assert keys(r, "Table") == [{"datastore": "default", "name": "customers"}, {"datastore": "default", "name": "audit.events"}]
     assert keys(r, "Field") == [
         {"table": "customers", "name": "id"},
-        {"table": "customers", "name": "Email"},
+        {"table": "customers", "name": "email"},  # lower case, as sql_lineage names columns (contract 11.3)
         {"table": "customers", "name": "note"},
         {"table": "audit.events", "name": "id"},
         {"table": "audit.events", "name": "customer_id"},
     ]
-    assert ({"datastore": "default", "name": "customers"}, "CONTAINS", {"table": "customers", "name": "Email"}) in relations(r)
+    assert ({"datastore": "default", "name": "customers"}, "CONTAINS", {"table": "customers", "name": "email"}) in relations(r)
     assert len(relations(r)) == 5
     (view,) = entities(r, "DataSchema")
     assert view.payload["natural_key"] == {"kind": "view", "name": "customer_totals"}
@@ -579,3 +579,27 @@ def test_wrongly_shaped_documents_do_not_raise():
     run(Terraform(), "empty.tf", b"")
     run(Dockerfile(), "Dockerfile", b"")
     run(SqlDdl(), "empty.sql", b"")
+
+
+def test_spans_over_a_second_copy_of_a_file_stay_linear():
+    # Line starts are kept per file object: a second bytes object with the same content must
+    # not be compared byte for byte with the first on every span (contract 11.3 item 2).
+    import time
+
+    from repo_intel.extractors import base
+
+    def timed(lines: int) -> float:
+        text = "".join(f"line {i}\n" for i in range(lines))
+        first, second = text.encode(), bytearray(text.encode())
+        base.span(first, 0, 1)
+        second = bytes(second)  # equal content, another object
+        assert second == first and second is not first
+        t = time.perf_counter()
+        for k in range(0, len(second), max(1, len(second) // 20000)):
+            s = base.span(second, k, k + 1)
+        assert s.start_line == second.count(b"\n", 0, k) + 1
+        return time.perf_counter() - t
+
+    small, large = timed(50_000), timed(200_000)
+    assert large < small * 3, (small, large)  # the same number of spans: no growth with the size
+
