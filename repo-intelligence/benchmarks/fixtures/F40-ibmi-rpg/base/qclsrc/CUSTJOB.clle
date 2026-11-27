@@ -1,0 +1,28 @@
+/* Customer job: show the inquiry, then update the limit now or in batch. */
+             PGM        PARM(&CUST &LIMIT)
+             DCL        VAR(&CUST) TYPE(*DEC) LEN(7 0)
+             DCL        VAR(&LIMIT) TYPE(*DEC) LEN(9 2)
+             DCL        VAR(&MODE) TYPE(*CHAR) LEN(1)
+             DCL        VAR(&NEXTPGM) TYPE(*CHAR) LEN(10)
+
+             MONMSG     MSGID(CPF0000) EXEC(GOTO CMDLBL(ERROR))
+
+             RTVDTAARA  DTAARA(CUSTCTL (1 1)) RTNVAR(&MODE)
+             OVRDBF     FILE(CUSTMAST) TOFILE(CUSTLIB/CUSTMAST) SHARE(*YES)
+             CALL       PGM(CUSTINQ) PARM(&CUST)
+
+             IF         COND(&MODE *EQ 'B') THEN(DO)
+                SBMJOB  CMD(CALL PGM(CUSTUPD) PARM(&CUST &LIMIT)) +
+                          JOB(CUSTUPD) JOBQ(QBATCH) USER(FIXTUSR40)
+             ENDDO
+             ELSE       CMD(CALL PGM(CUSTUPD) PARM(&CUST &LIMIT))
+
+             RTVDTAARA  DTAARA(CUSTCTL (2 10)) RTNVAR(&NEXTPGM)
+             IF         COND(&NEXTPGM *NE ' ') THEN(CALL PGM(&NEXTPGM))
+             CHGDTAARA  DTAARA(CUSTCTL (1 1)) VALUE('FIXTVAL40')
+             DLTOVR     FILE(CUSTMAST)
+             RETURN
+
+ ERROR:      SNDPGMMSG  MSGID(CPF9898) MSGF(QCPFMSG) MSGDTA('Customer job +
+                          failed') MSGTYPE(*ESCAPE)
+             ENDPGM
