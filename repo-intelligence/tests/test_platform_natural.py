@@ -105,7 +105,7 @@ def walk(nodes):
 
 def test_pack_is_registered_and_valid():
     assert packs()["natural"] is PACK
-    assert PACK.prefix == "nat" and PACK.version == "1.0.0"
+    assert PACK.prefix == "nat" and PACK.version == "1.1.0"
     assert validate_pack(PACK) == []
     assert {e.id for e in PACK.extractors} == {"natural.source"}
     assert len(PACK.constructs) >= 100
@@ -412,6 +412,80 @@ def test_names_never_values():
     blob = json.dumps([o.payload for o in out.observations])
     assert "db.example.internal" not in blob and "svc-user-7" not in blob
     assert constructs(out)[("nat:init_value", True)] == 2
+
+
+def test_literals_beside_a_credential_are_not_copied():
+    # short values, which admission's secret detectors would not flag: the pack blanks them itself
+    text = """DEFINE DATA LOCAL
+1 U VIEW OF USERS
+  2 API-TOKEN
+  2 NAME
+1 #PASSWORD (A20) INIT <'v01'>
+1 #A (A20)
+END-DEFINE
+MOVE 'v02' TO #A #PASSWORD
+IF #PASSWORD = 'v03'
+  WRITE 'v04' #PASSWORD
+END-IF
+DECIDE ON FIRST VALUE OF #PASSWORD
+  VALUE 'v05'
+    IGNORE
+  NONE
+    IGNORE
+END-DECIDE
+DECIDE FOR FIRST CONDITION
+  WHEN #PASSWORD = 'v06'
+    IGNORE
+  WHEN #A = 'kept-1'
+    IGNORE
+  WHEN NONE
+    IGNORE
+END-DECIDE
+FIND U WITH API-TOKEN = 'v07'
+  IGNORE
+END-FIND
+READ U BY API-TOKEN STARTING FROM 'v08'
+  ACCEPT IF API-TOKEN = 'v09'
+END-READ
+EXAMINE #PASSWORD FOR 'v10' REPLACE 'v11'
+CALLNAT 'SUBP' #PASSWORD 'v12'
+REPEAT UNTIL #PASSWORD = 'v13'
+  INPUT #PASSWORD
+END-REPEAT
+SELECT * INTO VIEW U FROM AUTH WHERE PASSWORD = 'v14'
+END-SELECT
+IF #A = 'kept-2'
+  IGNORE
+END-IF
+END
+"""
+    out = run(text, "CRED.nsp")
+    blob = json.dumps([o.payload for o in out.observations] + messages(out))
+    for i in range(1, 15):
+        assert f"'v{i:02d}'" not in blob and f'"v{i:02d}"' not in blob, i
+    assert "kept-1" in blob and "kept-2" in blob  # literals of other fields stay
+    for unit in units(out).values():
+        assert validate_unit(unit) == []
+    assert not any(o.payload["construct"] == "nat:for" for o in out.observations if o.kind == "construct")  # EXAMINE ... FOR is one statement
+    assert constructs(out)[("nat:sensitive_value", True)] >= 12
+
+
+def test_line_numbers_in_diagnostics_do_not_rescan_the_text():
+    def program(n: int) -> str:
+        return "DEFINE DATA LOCAL USING LDA1\nEND-DEFINE\n" + "".join(f"READ V{i} BY NAME\nEND-READ\n" for i in range(n)) + "END\n"
+
+    def timed(n: int) -> float:
+        text = program(n)
+        best = 1e9
+        for _ in range(2):
+            t = time.perf_counter()
+            out = run(text, "MANY.nsp")
+            best = min(best, time.perf_counter() - t)
+        assert f"view V{n - 1} at line {2 * n + 1} is defined in a data area in another file: its DDM is not read here" in messages(out)
+        return best
+
+    small, large = timed(2000), timed(8000)
+    assert large < max(small, 0.01) * 8  # 4x the input: linear, with room for noise
 
 
 def test_inventory_language_is_natural():

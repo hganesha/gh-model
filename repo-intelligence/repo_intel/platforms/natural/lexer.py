@@ -17,6 +17,7 @@ linear in the size of the file.
 
 from __future__ import annotations
 
+from bisect import bisect_right
 from dataclasses import dataclass
 
 NAME, LABEL, SYSVAR, STRING, NUMBER, WORD, OP = "name", "label", "sysvar", "string", "number", "word", "op"
@@ -152,6 +153,22 @@ def tokens(text: str) -> list[Token]:
         out.append(Token(OP, op, i, i + len(op)))
         i += len(op)
     return out
+
+
+class Lines:
+    """Line numbers of character offsets: the line starts are found once, and each lookup
+    bisects them, so a diagnostic's line number does not rescan the text from its start."""
+
+    def __init__(self, text: str):
+        self.starts = [0]
+        at = text.find("\n")
+        while at >= 0:
+            self.starts.append(at + 1)
+            at = text.find("\n", at + 1)
+
+    def index(self, offset: int) -> int:
+        """The 0-based line of `offset`."""
+        return bisect_right(self.starts, offset) - 1
 
 
 def _string(text: str, i: int, quote: str) -> tuple[int, str]:

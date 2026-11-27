@@ -36,7 +36,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable
 
 from repo_intel.platforms.natural import data as natdata
-from repo_intel.platforms.natural.lexer import LABEL, NAME, NUMBER, OP, STRING, SYSVAR, WORD, Token
+from repo_intel.platforms.natural.lexer import LABEL, NAME, NUMBER, OP, STRING, SYSVAR, WORD, Lines, Token
 
 # Words that start a statement or close a block: an operand list ends at any of them.
 STARTERS = frozenset("""
@@ -144,6 +144,8 @@ class Parser:
         self.last_single: str | None = None
         self.scopes: dict[str, str] = {}
         self._last_left: dict[str, Any] | None = None
+        self._lines: Lines | None = None
+        self._closes: dict[int, int] | None = None
 
     # -------------------------------------------------------------- tokens
 
@@ -181,10 +183,26 @@ class Parser:
         self.module.diagnostics.append((severity, message))
 
     def line_of(self, offset: int) -> int:
-        return self.text.count("\n", 0, offset)
+        if self._lines is None:
+            self._lines = Lines(self.text)
+        return self._lines.index(offset)
 
     def close(self, k: int) -> int:
-        """The index of the `)` that closes the `(` at token index `k` (or the end)."""
+        """The index of the `)` that closes the `(` at token index `k` (or the end). The
+        pairs are matched once for the whole object, so an unclosed `(` is not rescanned to
+        the end each time a statement boundary is tested."""
+        if self._closes is None:
+            self._closes = {}
+            opened: list[int] = []
+            for j, t in enumerate(self.toks):
+                if t.kind == OP and t.text == "(":
+                    opened.append(j)
+                elif t.kind == OP and t.text == ")" and opened:
+                    self._closes[opened.pop()] = j
+            for j in opened:
+                self._closes[j] = self.n - 1
+        if k in self._closes:
+            return self._closes[k]
         depth = 0
         while k < self.n:
             t = self.toks[k]
@@ -221,6 +239,26 @@ class Parser:
         """Past the rest of the current statement: at least one token, then to the next start."""
         self.i += 1
         while self.i < self.n and not self.starts_statement():
+            if self.op("("):
+                self.i = self.close(self.i)
+            self.i += 1
+
+    def skip_examine(self) -> None:
+        """Past an EXAMINE statement, whose clauses use words that also start statements:
+        `EXAMINE FULL VALUE OF #A FOR 'x' DELETE`, `... REPLACE WITH 'y' GIVING NUMBER #N`.
+        FOR and VALUE OF always belong to it; DELETE does when written on the line of the
+        word before it."""
+        self.i += 1
+        while self.i < self.n:
+            t = self.toks[self.i]
+            if t.kind == NAME and (t.up == "FOR" or (t.up == "VALUE" and self.word(1) == "OF")):
+                self.i += 1
+                continue
+            if t.kind == NAME and t.up == "DELETE" and "\n" not in self.text[self.toks[self.i - 1].end : t.start]:
+                self.i += 1
+                continue
+            if self.starts_statement():
+                break
             if self.op("("):
                 self.i = self.close(self.i)
             self.i += 1
@@ -335,7 +373,10 @@ class Parser:
             self.construct(LAYOUT[w], t.start, self.last_end(), False)
             return []
         if w in OTHER:
-            self.skip_statement()
+            if w == "EXAMINE":
+                self.skip_examine()
+            else:
+                self.skip_statement()
             self.construct(OTHER[w], t.start, self.last_end())
             return [{"op": "platform", "construct": OTHER[w], "at": self.span(t.start, self.last_end()), "detail": {"statement": w.lower()}}]
         if t.kind == NAME and w not in STARTERS and self.starts_statement():
