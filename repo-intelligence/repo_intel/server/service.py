@@ -577,13 +577,16 @@ class Service:
                         registry.ref_published(conn, self.store.tenant_id, job["repository_id"], ref, job["commit_sha"], result.manifest.rkp_hash)
                 # After publish; a failure here never unpublishes the snapshot (spec §5 Stage 5).
                 self._reconcile_lineage(result.manifest, previous, repo_path)
+                shadow = self._shadow_sampled(result.manifest.rkp_hash)
                 tell("complete", {"rkp_hash": result.manifest.rkp_hash})
+                if shadow:
+                    # Set before the status, so whoever waits on the job never sees it complete
+                    # with its shadow compile not yet announced.
+                    job["shadow"] = "running"
                 job["status"] = "complete"
-            self.queue_placement(job["repository_id"])
-            _, document = self.workspace_settings()
-            if parity.sampled(result.manifest.rkp_hash, document.parity.shadow_rate):
-                job["shadow"] = "running"
+            if shadow:
                 threading.Thread(target=self._shadow_job, args=(job, result.manifest, repo_path, configuration), daemon=True).start()
+            self.queue_placement(job["repository_id"])
         except Superseded as exc:
             job["status"], job["error"] = "cancelled", str(exc)
             job["events"].append({"seq": len(job["events"]), "stage": "cancelled", "at": time.time()})
@@ -628,6 +631,15 @@ class Service:
             pass  # lineage is a heuristic over a published snapshot; its failure leaves the snapshot usable
 
     # -- parity: shadow compiles, quarantine and promote (GI-019)
+
+    def _shadow_sampled(self, rkp_hash: str) -> bool:
+        """Whether this snapshot gets a shadow compile. Unreadable settings mean no shadow:
+        sampling must never fail a compile that has already published."""
+        try:
+            _, document = self.workspace_settings()
+            return parity.sampled(rkp_hash, document.parity.shadow_rate)
+        except Exception:
+            return False
 
     def _shadow_job(self, job: dict[str, Any], manifest: Manifest, repo_path: Any, configuration: Any) -> None:
         try:

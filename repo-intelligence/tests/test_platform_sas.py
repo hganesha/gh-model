@@ -760,8 +760,9 @@ def test_lexing_parsing_and_expansion_are_linear():
         return time.perf_counter() - started
 
     cost(200)  # warm up
-    small, large = min(cost(1000) for _ in range(2)), min(cost(4000) for _ in range(2))
-    assert large < small * 8, (small, large)  # 4x the input, well under 16x
+    # The best of five runs each: a shared CI runner pauses for longer than a 1000-unit run takes.
+    small, large = min(cost(1000) for _ in range(5)), min(cost(4000) for _ in range(5))
+    assert large < small * 10, (small, large)  # 4x the input: linear is about 4x, quadratic 16x
 
 
 def test_undecodable_bytes_are_reported_not_raised():
