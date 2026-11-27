@@ -313,7 +313,11 @@ class JclReader:
     def __init__(self, out: Out, path: str, text: str):
         self.out, self.path, self.text = out, path, text
         self.member = member_of(path)
-        self.history: dict[tuple[str, str], list[tuple[str, dict[str, Any]]]] = {}  # (step label, dd) -> data sets
+        # (job/step label, dd) -> the step's context and the data sets of that DD (more than
+        # one for a concatenation). A later step of the same label replaces the entry, so a
+        # referback names the latest step of that name, and a job that repeats a step label
+        # does not make each referback re-emit every earlier step's data sets.
+        self.history: dict[tuple[str, str], tuple[_Context, list[tuple[str, dict[str, Any]]]]] = {}
         self._called: dict[int, frozenset[str]] = {}
 
     # -- entry
@@ -643,7 +647,8 @@ class JclReader:
                 step_label = f"{ctx.step.rsplit('.', 1)[0]}.{parts[0]}"
             else:
                 step_label = ".".join(parts[:-1])
-            found = self.history.get((ctx.job + "/" + step_label, ddname))
+            entry = self.history.get((ctx.job + "/" + step_label, ddname))
+            found = entry[1] if entry is not None else None
             if not found:
                 out.construct(where, "dd_referback", False)
                 out.info(f"step {ctx.job}.{ctx.step}: referback {raw[:40]} names no DD before it: not linked")
@@ -712,7 +717,12 @@ class JclReader:
         if ctx.procstep:
             q["step"] = ctx.procstep
         out.relation(where, ctx.task, P.WRITES_TO if writes else P.READS_FROM, ds, q)
-        self.history.setdefault((ctx.job + "/" + ctx.step, dd.ddname), []).append((name, ds))
+        key = (ctx.job + "/" + ctx.step, dd.ddname)
+        entry = self.history.get(key)
+        if entry is None or entry[0] is not ctx:
+            self.history[key] = (ctx, [(name, ds)])
+        else:
+            entry[1].append((name, ds))
         for program in programs:
             out.observation("dd_binding", where, {"task": ctx.task, "program": program, "dd": dd.ddname, "dataset": {**ds, "declare": False}, "disp": disp,
                                                   "job": ctx.job, "step": ctx.step})

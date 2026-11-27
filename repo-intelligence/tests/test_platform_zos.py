@@ -457,6 +457,30 @@ def test_a_referback_stays_in_its_own_job_and_sets_apply_in_order():
     assert {(t, o) for t, p, o in rels if p == "READS_FROM"} == {(task("J2", "S1"), ds("a.one")), (task("J2", "S2"), ds("a.two"))}
 
 
+
+def test_a_repeated_step_label_does_not_pile_up_its_referbacks():
+    # A referback names the latest step of that label; a concatenation stays whole.
+    text = ("//J1 JOB\n//S1 EXEC PGM=P1\n//OUT DD DSN=A.FIRST,DISP=(NEW,CATLG)\n"
+            "//S1 EXEC PGM=P1\n//OUT DD DSN=A.SECOND,DISP=(NEW,CATLG)\n//   DD DSN=A.THIRD,DISP=SHR\n"
+            "//S2 EXEC PGM=P2\n//IN DD DSN=*.S1.OUT,DISP=SHR\n")
+    reads = {o for t, p, o in relations(run(text)) if t == task("J1", "S2") and p == "READS_FROM"}
+    assert reads == {ds("a.second"), ds("a.third")}
+
+    def job(n: int) -> str:
+        return "//J2 JOB\n" + "".join(f"//S1 EXEC PGM=P1\n//OUT DD DSN=A.D{i},DISP=(NEW,CATLG)\n//S2 EXEC PGM=P2\n//IN DD DSN=*.S1.OUT,DISP=SHR\n" for i in range(n))
+
+    def timed(n: int) -> float:
+        best = 1e9
+        for _ in range(2):
+            t = time.perf_counter()
+            out = run(job(n))
+            best = min(best, time.perf_counter() - t)
+        assert len(of(out, "dd_binding")) == 2 * n  # each referback binds one data set
+        return best
+
+    small, large = timed(500), timed(2000)
+    assert large < small * 8, (small, large)
+
 def test_dd_kinds_temporary_system_library_dummy_sysout_and_concatenation():
     out = run(SAMPLE_UTILITIES, "jcl/PAYROLL.jcl")
     ents = entities(out)
