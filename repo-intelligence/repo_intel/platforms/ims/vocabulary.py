@@ -73,7 +73,7 @@ _CONSTRUCTS = (
     ("message_segment", "SEG: a segment of a message", "attribute:segments"),
     ("message_field", "MFLD naming a device field", "entity:UIControl"),
     ("literal_message_field", "MFLD with only a literal; at the start of an input message, the transaction code it sends", "relation:NAVIGATES_TO"),
-    ("system_message_field", "MFLD of a system literal or control area (DATE2, TIME, LTNAME, SCA) or naming no device field", "unmapped"),
+    ("system_message_field", "MFLD that maps no device field: the system control area (SCA), a PF key field, or a name the format lacks", "unmapped"),
     ("repeated_fields", "DO ... ENDDO: device or message fields repeated with a suffix", "unmapped"),
     ("next_message", "MSG NXT=: the message descriptor used for the next message", "relation:NAVIGATES_TO"),
     ("partition", "PDB or PD: a partition descriptor", "unmapped"),

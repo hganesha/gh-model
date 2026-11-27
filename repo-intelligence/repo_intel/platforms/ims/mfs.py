@@ -19,8 +19,10 @@ device's names and are counted.
 A MSG's `NXT=` NAVIGATES_TO the next message descriptor's Screen. An input message whose
 first field is a literal starts with the transaction code IMS routes it by, so the MID
 NAVIGATES_TO that transaction (`Endpoint`, never declared here) when the literal's first
-word is a valid code. System literals, control areas, PF key fields and repeated fields
-(DO ... ENDDO) are counted and not modelled.
+word is a valid code. A device field filled with a system literal (`(TODAY,DATE2)`) keeps
+the literal's name as `system_literal`. Message fields that map no device field (the
+control area, a PF key field, a name the format lacks) and repeated fields (DO ... ENDDO)
+are counted and not modelled.
 """
 
 from __future__ import annotations
@@ -62,8 +64,9 @@ class _Mfld:
     stmt: Statement
     name: str | None
     literal: str | None
-    system: bool
+    system: bool  # no device field: the scratch pad or control area (SCA), or nothing
     length: int | None
+    system_literal: str | None = None  # DATE2, TIME, LTNAME ... the device field is filled with
 
 
 @dataclass
@@ -229,8 +232,7 @@ class MfsReader:
         m.end = s.end
         lead = s.positional()
         v = lead[0].value if lead else None
-        name = literal = None
-        system = False
+        name = literal = system_literal = None
         if isinstance(v, Quoted):
             literal = str(v)
         elif isinstance(v, list):
@@ -239,11 +241,11 @@ class MfsReader:
             second = v[1] if len(v) > 1 else None
             if isinstance(second, Quoted):
                 literal = str(second)
-            elif second is not None:
-                system = True  # a system literal (DATE2, TIME, LTNAME) or the SCA
+            elif is_name(second):
+                system_literal = second  # a system literal (DATE2, TIME, LTNAME) or, with no name, the SCA
         elif is_name(v):
             name = v
-        m.segments[-1].append(_Mfld(s, name, literal, system or (name is None and literal is None), number(s.value("LTH"))))
+        m.segments[-1].append(_Mfld(s, name, literal, name is None and literal is None, number(s.value("LTH")), system_literal))
 
     def close_message(self) -> None:
         if self.message is not None:
@@ -280,6 +282,8 @@ class MfsReader:
                     cattrs.update({"message_length": f.length, "segment": index})
                     if f.literal is not None:
                         cattrs["initial"] = f.literal
+                    if f.system_literal is not None:
+                        cattrs["system_literal"] = f.system_literal
                     if d is not None:
                         d.used = True
                     controls.append((f, cname, cattrs))
