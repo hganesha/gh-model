@@ -74,8 +74,8 @@ class HiveScripts:
     id = EXTRACTOR
     version = "1.0.0"
     # A Hive script this extractor parses is read here in the hive dialect; the generic SQL
-    # readers of the same file give nothing more. Takes effect once the compiler applies
-    # per-file supersession; until then it has no effect.
+    # readers of the same file give nothing more, so they are dropped for the file (per-file
+    # supersession, contract 10.3).
     supersedes_when_parsed = ("data.sql_lineage", "data.sql_ddl")
 
     def matches(self, path: str) -> bool:

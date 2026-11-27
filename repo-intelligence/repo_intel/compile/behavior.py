@@ -187,7 +187,8 @@ def validate_unit(unit: Any) -> list[str]:
 
 
 def behavior_observation(blob: str, at: Span, owner: dict[str, Any], language: str, body: list[dict[str, Any]], params: list[dict[str, Any]] | None = None, evidence_class: EvidenceClass = EvidenceClass.E2, kind: str | None = None) -> Observation:
-    """One unit of behaviour for `owner` (a Symbol or Program ref), validated before it is emitted.
+    """One unit of behaviour for `owner` (a Symbol or Program ref, or a Job or Task ref for the
+    unit kinds `flow` and `open_code`, contract section 3), validated before it is emitted.
 
     `kind` (UNIT_KINDS) says what the unit is when one owner has several.
     """

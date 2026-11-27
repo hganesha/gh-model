@@ -185,7 +185,7 @@ def test_pack_is_registered_and_valid():
     assert validate_pack(PACK) == []
     assert packs()["dbproc"] is PACK and PACK.prefix == "dbp"
     assert [e.id for e in PACK.extractors] == ["dbproc.routines"]
-    # inert until foundation supersession lands: a DB2 .sql procedure is then not also Program {sql}
+    # per-file supersession: a DB2 .sql procedure is not also Program {sql}
     assert {"data.sql_lineage", "data.sql_ddl"} <= set(Routines.supersedes_when_parsed)
     ids = {e.id for e in extractors.EXTRACTORS}
     assert set(Routines.supersedes_when_parsed) <= ids
