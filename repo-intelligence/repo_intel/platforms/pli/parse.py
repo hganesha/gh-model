@@ -227,7 +227,8 @@ class Parser:
         self.i = min(self.n, self.semi() + 1)
 
     def prev_end(self) -> int:
-        return self.t[self.i - 1].end if self.i > 0 else 0
+        k = min(self.i, len(self.t))
+        return self.t[k - 1].end if k > 0 else 0
 
     def construct(self, cid: str, a: int, b: int, modelled: bool = True) -> None:
         self.res.constructs.append((cid, modelled, a, b))

@@ -181,6 +181,14 @@ def test_layouts_conditions_and_what_stays_unread():
     assert of(out, "lineage_summary")[0]["unresolved"] == 1
 
 
+def test_malformed_statements_are_counted_not_fatal():
+    out = run("x/BAD.ezt", "JOB INPUT NOFILE\n  PUT\n  X = (\n  MOVE A\n  CASE\n  WHEN\n  END-CASE\n  DO WHILE\n  END-DO\n  CALL\n  Y = 1\n")
+    check_all(out)
+    assert constructs(out)[("ezt:unparsed", False)] >= 4
+    assert units(out)[0]["body"][0]["body"][-1]["op"] == "assign"
+    assert "NOFILE" in " ".join(d.message for d in out.diagnostics)
+
+
 def test_output_is_deterministic():
     data = (FIXTURE / "base/ezt/CUSTRPT.ezt").read_bytes()
     a, b = run("x/CUSTRPT.ezt", data), run("x/CUSTRPT.ezt", data)

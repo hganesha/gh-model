@@ -309,7 +309,7 @@ class Program:
                 raise Unreadable
             i += 1
             decimals = int(toks[i].text) if i < len(toks) and toks[i].kind == NUM else None
-        except (Unreadable, IndexError, ValueError):
+        except (Unreadable, IndexError, ValueError, StopIteration, KeyError):
             self.c(s, "ezt:unparsed", False)
             return
         attrs: dict[str, Any] = {"length": length, "type": fmt, "usage": _FORMATS[fmt]}
@@ -386,7 +386,10 @@ class Program:
                 if w.kind == WORD:
                     setattr(act, "start_proc" if t.is_("START") else "finish_proc", getattr(act, "start_proc" if t.is_("START") else "finish_proc") or w.up)
             for f in act.inputs:
-                self.files[f].modes.add("input")
+                if f in self.files:
+                    self.files[f].modes.add("input")
+                else:
+                    self.e.note(f"JOB INPUT {f}: no FILE of that name in the program")
             cid = {"file": "ezt:job", "null": "ezt:job_input_null", "sql": "ezt:sql_input", "synchronized": "ezt:synchronized_input", "default": "ezt:job"}[act.input_kind]
             self.c(s, cid, act.input_kind in ("file", "null", "default"))
         elif h == "SORT":
@@ -512,7 +515,7 @@ class Program:
                     i += 1
                     continue
                 nodes += self.simple(s)
-            except (Unreadable, IndexError, ValueError):
+            except (Unreadable, IndexError, ValueError, StopIteration, KeyError):
                 self.c(s, "ezt:unparsed", False)
                 nodes.append({"op": "platform", "construct": "ezt:unparsed", "at": self.e.at(s.start, s.end), "detail": {"keyword": h[:20]}})
             i += 1
@@ -546,7 +549,7 @@ class Program:
             on, k = self.operand(s.toks, 1)
             if k != len(s.toks):
                 raise Unreadable
-        except (Unreadable, IndexError, ValueError):
+        except (Unreadable, IndexError, ValueError, StopIteration, KeyError):
             on = self.unreadable(s)
         cases: list[dict[str, Any]] = []
         default: list[dict] | None = None
@@ -557,7 +560,7 @@ class Program:
             if t.head == "WHEN":
                 try:
                     matches = self.values(t.toks, 1)
-                except (Unreadable, IndexError, ValueError):
+                except (Unreadable, IndexError, ValueError, StopIteration, KeyError):
                     matches = [self.unreadable(t)]
                 body, i = self.block(stmts, i + 1, enders)
                 cases.append({"match": matches, "body": body})
@@ -776,7 +779,7 @@ class Program:
             node, i = self.or_cond(toks, 0)
             if i == len(toks):
                 return node
-        except (Unreadable, IndexError, ValueError):
+        except (Unreadable, IndexError, ValueError, StopIteration, KeyError):
             pass
         return self.unreadable(s)
 
