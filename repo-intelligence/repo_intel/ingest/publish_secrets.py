@@ -246,7 +246,8 @@ def leaked_secrets(
 
     Strong and assignment-based detections are matched in every output key and
     value, including their JSON-escaped form.
-    URL userinfo is always checked in output. Detached URL passwords still fail
+    URL userinfo is checked in output whenever `secrets.url_password` keeps its
+    password (a `${ref}`, the user name again or a product default is not one). Detached URL passwords still fail
     in arbitrary fields. A match in typed metadata can be a coincidence when
     its whole identifier occurs independently in the redacted, pinned source.
     """
@@ -280,8 +281,8 @@ def leaked_secrets(
                 for match in strong_matcher.finditer(canonical(text)):
                     leaks.update(strong[match[0]])
         if b"://" in value:
-            for match in secrets.URL_CREDENTIALS.finditer(value):
-                leaks.update(urls.get(match[1], {"<published output>"}))
+            for password in secrets.url_passwords(value):
+                leaks.update(urls.get(password, {"<published output>"}))
         if matcher is None or not matcher.search(value):
             continue
         if _publisher_scope(path, value):

@@ -9,8 +9,15 @@ from __future__ import annotations
 import re
 from typing import Any
 
-SCAN_VERSION = "4"
-URL_CREDENTIALS = re.compile(rb"://[^/\s:@]+:([^@\s/]{3,})@")
+SCAN_VERSION = "5"
+# URL user information `scheme://user:password@`: group 1 is the user, group 2 the password.
+URL_CREDENTIALS = re.compile(rb"://([^/\s:@]+):([^@\s/]{3,})@")
+# Passwords that come with a product and are published in its documentation (the `postgres`
+# superuser, RabbitMQ `guest`, MinIO `minioadmin`) or that only say a password goes here.
+_DEFAULT_PASSWORDS = frozenset({
+    b"admin", b"changeit", b"changeme", b"guest", b"minioadmin", b"pass", b"passw0rd", b"password",
+    b"postgres", b"root", b"secret", b"test",
+})
 
 # A servlet `<init-param>` or `<context-param>` (web.xml) whose name says it holds a
 # password, a secret or a key: the `<param-value>` that follows the `<param-name>`. The
@@ -50,6 +57,23 @@ def _any(value: bytes) -> bool:
     return True
 
 
+def url_password(user: bytes, password: bytes) -> bool:
+    """Whether the password in `scheme://user:password@` may be a real one. Not: a reference
+    to another value (`${DB_PASSWORD}`, `$PGPASS`, `%PW%`), the user name again
+    (`postgres:postgres`), or a product default (`password`, `guest`). A local compose file
+    or test fixture full of `postgres://postgres:postgres@db` holds no secret, and treating
+    the word as one fails the publish gate wherever the same word names a driver, a service
+    or a test. A short password that is none of these (`hunter2`) is still found."""
+    if _PLACEHOLDER.match(password) or password.startswith(b"$"):
+        return False
+    return password.lower() != user.lower() and password.lower() not in _DEFAULT_PASSWORDS
+
+
+def url_passwords(text: bytes) -> list[bytes]:
+    """The passwords in `text`'s URL user information that `url_password` keeps."""
+    return [m[2] for m in URL_CREDENTIALS.finditer(text) if url_password(m[1], m[2])]
+
+
 def _credential_value(value: bytes) -> bool:
     """`_secret_like`, and not a reference to another value: a SQL*Plus substitution
     (`&pwd`), a bind variable (`:pwd`) or another parameter (`$PMPassword`, `$$DB_PWD`)."""
@@ -79,11 +103,12 @@ _DETECTORS: list[tuple[str, re.Pattern[bytes], int]] = [
     ("aws_access_key_id", re.compile(rb"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b"), 0),
     ("anthropic_api_key", re.compile(rb"sk-ant-[A-Za-z0-9_\-]{20,}"), 0),
     ("github_token", re.compile(rb"\bgh[pousr]_[A-Za-z0-9]{36,}\b"), 0),
-    ("url_credentials", URL_CREDENTIALS, 1),
+    ("url_credentials", URL_CREDENTIALS, 2),
     # A secret-named key assigned a QUOTED literal, or a .env-style line. An unquoted
     # right-hand side in code is an expression (`token = make_token(...)`), not a value.
-    ("generic_assignment", re.compile(rb"(?i)(?:secret|token|passw(?:or)?d|api[_-]?key)[\"']?\s*[:=]\s*[\"']([A-Za-z0-9/+_\-]{20,})[\"']"), 1),
-    ("env_assignment", re.compile(rb"(?im)^[A-Z0-9_]*(?:SECRET|TOKEN|PASSWORD|API_?KEY)[A-Z0-9_]*=([^\s\"'#$]{20,})\s*$"), 1),
+    # Group 1 ends the key, so `_names_itself` can see it.
+    ("generic_assignment", re.compile(rb"(?i)(secret|token|passw(?:or)?d|api[_-]?key)[\"']?\s*[:=]\s*[\"']([A-Za-z0-9/+_\-]{20,})[\"']"), 2),
+    ("env_assignment", re.compile(rb"(?im)^([A-Z0-9_]*(?:SECRET|TOKEN|PASSWORD|API_?KEY)[A-Z0-9_]*)=([^\s\"'#$]{20,})\s*$"), 2),
     ("servlet_param_value", _PARAM_VALUE, 1),
     ("connection_string_password", _CONNECTION_PASSWORD, 1),
     ("oracle_identified_by", _IDENTIFIED_BY, 2),
@@ -102,10 +127,36 @@ _VALUE_CHECKS = {
 }
 
 
+_KEY_END = re.compile(rb"[\w.-]*$")
+_NOT_ALNUM = re.compile(rb"[^a-z0-9]")
+
+
+def _names_itself(match: re.Match[bytes]) -> bool:
+    """A value that is its own key re-cased names the secret and does not hold it:
+    `DATABASE_MIGRATOR_PASSWORD: "database-migrator-password"` maps a setting to the
+    Key Vault secret of that name, which the deployment templates name too."""
+    data, end = match.string, match.end(1)
+    key = _KEY_END.search(data, max(0, end - 200), end)[0]
+    return _NOT_ALNUM.sub(b"", key.lower()) == _NOT_ALNUM.sub(b"", match[2].lower())
+
+
+# Detectors whose match is a finding only when the whole match passes a check.
+_MATCH_CHECKS = {
+    "url_credentials": lambda m: url_password(m[1], m[2]),
+    "generic_assignment": lambda m: not _names_itself(m),
+    "env_assignment": lambda m: not _names_itself(m),
+}
+
+
+def _finding(name: str, match: re.Match[bytes], group: int) -> bool:
+    check = _MATCH_CHECKS.get(name)
+    return _VALUE_CHECKS.get(name, _any)(match.group(group)) and (check is None or check(match))
+
+
 def scan(data: bytes) -> list[dict[str, Any]]:
     """Non-overlapping findings, ordered by position: {detector, start_byte, end_byte}."""
     found = sorted(
-        ((m.start(g), m.end(g), name) for name, pattern, g in _DETECTORS for m in pattern.finditer(data) if _VALUE_CHECKS.get(name, _any)(m.group(g))),
+        ((m.start(g), m.end(g), name) for name, pattern, g in _DETECTORS for m in pattern.finditer(data) if _finding(name, m, g)),
         key=lambda f: (f[0], -f[1]),
     )
     out: list[dict[str, Any]] = []

@@ -190,4 +190,4 @@ def test_masked_parameter_file_keeps_names_and_offsets():
     par = b"$$DB_USER=etl\n$$DB_PASSWORD=fixture-not-a-real-password-0031\n"
     clean = secrets.mask_for_extraction(par, secrets.scan(par))
     assert len(clean) == len(par) and b"fixture-not-a-real-password" not in clean and b"$$DB_PASSWORD=" in clean and b"$$DB_USER=etl" in clean
-    assert secrets.SCAN_VERSION == "4"
+    assert secrets.SCAN_VERSION == "5"
