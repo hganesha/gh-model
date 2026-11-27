@@ -1,0 +1,16 @@
+/* load the daily returns file into an empty staging table */
+SESSIONS 2;
+LOGON tdprod/etl_user,$TD_LOGON_SECRET;
+DATABASE stg;
+DROP TABLE returns_e1;
+DROP TABLE returns_e2;
+SET RECORD VARTEXT ",";
+DEFINE order_id (VARCHAR(18)),
+       returned_on (VARCHAR(10)),
+       amount (VARCHAR(20))
+FILE = /data/in/returns.csv;
+BEGIN LOADING returns ERRORFILES returns_e1, returns_e2;
+INSERT INTO returns (order_id, returned_on, amount)
+VALUES (:order_id, :returned_on, :amount);
+END LOADING;
+LOGOFF;

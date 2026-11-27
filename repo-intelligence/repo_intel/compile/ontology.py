@@ -64,7 +64,8 @@ class EntityKind(StrEnum):
     # Security.
     ROLE = "Role"  # natural key {realm, name}
     PERMISSION = "Permission"  # natural key {realm, name}
-    # Reserved for DM09; not emitted in v1.
+    # A requirement stated in an owner-designated document (docs/solution-ir-contract.md, section 9.1);
+    # natural key {scope: <document path>, name: <id or slug>}.
     REQUIREMENT = "Requirement"
 
 
@@ -174,8 +175,8 @@ RELATIONS: dict[Predicate, RelationSchema] = {
     P.DEFINED_IN: _r(_ANY - {K.REPOSITORY, K.ARTIFACT}, {K.ARTIFACT}),
     # Component IMPLEMENTS Feature is a DM08 behaviour hypothesis, never more than inferred.
     P.IMPLEMENTS: _r({K.SYMBOL, K.COMPONENT, K.PROGRAM}, {K.ENDPOINT, K.INTERFACE, K.FEATURE}),
-    P.EXPOSES: _r({K.COMPONENT, K.PROGRAM}, {K.INTERFACE, K.ENDPOINT}),
-    P.CONSUMES: _r(_CODE | {K.AI_COMPONENT}, {K.INTERFACE, K.ENDPOINT, K.MODEL_ENDPOINT}),
+    P.EXPOSES: _r({K.COMPONENT, K.PROGRAM, K.JOB}, {K.INTERFACE, K.ENDPOINT}),  # a scheduled Job EXPOSES its TRANSACTION Endpoint
+    P.CONSUMES: _r(_CODE | _WORK | {K.AI_COMPONENT}, {K.INTERFACE, K.ENDPOINT, K.MODEL_ENDPOINT}),  # a scheduler Job CONSUMES the transaction it starts
     P.CALLS: _r({K.SYMBOL, K.PROGRAM}, {K.SYMBOL, K.PROGRAM}),
     # A build target depends only on other build targets (Bazel deps, Nx and Turborepo dependsOn).
     # A source file depends on the files of its unit it imports (the module graph).
@@ -209,9 +210,11 @@ RELATIONS: dict[Predicate, RelationSchema] = {
     P.NAVIGATES_TO: _r(_UI | {K.PROGRAM, K.SYMBOL}, {K.SCREEN, K.ENDPOINT, K.PROGRAM}),  # code: a server-side redirect
     P.BINDS_TO: _r({K.UI_CONTROL, K.FORM}, {K.FIELD, K.CODE_LIST, K.CONFIG_KEY}),
     P.STYLED_BY: _r(_UI | {K.REPORT}, {K.STYLE_TOKEN}),
-    P.ENFORCES: _r(_CODE | _UI | _WORK | {K.TABLE, K.FIELD}, {K.BUSINESS_RULE}),
-    # A rule governs data, a screen or a step; a workflow governs a table or dataset's rows.
-    P.APPLIES_TO: _r({K.BUSINESS_RULE, K.WORKFLOW}, _DATA | _UI | {K.FIELD, K.ENDPOINT, K.TASK, K.PROGRAM}),
+    # An Artifact applies a rule when no Program, Component or Package holds the code (section 9.2).
+    P.ENFORCES: _r(_CODE | _UI | _WORK | {K.TABLE, K.FIELD, K.ARTIFACT}, {K.BUSINESS_RULE}),
+    # A rule governs data, a screen or a step; a workflow governs a table or dataset's rows;
+    # a requirement names what it is about.
+    P.APPLIES_TO: _r({K.BUSINESS_RULE, K.WORKFLOW, K.REQUIREMENT}, _DATA | _UI | {K.FIELD, K.ENDPOINT, K.TASK, K.PROGRAM}),
     P.REQUIRES_ROLE: _r(_CODE | _UI | {K.ENDPOINT, K.REPORT, K.DATASET, K.TABLE, K.JOB}, {K.ROLE}),
     P.GRANTS: _r({K.ROLE}, {K.PERMISSION, K.ROLE}),
 }

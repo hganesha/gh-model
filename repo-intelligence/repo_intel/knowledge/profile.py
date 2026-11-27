@@ -65,10 +65,35 @@ LANGUAGES = {
     "go": "Go", "csharp": "C#", "ruby": "Ruby", "swift": "Swift", "sql": "SQL", "cfml": "ColdFusion (CFML)", "sas": "SAS", "cobol": "COBOL",
     "jcl": "JCL", "html": "HTML", "css": "CSS", "scss": "SCSS", "shell": "Shell", "fsharp": "F#", "jupyter": "Jupyter notebooks",
     "bteq": "Teradata BTEQ", "tpt": "Teradata TPT", "erb": "ERB", "r": "R",
+    # Server pages (wave 2) and the data estate's file types (contract section 10.1).
+    "jsp": "JSP", "aspnet": "ASP.NET", "plsql": "Oracle PL/SQL", "teradata": "Teradata load and export scripts", "batch": "Windows batch",
+    "powershell": "PowerShell", "ssis": "SSIS packages", "datastage": "IBM DataStage", "abinitio": "Ab Initio", "hive": "HiveQL", "pig": "Pig Latin",
 }
 # The Languages field counts only the languages named above. Everything else a file can be
-# (a manifest, a contract, configuration, an infrastructure template) is not what the
-# application is written in, and other fields speak for it.
+# (a manifest, a contract, configuration, an infrastructure template, a document) is not
+# what the application is written in, and other fields speak for it.
+
+# Display names for the languages of documents an owner can designate (contract section
+# 9.1). They name a document's format; they are never counted as source languages.
+DOCUMENT_LANGUAGES = {
+    "markdown": "Markdown", "text": "Plain text", "csv": "CSV", "html": "HTML", "docx": "Word document (DOCX)",
+    "xlsx": "Excel workbook (XLSX)", "pdf": "PDF",
+}
+
+# Display names for platform packs whose id is not a language above, for the platforms a
+# legacy application is said to be built on.
+PLATFORM_NAMES = {
+    "web": "Web front end", "dbproc": "Database procedures (DB2, Netezza, Sybase)", "informatica": "Informatica PowerCenter",
+    "talend": "Talend", "hadoop": "Hadoop", "scheduler": "Batch schedulers",
+}
+
+
+def language_name(language: str) -> str:
+    """The display name of a file language: a source language, a document format, or the
+    language id itself when neither names it."""
+    return LANGUAGES.get(language) or DOCUMENT_LANGUAGES.get(language) or language
+
+
 # The language an ecosystem implies when the primary-language decision abstained.
 ECOSYSTEM_LANGUAGE = {"maven": "Java or Kotlin", "nuget": ".NET", "rubygems": "Ruby", "swiftpm": "Swift", "go": "Go", "dbt": "SQL (dbt)"}
 
@@ -168,7 +193,7 @@ def _stack(component: Mapping[str, Any]) -> str:
     """`Python · FastAPI`: a component's language and the frameworks it was classified by."""
     a = _attrs(component)
     language = a.get("primary_language")
-    parts = [LANGUAGES.get(language, language)] if language and language != "unknown" else []
+    parts = [language_name(language)] if language and language != "unknown" else []
     if not parts and a.get("ecosystem") in ECOSYSTEM_LANGUAGE:
         parts = [ECOSYSTEM_LANGUAGE[a["ecosystem"]]]
     seen = set(parts)
@@ -216,7 +241,7 @@ def _application_type(components: list[Mapping[str, Any]], platforms: list[str])
         rows = by_kind[kind]
         values.append(_value(one if len(rows) == 1 else many, rows, None if len(rows) == 1 else _count(len(rows), "component")))
     if not values and platforms:
-        values = [_value("Legacy application", (), ", ".join(LANGUAGES.get(p, p) for p in platforms))]
+        values = [_value("Legacy application", (), ", ".join(LANGUAGES.get(p) or PLATFORM_NAMES.get(p, p) for p in platforms))]
     return values, "inferred"
 
 
@@ -230,7 +255,7 @@ def _languages(coverage: Iterable[Mapping[str, Any]]) -> tuple[list[dict[str, An
                 files[language] += counted["files"] if isinstance(counted, Mapping) else int(counted)
     total = sum(files.values())
     ranked = sorted(((n, lang) for lang, n in files.items() if n > 0), key=lambda item: (-item[0], item[1]))
-    return [_value(LANGUAGES.get(lang, lang), (), f"{round(100 * n / total)}% of source files") for n, lang in ranked], "supported"
+    return [_value(language_name(lang), (), f"{round(100 * n / total)}% of source files") for n, lang in ranked], "supported"
 
 
 def _platforms(coverage: Iterable[Mapping[str, Any]]) -> list[str]:

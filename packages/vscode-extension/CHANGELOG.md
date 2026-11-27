@@ -12,3 +12,4 @@
 - Reads bundles in format `rkp-bundle/2`, which leaves default-valued fields out of each row (about 30% smaller), and still reads format 1. The bundled engine writes format 2.
 - Commits the architecture tier by default: function-level detail stays in the local cache (StackGraph: 6 MB committed instead of 15 MB). On a fresh clone the status bar reads "Knowledge current (architecture)" until you analyse. `"commit": "full"` in `.rkp/config.json` commits everything.
 - In an untrusted workspace the engine never runs; existing knowledge can still be browsed.
+- RKP: Use this document for...: a multi-select of requirements, business rules, data schema and code lists for a document, saved to `.rkp/documents.json` with `rkp documents set`, then an offer to analyse again. A change to `.rkp/documents.json` makes the status bar check again.

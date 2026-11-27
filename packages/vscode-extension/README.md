@@ -24,6 +24,7 @@ Set the two settings in user settings: an untrusted workspace's settings cannot 
 - The **Knowledge** view lists what was found. Selecting an item opens the lines it rests on.
 - **Open Explorer** shows the Explorer's views in an editor tab: the map of planes, each plane's entities, the graph, quality and the decision ledger, with an entity drawer that shows evidence excerpts (secret-masked) and **Open source** to jump to the code. Owner corrections made in the Decisions view are saved to `.rkp/overrides.json`. History across commits and the cross-repository business map are not available in the editor.
 - Conflicts appear in the **Problems** panel.
+- **RKP: Use this document for...** (on a Markdown, text, CSV, HTML, DOCX, XLSX or PDF file, in the Explorer's context menu or the editor title menu) designates the document for requirements, business rules, data schema or code lists. The choice is saved to `.rkp/documents.json` with `rkp documents set`, and takes effect at the next analysis, which the notification offers to start. Rules are written by a model only when the `business_rules` setting is on, which sends the document's text to the configured model provider.
 
 ## What is written to the repository
 
@@ -31,6 +32,7 @@ Set the two settings in user settings: an untrusted workspace's settings cannot 
 .rkp/
   config.json        repository ID (from the origin remote); edit to pin another. "commit" says what is committed
   overrides.json     optional owner corrections
+  documents.json     optional: which documents the engine reads, and for which features
   .gitignore         ignores cache/
   .gitattributes     marks knowledge/ as generated
   knowledge/         the compiled knowledge; commit it to share it

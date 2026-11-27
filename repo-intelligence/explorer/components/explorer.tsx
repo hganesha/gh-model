@@ -8,6 +8,7 @@ import type { EntityRef, Job, RepositoriesResponse, Repository, SnapshotRef, Sum
 import { Account } from "./account";
 import { ConnectDialog, type ConnectTarget } from "./connect-dialog";
 import { DecisionsView } from "./decisions-view";
+import { DocumentsView } from "./documents-view";
 import { EntityDrawer } from "./entity-drawer";
 import { DEFAULT_GRAPH_PREFS, GraphView, type GraphPrefs } from "./graph-view";
 import { MapView, ZOOM_STEPS, type MapPrefs, type Purpose } from "./map-view";
@@ -31,6 +32,7 @@ const VIEWS: { id: ViewId; label: string }[] = [
   { id: "timeline", label: "Timeline" },
   { id: "quality", label: "Quality" },
   { id: "decisions", label: "Decisions" },
+  { id: "documents", label: "Documents" },
 ];
 
 // View preferences only (never API data). Storage can be unavailable, so every access is guarded.
@@ -445,6 +447,7 @@ export function Explorer() {
               )}
               {view === "quality" && <QualityView hash={hash} summary={summary.data} onOpenEntity={openEntity} />}
               {view === "decisions" && <DecisionsView hash={hash} repositoryId={repo?.repository_id ?? null} onOpenEntity={openEntity} />}
+              {view === "documents" && <DocumentsView key={hash} hash={hash} summary={summary.data} repositoryId={repo?.repository_id ?? null} />}
             </>
           )}
           </>}

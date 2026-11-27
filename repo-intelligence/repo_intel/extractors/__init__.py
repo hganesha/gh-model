@@ -40,6 +40,16 @@ LANGUAGES = {
     # Server pages and SAS Enterprise Guide (docs/solution-ir-contract.md section 8.6).
     ".jsp": "jsp", ".jspx": "jsp", ".jspf": "jsp", ".tag": "jsp", ".tagx": "jsp",
     ".aspx": "aspnet", ".ascx": "aspnet", ".master": "aspnet", ".cshtml": "aspnet", ".razor": "aspnet", ".egp": "sas",
+    # Data estate packs, wave W7 (docs/solution-ir-contract.md, section 10). `.prc` stays jcl here;
+    # the plsql pack recognises an Oracle `.prc` by its content.
+    ".pks": "plsql", ".pkb": "plsql", ".pls": "plsql", ".plb": "plsql", ".fnc": "plsql", ".trg": "plsql",
+    ".fastload": "teradata", ".mload": "teradata", ".fexp": "teradata",
+    ".ksh": "shell", ".bash": "shell", ".bat": "batch", ".cmd": "batch", ".ps1": "powershell",
+    ".dtsx": "ssis", ".conmgr": "ssis", ".ispac": "ssis",
+    ".dsx": "datastage", ".isx": "datastage", ".dml": "abinitio", ".xfr": "abinitio",
+    ".hql": "hive", ".pig": "pig",
+    # Documents an owner may designate (section 9.1).
+    ".txt": "text", ".csv": "csv", ".html": "html", ".htm": "html", ".docx": "docx", ".xlsx": "xlsx", ".pdf": "pdf",
     # More languages, API contracts, and build and infrastructure files.
     ".kt": "kotlin", ".kts": "kotlin", ".cs": "csharp", ".fs": "fsharp", ".swift": "swift", ".gradle": "gradle", ".sbt": "sbt",
     ".csproj": "msbuild", ".fsproj": "msbuild", ".vbproj": "msbuild", ".gemspec": "ruby", ".rake": "ruby", ".erb": "erb",
@@ -119,6 +129,7 @@ def _file_extract(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, An
     else:
         data = secrets.mask_for_extraction(data, config.get("secret_findings", []))
         wanted: dict[str, str] = config.get("extractors", {})
+        results: list[tuple[Extractor, Extraction]] = []
         for extractor in (e for e in EXTRACTORS if e.id in wanted):
             if extractor_version(extractor) != wanted[extractor.id]:
                 raise RuntimeError(f"extractor skew: {extractor.id} is {extractor_version(extractor)}, the cache key expects {wanted[extractor.id]}")
@@ -126,6 +137,14 @@ def _file_extract(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, An
                 result = extractor.extract(path, data, blob)
             except Exception as exc:  # an extractor bug must not fail the compile
                 result = Extraction(diagnostics=[diagnostic(extractor.id, "error", f"extractor crashed: {type(exc).__name__}: {exc}")], parsed=False)
+            results.append((extractor, result))
+        # Per-file supersession: an extractor that read this file (returned at least one
+        # observation) and names other extractors in `supersedes_when_parsed` drops their
+        # observations and diagnostics for this file only. One that read nothing leaves them.
+        dropped = {i for e, r in results if r.observations for i in getattr(e, "supersedes_when_parsed", ())}
+        for extractor, result in results:
+            if extractor.id in dropped:
+                continue
             observations += result.observations
             diagnostics += result.diagnostics
             parsed = parsed or result.parsed

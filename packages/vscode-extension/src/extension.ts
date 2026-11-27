@@ -1,7 +1,8 @@
 import * as path from "node:path";
 import * as vscode from "vscode";
 import { Bundle, BundleError, loadBundle, MANIFEST_FILE } from "@rkp/bundle";
-import { EngineError, EngineServer, findBundledEngine, runEngine, StatusResult } from "./engine";
+import { useDocument } from "./documents";
+import { EngineError, EngineServer, findBundledEngine, runEngine, runEngineCommand, StatusResult } from "./engine";
 import { conflictDiagnostics, openEvidence } from "./evidence";
 import { ExplorerPanel } from "./explorer-panel";
 import { KnowledgeTree } from "./tree";
@@ -169,6 +170,13 @@ export function activate(context: vscode.ExtensionContext): Api {
       ExplorerPanel.show(context, engineServer(), (id) => void openEntity(id), () => void vscode.commands.executeCommand("rkp.analyze"));
     }),
     vscode.commands.registerCommand("rkp.openEvidence", async (evidenceIds: string[]) => (bundle ? openEvidence(bundle, evidenceIds) : false)),
+    // From a menu the first argument is the file; a caller may pass the features to skip the quick pick.
+    vscode.commands.registerCommand("rkp.useDocument", (uri?: vscode.Uri, features?: string[]) =>
+      useDocument(uri instanceof vscode.Uri ? uri : undefined, {
+        list: (cwd) => runEngine(["documents", "list"], cwd, output),
+        set: (args, cwd) => runEngineCommand(args, cwd, output),
+      }, { features: Array.isArray(features) ? features : undefined, recompile: () => void vscode.commands.executeCommand("rkp.analyze") }),
+    ),
     vscode.workspace.onDidGrantWorkspaceTrust(() => void schedule()),
     vscode.workspace.onDidChangeWorkspaceFolders(() => void schedule()),
     vscode.workspace.onDidChangeConfiguration((event) => {
@@ -199,6 +207,11 @@ export function activate(context: vscode.ExtensionContext): Api {
     overrides.onDidCreate(later);
     overrides.onDidChange(later);
     overrides.onDidDelete(later);
+    // Designated documents are a compile input too (contract 9.1): a change makes the knowledge stale.
+    const documents = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(folder, ".rkp/documents.json"));
+    documents.onDidCreate(later);
+    documents.onDidChange(later);
+    documents.onDidDelete(later);
 
     // Edits change what the working tree holds: check again once they settle.
     let editTimer: NodeJS.Timeout | undefined;
@@ -210,6 +223,7 @@ export function activate(context: vscode.ExtensionContext): Api {
     context.subscriptions.push(
       watcher,
       overrides,
+      documents,
       vscode.workspace.onDidSaveTextDocument((document) => edited(document.uri)),
       vscode.workspace.onDidCreateFiles((event) => event.files.forEach(edited)),
       vscode.workspace.onDidDeleteFiles((event) => event.files.forEach(edited)),

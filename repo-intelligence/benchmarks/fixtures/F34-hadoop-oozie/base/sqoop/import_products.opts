@@ -1,0 +1,19 @@
+# Import the product catalogue into Hive.
+import
+--connect
+jdbc:oracle:thin:@//catalog.example.internal:1521/CAT
+--username
+etl_reader
+--password-file
+/user/etl/catalog.password
+--table
+CATALOG.PRODUCTS
+--hive-import
+--hive-table
+dim.products
+--incremental
+append
+--check-column
+product_id
+--split-by
+product_id

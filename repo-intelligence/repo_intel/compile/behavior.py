@@ -32,7 +32,8 @@ from repo_intel.compile.ontology import EvidenceClass
 SCHEMA = "rkp-behavior/1"
 TYPES = frozenset({"string", "number", "integer", "boolean", "date", "datetime", "binary", "array", "struct", "query", "dataset", "any", "null", "unknown"})
 # What a unit is the behaviour of, when an owner has several (a program's DATA steps and open code).
-UNIT_KINDS = frozenset({"function", "page", "macro", "data_step", "sql_step", "proc_step", "open_code", "handler"})
+# paragraph: a COBOL paragraph or RPG subroutine; trigger: a database trigger; flow: an ETL or integration flow (section 10).
+UNIT_KINDS = frozenset({"function", "page", "macro", "data_step", "sql_step", "proc_step", "open_code", "handler", "paragraph", "trigger", "flow"})
 # Statement ops, with their required fields and which fields hold statement lists or expressions.
 STATEMENTS: dict[str, dict[str, tuple[str, ...]]] = {
     "assign": {"required": ("target", "value"), "exprs": ("target", "value")},
@@ -186,7 +187,8 @@ def validate_unit(unit: Any) -> list[str]:
 
 
 def behavior_observation(blob: str, at: Span, owner: dict[str, Any], language: str, body: list[dict[str, Any]], params: list[dict[str, Any]] | None = None, evidence_class: EvidenceClass = EvidenceClass.E2, kind: str | None = None) -> Observation:
-    """One unit of behaviour for `owner` (a Symbol or Program ref), validated before it is emitted.
+    """One unit of behaviour for `owner` (a Symbol or Program ref, or a Job or Task ref for the
+    unit kinds `flow` and `open_code`, contract section 3), validated before it is emitted.
 
     `kind` (UNIT_KINDS) says what the unit is when one owner has several.
     """

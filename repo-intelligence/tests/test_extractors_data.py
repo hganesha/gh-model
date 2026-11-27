@@ -146,6 +146,13 @@ def test_jcl_skips_load_libraries_and_temporary_datasets():
     assert ("S1", "RUNS", "MYPGM") in edges(result)
 
 
+def test_jcl_job_records_its_member_name():
+    jcl = "//NIGHTLY  JOB (ACCT),'X'\n//S1 EXEC PGM=MYPGM\n"
+    result = run(Jcl(), "jcl/payj030.jcl", jcl)
+    jobs = [o.payload for o in result.observations if o.kind == "entity" and o.payload["kind"] == "Job"]
+    assert [(j["natural_key"]["name"], j["attributes"]["member"]) for j in jobs] == [("NIGHTLY", "PAYJ030")]
+
+
 def test_sas_macro_variables_become_placeholders_in_proc_sql_too():
     src = "%let m = 202401;\nproc sql;\n  create table out.t as select * from lib.src_&m. where 1=1;\nquit;\n"
     result = run(Sas(), "p.sas", src)

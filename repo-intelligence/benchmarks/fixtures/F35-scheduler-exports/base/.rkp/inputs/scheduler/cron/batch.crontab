@@ -1,0 +1,9 @@
+# crontab -l of the batch user on the batch host
+MAILTO=batch-ops
+SHELL=/bin/bash
+
+# housekeeping
+15 1 * * *     /opt/batch/scripts/purge_logs.sh --days 14 >> /var/log/batch/purge.log 2>&1
+0 */4 * * 1-5  cd /opt/batch && ./scripts/load_orders.sh --incremental
+@reboot        nohup /opt/batch/bin/queue_listener > /dev/null 2>&1 &
+30 6 1 * *     $HOME/bin/monthly_report.sh

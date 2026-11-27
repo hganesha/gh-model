@@ -1,0 +1,1144 @@
+{
+ "fixture": "F35-scheduler-exports",
+ "description": "Batch work under six schedulers, exported under .rkp/inputs/scheduler/: a Control-M DEFTABLE (a smart folder of script and command jobs chained by conditions, and a z/OS folder running JCL members, one set by AutoEdit), AutoSys JIL (a box with a calendar, command, CICS, z/OS and file watcher jobs, a condition with an or, a global variable and a job of another instance, and an update_job), IBM Workload Scheduler composer text ($JOBS, a $CALENDAR and two streams with FOLLOWS within and across streams), a CA-7 LJOB listing (schedule, triggered jobs, requirements), a crontab and a UTF-16 Windows Task Scheduler export; and the scripts and JCL members they start, so RUNS is shown resolving to what the repository holds and not to what it does not. 'since' names the milestone whose compiler must produce the item.",
+ "entities": [
+  {
+   "kind": "Job",
+   "natural_key": {
+    "framework": "control-m",
+    "name": "ORDERS_DAILY"
+   },
+   "since": "M2",
+   "attributes": {
+    "platform_kind": "sched:ControlMFolder",
+    "kind": "smart_folder",
+    "schedule": "WEEKDAYS=1,2,3,4,5 TIMEFROM=0100",
+    "calendar": "WORKDAYS",
+    "calendars": [
+     "ORDER_DAYS",
+     "WORKDAYS"
+    ]
+   }
+  },
+  {
+   "kind": "Job",
+   "natural_key": {
+    "framework": "control-m",
+    "name": "ORDERS_DAILY/EXTRACT_ORDERS"
+   },
+   "since": "M2",
+   "attributes": {
+    "platform_kind": "sched:ControlMJob",
+    "fidelity": "lossy",
+    "kind": "job",
+    "schedule": "WEEKDAYS=1,2,3,4,5 TIMEFROM=0130",
+    "calendar": "WORKDAYS",
+    "calendars": [
+     "HOLIDAYS",
+     "WORKDAYS"
+    ],
+    "scripts": [
+     "/opt/batch/scripts/extract_orders.sh"
+    ],
+    "out_conditions": [
+     "EXTRACT_ORDERS-OK"
+    ],
+    "application": "ORDERS"
+   }
+  },
+  {
+   "kind": "Job",
+   "natural_key": {
+    "framework": "control-m",
+    "name": "ORDERS_DAILY/LOAD_ORDERS"
+   },
+   "since": "M2",
+   "attributes": {
+    "kind": "command",
+    "in_conditions": [
+     "EXTRACT_ORDERS-OK"
+    ],
+    "scripts": [
+     "/opt/batch/scripts/load_orders.sh"
+    ]
+   }
+  },
+  {
+   "kind": "Job",
+   "natural_key": {
+    "framework": "control-m",
+    "name": "ORDERS_DAILY/ORDERS_DONE"
+   },
+   "since": "M2",
+   "attributes": {
+    "kind": "dummy",
+    "unresolved_conditions": [
+     "FINANCE-READY"
+    ]
+   }
+  },
+  {
+   "kind": "Job",
+   "natural_key": {
+    "framework": "control-m",
+    "name": "PAYROLL_ZOS"
+   },
+   "since": "M2",
+   "attributes": {
+    "kind": "folder"
+   }
+  },
+  {
+   "kind": "Job",
+   "natural_key": {
+    "framework": "control-m",
+    "name": "PAYROLL_ZOS/PAYJ010"
+   },
+   "since": "M2",
+   "attributes": {
+    "schedule": "DAYS=ALL TIMEFROM=2200",
+    "jcl_member": "PAYJ010",
+    "jcl_library": "PROD.PAYROLL.JCL"
+   }
+  },
+  {
+   "kind": "Job",
+   "natural_key": {
+    "framework": "control-m",
+    "name": "PAYROLL_ZOS/PAYJ030"
+   },
+   "since": "M2",
+   "attributes": {
+    "runs_dynamic": true
+   }
+  },
+  {
+   "kind": "Job",
+   "natural_key": {
+    "framework": "autosys",
+    "name": "RPT_NIGHTLY_BOX"
+   },
+   "since": "M2",
+   "attributes": {
+    "platform_kind": "sched:AutosysBox",
+    "kind": "box",
+    "schedule": "days_of_week=mo,tu,we,th,fr start_times=03:00",
+    "calendar": "RPT_BUSINESS_DAYS",
+    "exclude_calendar": "RPT_HOLIDAYS",
+    "description": "Nightly reporting"
+   }
+  },
+  {
+   "kind": "Job",
+   "natural_key": {
+    "framework": "autosys",
+    "name": "RPT_EXTRACT"
+   },
+   "since": "M2",
+   "attributes": {
+    "platform_kind": "sched:AutosysJob",
+    "kind": "cmd",
+    "box": "RPT_NIGHTLY_BOX",
+    "scripts": [
+     "/opt/batch/scripts/extract_orders.sh"
+    ]
+   }
+  },
+  {
+   "kind": "Job",
+   "natural_key": {
+    "framework": "autosys",
+    "name": "RPT_BUILD"
+   },
+   "since": "M2",
+   "attributes": {
+    "scripts": [
+     "/opt/sas/programs/build_reports.sas"
+    ]
+   }
+  },
+  {
+   "kind": "Job",
+   "natural_key": {
+    "framework": "autosys",
+    "name": "RPT_REFRESH_CICS"
+   },
+   "since": "M2",
+   "attributes": {
+    "kind": "cics",
+    "transaction": "RPT1"
+   }
+  },
+  {
+   "kind": "Job",
+   "natural_key": {
+    "framework": "autosys",
+    "name": "PAY_SUBMIT_J020"
+   },
+   "since": "M2",
+   "attributes": {
+    "kind": "zos",
+    "jcl_member": "PAYJ020",
+    "external_conditions": [
+     "PAYJ010^CA7"
+    ]
+   }
+  },
+  {
+   "kind": "Job",
+   "natural_key": {
+    "framework": "autosys",
+    "name": "ORD_FEED"
+   },
+   "since": "M2",
+   "attributes": {
+    "kind": "fw",
+    "watch_file": "/data/inbound/orders/feed_ready.flg"
+   }
+  },
+  {
+   "kind": "Endpoint",
+   "natural_key": {
+    "component_root": "",
+    "protocol": "cics",
+    "method": "TRANSACTION",
+    "route": "RPT1"
+   },
+   "since": "M2",
+   "attributes": {
+    "platform_kind": "sched:EntryPoint",
+    "fidelity": "lossy",
+    "job": "RPT_REFRESH_CICS",
+    "region": "CICSPRD1"
+   }
+  },
+  {
+   "kind": "Job",
+   "natural_key": {
+    "framework": "tws",
+    "name": "FINWS#GL_EXTRACT"
+   },
+   "since": "M2",
+   "attributes": {
+    "platform_kind": "sched:TwsJob",
+    "kind": "script",
+    "scripts": [
+     "/opt/fin/bin/gl_extract.sh"
+    ]
+   }
+  },
+  {
+   "kind": "Job",
+   "natural_key": {
+    "framework": "tws",
+    "name": "FINWS#GL_POST"
+   },
+   "since": "M2",
+   "attributes": {
+    "kind": "command",
+    "scripts": [
+     "/opt/fin/bin/gl_post.sh"
+    ]
+   }
+  },
+  {
+   "kind": "Job",
+   "natural_key": {
+    "framework": "tws",
+    "name": "FINWS#GL_CLOSE"
+   },
+   "since": "M2",
+   "attributes": {
+    "scripts": [
+     "/opt/fin/bin/gl_close.sh"
+    ]
+   }
+  },
+  {
+   "kind": "Job",
+   "natural_key": {
+    "framework": "tws",
+    "name": "FINWS#FIN_DAILY"
+   },
+   "since": "M2",
+   "attributes": {
+    "platform_kind": "sched:TwsJobStream",
+    "schedule": "ON RUNCYCLE DAILY1 \"FREQ=DAILY;INTERVAL=1\"; EXCEPT HOLIDAYS; AT 0400",
+    "exclude_calendar": "HOLIDAYS",
+    "jobs": [
+     "FINWS#GL_EXTRACT",
+     "FINWS#GL_POST"
+    ]
+   }
+  },
+  {
+   "kind": "Job",
+   "natural_key": {
+    "framework": "tws",
+    "name": "FINWS#FIN_MONTHEND"
+   },
+   "since": "M2",
+   "attributes": {
+    "schedule": "ON MONTHEND; AT 2100",
+    "calendar": "MONTHEND"
+   }
+  },
+  {
+   "kind": "Job",
+   "natural_key": {
+    "framework": "ca7",
+    "name": "PAYJ010"
+   },
+   "since": "M2",
+   "attributes": {
+    "platform_kind": "sched:Ca7Job",
+    "jcl_member": "PAYJ010",
+    "application": "PAYROLL",
+    "calendar": "PY",
+    "schedule": "SCHID=001 ROLL=D INDEX=+000 SCAL=PY DOTM=2300 LEADTM=0030 STARTM=2230 WEEKLY DAYS=MON,TUE,WED,THU,FRI"
+   }
+  },
+  {
+   "kind": "Job",
+   "natural_key": {
+    "framework": "ca7",
+    "name": "PAYJ020"
+   },
+   "since": "M2",
+   "attributes": {
+    "requires_datasets": [
+     "PAY.MASTER.FILE"
+    ]
+   }
+  },
+  {
+   "kind": "Job",
+   "natural_key": {
+    "framework": "cron",
+    "name": ".rkp/inputs/scheduler/cron/batch.crontab#purge_logs.sh"
+   },
+   "since": "M2",
+   "attributes": {
+    "platform_kind": "sched:CronEntry",
+    "schedule": "15 1 * * *",
+    "scripts": [
+     "/opt/batch/scripts/purge_logs.sh"
+    ]
+   }
+  },
+  {
+   "kind": "Job",
+   "natural_key": {
+    "framework": "cron",
+    "name": ".rkp/inputs/scheduler/cron/batch.crontab#load_orders.sh"
+   },
+   "since": "M2",
+   "attributes": {
+    "schedule": "0 */4 * * 1-5"
+   }
+  },
+  {
+   "kind": "Job",
+   "natural_key": {
+    "framework": "cron",
+    "name": ".rkp/inputs/scheduler/cron/batch.crontab#queue_listener"
+   },
+   "since": "M2",
+   "attributes": {
+    "schedule": "@reboot"
+   }
+  },
+  {
+   "kind": "Job",
+   "natural_key": {
+    "framework": "cron",
+    "name": ".rkp/inputs/scheduler/cron/batch.crontab#entry"
+   },
+   "since": "M2",
+   "attributes": {
+    "schedule": "30 6 1 * *",
+    "runs_dynamic": true
+   }
+  },
+  {
+   "kind": "Job",
+   "natural_key": {
+    "framework": "windows-task",
+    "name": "\\Finance\\NightlyInvoices"
+   },
+   "since": "M2",
+   "attributes": {
+    "platform_kind": "sched:WindowsTask",
+    "description": "Build and send the nightly invoice batch",
+    "schedule": "CalendarTrigger StartBoundary=2026-01-05T02:30:00 ScheduleByWeek WeeksInterval=1 DaysOfWeek=Monday,Tuesday,Wednesday,Thursday,Friday",
+    "scripts": [
+     "D:/batch/scripts/windows/invoices.ps1"
+    ]
+   }
+  },
+  {
+   "kind": "Job",
+   "natural_key": {
+    "framework": "jcl",
+    "name": "PAYJ010"
+   },
+   "since": "M2",
+   "attributes": {
+    "member": "PAYJ010"
+   }
+  },
+  {
+   "kind": "Job",
+   "natural_key": {
+    "framework": "jcl",
+    "name": "PAYJ020"
+   },
+   "since": "M2",
+   "attributes": {
+    "member": "PAYJ020"
+   }
+  }
+ ],
+ "edges": [
+  {
+   "subject": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "control-m",
+     "name": "ORDERS_DAILY"
+    }
+   },
+   "predicate": "CONTAINS",
+   "object": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "control-m",
+     "name": "ORDERS_DAILY/EXTRACT_ORDERS"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "control-m",
+     "name": "PAYROLL_ZOS"
+    }
+   },
+   "predicate": "CONTAINS",
+   "object": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "control-m",
+     "name": "PAYROLL_ZOS/PAYJ010"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "autosys",
+     "name": "RPT_NIGHTLY_BOX"
+    }
+   },
+   "predicate": "CONTAINS",
+   "object": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "autosys",
+     "name": "RPT_EXTRACT"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "autosys",
+     "name": "RPT_NIGHTLY_BOX"
+    }
+   },
+   "predicate": "CONTAINS",
+   "object": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "autosys",
+     "name": "RPT_REFRESH_CICS"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "tws",
+     "name": "FINWS#FIN_DAILY"
+    }
+   },
+   "predicate": "CONTAINS",
+   "object": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "tws",
+     "name": "FINWS#GL_POST"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "tws",
+     "name": "FINWS#FIN_MONTHEND"
+    }
+   },
+   "predicate": "CONTAINS",
+   "object": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "tws",
+     "name": "FINWS#GL_CLOSE"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "control-m",
+     "name": "ORDERS_DAILY/LOAD_ORDERS"
+    }
+   },
+   "predicate": "DEPENDS_ON",
+   "object": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "control-m",
+     "name": "ORDERS_DAILY/EXTRACT_ORDERS"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "control-m",
+     "name": "ORDERS_DAILY/ORDERS_DONE"
+    }
+   },
+   "predicate": "DEPENDS_ON",
+   "object": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "control-m",
+     "name": "ORDERS_DAILY/LOAD_ORDERS"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "control-m",
+     "name": "PAYROLL_ZOS/PAYJ030"
+    }
+   },
+   "predicate": "DEPENDS_ON",
+   "object": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "control-m",
+     "name": "PAYROLL_ZOS/PAYJ010"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "autosys",
+     "name": "RPT_BUILD"
+    }
+   },
+   "predicate": "DEPENDS_ON",
+   "object": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "autosys",
+     "name": "RPT_EXTRACT"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "autosys",
+     "name": "RPT_BUILD"
+    }
+   },
+   "predicate": "DEPENDS_ON",
+   "object": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "autosys",
+     "name": "ORD_FEED"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "autosys",
+     "name": "RPT_REFRESH_CICS"
+    }
+   },
+   "predicate": "DEPENDS_ON",
+   "object": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "autosys",
+     "name": "RPT_BUILD"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "tws",
+     "name": "FINWS#GL_POST"
+    }
+   },
+   "predicate": "DEPENDS_ON",
+   "object": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "tws",
+     "name": "FINWS#GL_EXTRACT"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "tws",
+     "name": "FINWS#GL_CLOSE"
+    }
+   },
+   "predicate": "DEPENDS_ON",
+   "object": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "tws",
+     "name": "FINWS#GL_POST"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "ca7",
+     "name": "PAYJ020"
+    }
+   },
+   "predicate": "DEPENDS_ON",
+   "object": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "ca7",
+     "name": "PAYJ010"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "control-m",
+     "name": "ORDERS_DAILY/EXTRACT_ORDERS"
+    }
+   },
+   "predicate": "RUNS",
+   "object": {
+    "kind": "Artifact",
+    "natural_key": {
+     "path": "scripts/extract_orders.sh"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "control-m",
+     "name": "ORDERS_DAILY/EXTRACT_ORDERS"
+    }
+   },
+   "predicate": "RUNS",
+   "object": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "shell",
+     "name": "scripts/extract_orders.sh"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "control-m",
+     "name": "ORDERS_DAILY/LOAD_ORDERS"
+    }
+   },
+   "predicate": "RUNS",
+   "object": {
+    "kind": "Artifact",
+    "natural_key": {
+     "path": "scripts/load_orders.sh"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "control-m",
+     "name": "ORDERS_DAILY/LOAD_ORDERS"
+    }
+   },
+   "predicate": "RUNS",
+   "object": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "shell",
+     "name": "scripts/load_orders.sh"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "autosys",
+     "name": "RPT_EXTRACT"
+    }
+   },
+   "predicate": "RUNS",
+   "object": {
+    "kind": "Artifact",
+    "natural_key": {
+     "path": "scripts/extract_orders.sh"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "autosys",
+     "name": "RPT_EXTRACT"
+    }
+   },
+   "predicate": "RUNS",
+   "object": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "shell",
+     "name": "scripts/extract_orders.sh"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "tws",
+     "name": "FINWS#GL_EXTRACT"
+    }
+   },
+   "predicate": "RUNS",
+   "object": {
+    "kind": "Artifact",
+    "natural_key": {
+     "path": "fin/bin/gl_extract.sh"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "tws",
+     "name": "FINWS#GL_EXTRACT"
+    }
+   },
+   "predicate": "RUNS",
+   "object": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "shell",
+     "name": "fin/bin/gl_extract.sh"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "cron",
+     "name": ".rkp/inputs/scheduler/cron/batch.crontab#purge_logs.sh"
+    }
+   },
+   "predicate": "RUNS",
+   "object": {
+    "kind": "Artifact",
+    "natural_key": {
+     "path": "scripts/purge_logs.sh"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "cron",
+     "name": ".rkp/inputs/scheduler/cron/batch.crontab#purge_logs.sh"
+    }
+   },
+   "predicate": "RUNS",
+   "object": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "shell",
+     "name": "scripts/purge_logs.sh"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "cron",
+     "name": ".rkp/inputs/scheduler/cron/batch.crontab#load_orders.sh"
+    }
+   },
+   "predicate": "RUNS",
+   "object": {
+    "kind": "Artifact",
+    "natural_key": {
+     "path": "scripts/load_orders.sh"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "cron",
+     "name": ".rkp/inputs/scheduler/cron/batch.crontab#load_orders.sh"
+    }
+   },
+   "predicate": "RUNS",
+   "object": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "shell",
+     "name": "scripts/load_orders.sh"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "windows-task",
+     "name": "\\Finance\\NightlyInvoices"
+    }
+   },
+   "predicate": "RUNS",
+   "object": {
+    "kind": "Artifact",
+    "natural_key": {
+     "path": "scripts/windows/invoices.ps1"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "windows-task",
+     "name": "\\Finance\\NightlyInvoices"
+    }
+   },
+   "predicate": "RUNS",
+   "object": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "shell",
+     "name": "scripts/windows/invoices.ps1"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "control-m",
+     "name": "PAYROLL_ZOS/PAYJ010"
+    }
+   },
+   "predicate": "RUNS",
+   "object": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "jcl",
+     "name": "PAYJ010"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "ca7",
+     "name": "PAYJ010"
+    }
+   },
+   "predicate": "RUNS",
+   "object": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "jcl",
+     "name": "PAYJ010"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "ca7",
+     "name": "PAYJ020"
+    }
+   },
+   "predicate": "RUNS",
+   "object": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "jcl",
+     "name": "PAYJ020"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "autosys",
+     "name": "PAY_SUBMIT_J020"
+    }
+   },
+   "predicate": "RUNS",
+   "object": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "jcl",
+     "name": "PAYJ020"
+    }
+   },
+   "since": "M2"
+  }
+ ],
+ "absent_entities": [
+  {
+   "kind": "Job",
+   "natural_key": {
+    "framework": "tws",
+    "name": "CTMWS#ORDERS_FEED"
+   },
+   "why": "a job stream another export defines: FOLLOWS refers to it without declaring it"
+  },
+  {
+   "kind": "Job",
+   "natural_key": {
+    "framework": "autosys",
+    "name": "ORD_FEED_FALLBACK"
+   },
+   "why": "a job named only in a condition is referred to, never declared"
+  },
+  {
+   "kind": "Job",
+   "natural_key": {
+    "framework": "autosys",
+    "name": "PAYJ010^CA7"
+   },
+   "why": "a job of another AutoSys instance is kept by name in external_conditions, not linked"
+  },
+  {
+   "kind": "Job",
+   "natural_key": {
+    "framework": "autosys",
+    "name": "RPT_EXTRACT~2"
+   },
+   "why": "update_job changes a definition made elsewhere: it is counted, not a second job"
+  },
+  {
+   "kind": "Job",
+   "natural_key": {
+    "framework": "jcl",
+    "name": "%%PAYMEMBER"
+   },
+   "why": "a member set by AutoEdit is dynamic: nothing is linked or declared"
+  },
+  {
+   "kind": "Job",
+   "natural_key": {
+    "framework": "tws",
+    "name": "FINWS#GL_RESET"
+   },
+   "why": "a job named in RECOVERY AFTER is counted, not declared"
+  }
+ ],
+ "exclusions": [],
+ "forbidden_kinds": [
+  "Package",
+  "Component"
+ ],
+ "expected_unknowns": [
+  {
+   "since": "M2",
+   "detail": "PAYROLL_ZOS/PAYJ030 runs a member set by AutoEdit (%%PAYMEMBER): not linked, and a diagnostic says so"
+  },
+  {
+   "since": "M2",
+   "detail": "ORDERS_DAILY/ORDERS_DONE waits for FINANCE-READY, which no job in the export adds: kept in unresolved_conditions with a diagnostic"
+  },
+  {
+   "since": "M2",
+   "detail": "a crontab entry runs $HOME/bin/monthly_report.sh: not linked, and a diagnostic says so"
+  },
+  {
+   "since": "M2",
+   "detail": "RPT_BUILD runs /opt/sas/programs/build_reports.sas and the cron entry queue_listener runs /opt/batch/bin/queue_listener: no file of the repository is at a suffix of those paths, so neither RUNS is kept"
+  }
+ ],
+ "expected_conflicts": [],
+ "secret_probes": [],
+ "commits": [
+  {
+   "dir": "01-orders-archive",
+   "expect": "A Control-M job archives the orders once ORDERS_DONE adds its condition",
+   "added_entities": [
+    {
+     "kind": "Job",
+     "natural_key": {
+      "framework": "control-m",
+      "name": "ORDERS_DAILY/ARCHIVE_ORDERS"
+     },
+     "since": "M2"
+    }
+   ],
+   "removed_entities": []
+  },
+  {
+   "dir": "02-quarter-close",
+   "expect": "A quarter-close job stream with a job defined in it, following the month-end close",
+   "added_entities": [
+    {
+     "kind": "Job",
+     "natural_key": {
+      "framework": "tws",
+      "name": "FINWS#FIN_QUARTER"
+     },
+     "since": "M2"
+    },
+    {
+     "kind": "Job",
+     "natural_key": {
+      "framework": "tws",
+      "name": "FINWS#GL_QUARTER"
+     },
+     "since": "M2"
+    }
+   ],
+   "removed_entities": []
+  },
+  {
+   "dir": "03-retire-ca7",
+   "expect": "Payroll moves to Control-M: the CA-7 listing is removed and Control-M runs PAYJ020",
+   "added_entities": [
+    {
+     "kind": "Job",
+     "natural_key": {
+      "framework": "control-m",
+      "name": "PAYROLL_ZOS/PAYJ020"
+     },
+     "since": "M2"
+    }
+   ],
+   "removed_entities": [
+    {
+     "kind": "Job",
+     "natural_key": {
+      "framework": "ca7",
+      "name": "PAYJ010"
+     },
+     "since": "M2"
+    },
+    {
+     "kind": "Job",
+     "natural_key": {
+      "framework": "ca7",
+      "name": "PAYJ020"
+     },
+     "since": "M2"
+    }
+   ]
+  }
+ ],
+ "decision_cases": [],
+ "granularity": {
+  "label": null,
+  "why": "scheduler exports, scripts and JCL with no build file or deployment a repository shows",
+  "source": "fixture design"
+ }
+}

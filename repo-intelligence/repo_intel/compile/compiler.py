@@ -373,11 +373,21 @@ def _screen_apps(summaries: list[dict[str, Any]], unit_root: str) -> list[dict[s
     keeps its key: which router it belongs to is not known from one file, so it is not
     guessed.
 
-    Relation ends naming a rekeyed Screen are rekeyed with it. An end is matched by its old
-    key among the unit's Screen declarations: the declaration in the same file whose span
-    holds the relation's span first, else the only declaration with that key in the unit.
-    An end that still matches several Screens, or one whose key some unrouted Screen keeps,
-    is left as written. Summaries are copied where changed, never modified in place.
+    The web Forms on a rekeyed Screen gain the same `app` (section 9.2), so two apps with a
+    form on the same route do not share a Form key. The web UIControls on it gain it too,
+    since a control's `container` names the Screen (`<screen>` or `<screen>#<form>`) and
+    would otherwise still join the two apps' controls. A Form or control is on a Screen when
+    the Screen is declared in its own file with the name its key gives (`screen`, or the
+    part of `container` before `#`); when that file declares the name under more than one
+    app, or under none, the key stays as written.
+
+    Relation ends naming a rekeyed Screen, Form or UIControl are rekeyed with it. An end is
+    matched by its old key among the unit's declarations of that kind: the declaration in
+    the same file whose span holds the relation's span first, then (for a Form or control,
+    whose span is only its own tag) the declarations in the same file when they agree on
+    `app`, else the only declaration with that key in the unit. An end that still matches
+    several, or one whose key some declaration keeps (an unrouted Screen, a Form of another
+    platform), is left as written. Summaries are copied where changed, never modified in place.
     """
     def routed(o: Mapping[str, Any]) -> bool:
         p = o["payload"]
@@ -417,25 +427,61 @@ def _screen_apps(summaries: list[dict[str, Any]], unit_root: str) -> list[dict[s
         for router in clashing:
             level[router] += 1
 
-    def key_of(natural_key: Mapping[str, Any]) -> str:
-        return digest(natural_key)
+    def key_of(kind: str, natural_key: Mapping[str, Any]) -> str:
+        return f"{kind}:{digest(natural_key)}"
 
     # Every web Screen declaration by its key as written: (path, start, end, app or None).
     declared: dict[str, list[tuple[str, int, int, str | None]]] = {}
+    screen_apps: dict[tuple[str, str], set[str | None]] = {}  # (path, screen name) -> apps declared there
     for s in summaries:
         for o in s["observations"]:
             p = o["payload"]
             if o["kind"] == "entity" and p.get("kind") == EntityKind.SCREEN and p.get("attributes", {}).get("platform") == "web":
                 sp = o["evidence"]["span"]
-                declared.setdefault(key_of(p["natural_key"]), []).append((s["path"], sp["start_byte"], sp["end_byte"], app[p["attributes"]["router"]] if routed(o) else None))
+                a = app[p["attributes"]["router"]] if routed(o) else None
+                declared.setdefault(key_of(EntityKind.SCREEN, p["natural_key"]), []).append((s["path"], sp["start_byte"], sp["end_byte"], a))
+                if isinstance(p["natural_key"].get("name"), str):
+                    screen_apps.setdefault((s["path"], p["natural_key"]["name"]), set()).add(a)
+
+    on_screen = (EntityKind.FORM, EntityKind.UI_CONTROL)  # kinds whose key names their Screen
+
+    def screen_named(kind: str, natural_key: Mapping[str, Any], path: str) -> set[str | None]:
+        """The apps of the Screens declared in `path` that a Form or control key names."""
+        if kind == EntityKind.FORM:
+            return set(screen_apps.get((path, natural_key.get("screen")), set()))
+        container = natural_key.get("container")
+        if not isinstance(container, str):
+            return set()
+        return {a for (where, name), apps in screen_apps.items() if where == path and (container == name or container.startswith(name + "#")) for a in apps}
+
+    def owned_app(o: Mapping[str, Any], path: str) -> str | None:
+        """The `app` a web Form or UIControl declaration gains from its Screen, or None."""
+        p = o["payload"]
+        if o["kind"] != "entity" or p.get("kind") not in on_screen or not isinstance(p.get("natural_key"), dict) or "app" in p["natural_key"] or p.get("attributes", {}).get("platform") != "web":
+            return None
+        apps = screen_named(p["kind"], p["natural_key"], path)
+        return next(iter(apps)) if len(apps) == 1 else None
+
+    # Every Form and UIControl declaration, of any platform, by its key as written, so a key
+    # that one of another platform shares is never rekeyed by a relation end.
+    for s in summaries:
+        for o in s["observations"]:
+            p = o["payload"]
+            if o["kind"] == "entity" and p.get("kind") in on_screen and isinstance(p.get("natural_key"), dict):
+                sp = o["evidence"]["span"]
+                declared.setdefault(key_of(p["kind"], p["natural_key"]), []).append((s["path"], sp["start_byte"], sp["end_byte"], owned_app(o, s["path"])))
 
     def end_app(end: Any, path: str, span: Mapping[str, int]) -> str | None:
-        if not isinstance(end, dict) or end.get("kind") != EntityKind.SCREEN or not isinstance(end.get("natural_key"), dict):
+        if not isinstance(end, dict) or end.get("kind") not in (EntityKind.SCREEN, *on_screen) or not isinstance(end.get("natural_key"), dict) or "app" in end["natural_key"]:
             return None
-        found = declared.get(key_of(end["natural_key"]), [])
+        found = declared.get(key_of(end["kind"], end["natural_key"]), [])
         here = [d for d in found if d[0] == path and d[1] <= span["start_byte"] and span["end_byte"] <= d[2]]
         if len(here) == 1:
             return here[0][3]
+        if end["kind"] in on_screen:  # a Form's span is its opening tag: its controls lie outside it
+            same_file = {d[3] for d in found if d[0] == path}
+            if len(same_file) == 1:
+                return next(iter(same_file))
         if len({d[3] for d in found}) == 1:
             return found[0][3]
         return None
@@ -447,6 +493,8 @@ def _screen_apps(summaries: list[dict[str, Any]], unit_root: str) -> list[dict[s
             p = o["payload"]
             if routed(o):
                 o = {**o, "payload": {**p, "natural_key": {**p["natural_key"], "app": app[p["attributes"]["router"]]}}}
+            elif (fa := owned_app(o, s["path"])) is not None:
+                o = {**o, "payload": {**p, "natural_key": {**p["natural_key"], "app": fa}}}
             elif o["kind"] == "relation":
                 changed = {}
                 for side in ("subject", "object"):
@@ -1063,6 +1111,8 @@ def _repo_compile(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, An
 
     if "lifted" in inputs.names():  # contract 8.2, only when the compile settings turned it on
         _lifted_knowledge(repo, g, inputs["lifted"])
+    if "documents" in inputs.names():  # contract 9.1, only when the commit holds .rkp/documents.json
+        coverage += _document_knowledge(repo, g, inputs["documents"])
 
     # Conflicts: single-valued predicates with two objects, and decisions that disagree.
     every = [a for s in shards.values() for a in s["assertions"]] + list(g.assertions.values())
@@ -1230,6 +1280,135 @@ def _lifted_knowledge(repo: str, g: _Shard, lifted: Mapping[str, Any]) -> None:
         for problem in captures["problems"]:
             row = Unknown.make(artifact, "captured_screen", "unknown", problem, "decisions:@repo").row()
             g.unknowns[row["id"]] = row
+
+
+# ------------------------------------------------------------------ designated documents (contract 9.1)
+
+
+def _document_knowledge(repo: str, g: _Shard, documents: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """What the designated documents state (repo_intel.documents), in the global shard, and
+    the `documents` coverage: one entry per unit holding a designated document or the
+    designation file, blocks a feature used over blocks read.
+
+    Requirements are read from the text (`E2`); schemas, fields and code lists are declared
+    (`E1`); what a requirement or rule names is a candidate (`E4`). A rule a model named is
+    a hypothesis (`E5`) until the owner confirms it; a rejected one is left out. What could
+    not be read, and every ignored designation, is an unknown in the unit's coverage.
+    """
+    def artifact(path: str) -> str:
+        return Entity.make(repo, EntityKind.ARTIFACT, {"path": path}, posixpath.basename(path)).id
+
+    designation = documents["designation"]
+    home = designation["unit"]
+    scopes: dict[str, dict[str, Any]] = {}
+
+    def scope(unit: str) -> dict[str, Any]:
+        return scopes.setdefault(unit, {"blocks": 0, "used": 0, "documents": 0, "by_feature": {}, "unreadable": [], "reading": {}})
+
+    scope(home)
+
+    def tally(s: dict[str, Any], feature: str, **counts: int) -> None:
+        slot = s["by_feature"].setdefault(feature, {})
+        for k, n in counts.items():
+            slot[k] = slot.get(k, 0) + n
+
+    def unknown(subject: str, predicate: str, reason: str, unit: str) -> None:
+        row = Unknown.make(subject, predicate, "unknown", reason, f"documents:{unit}").row()
+        g.unknowns[row["id"]] = row
+
+    observed = dict(assertion_kind=AssertionKind.OBSERVED_FACT, epistemic_status=EpistemicStatus.SUPPORTED)
+    candidate = dict(assertion_kind=AssertionKind.DERIVED_RELATION, epistemic_status=EpistemicStatus.INFERRED, evidence_class=EvidenceClass.E4, resolution="candidate")
+    for d in documents["documents"]:
+        s = scope(d["unit"])
+        doc_artifact = artifact(d["path"])
+        if d["problem"]:
+            s["unreadable"].append({"path": d["path"], "reason": d["problem"], "export": "Markdown, DOCX or text"})
+            unknown(doc_artifact, "document_read", f"{d['path']} is designated for {', '.join(d['features'])} and cannot be read: {d['problem']}", d["unit"])
+            continue
+        s["documents"] += 1
+        s["blocks"] += d["blocks"]
+        for k, n in d["counts"].items():  # what a reader saw and did not use, such as formulas with no cached value
+            if n:
+                s["reading"][k] = s["reading"].get(k, 0) + n
+        evidence = {ev["id"]: ev for ev in d["evidence"]}
+
+        def cite(ids: list[str]) -> list[str]:
+            return [g.cite(evidence[i]) for i in ids if i in evidence]
+
+        used = {i for blocks in d["used"].values() for i in blocks}
+        for r in d["requirements"]:
+            evs = cite(r["evidence_ids"])
+            attributes = {"statement": r["statement"], "section": r["section"], "document": d["path"], **{k: r[k] for k in ("identifier", "modality") if r.get(k)}}
+            rid = g.entity(Entity.make(repo, EntityKind.REQUIREMENT, {"scope": d["path"], "name": r["name"]}, r.get("identifier") or r["name"], attributes=attributes, evidence_ids=evs))
+            g.assertion(Assertion.make(rid, Predicate.DEFINED_IN, doc_artifact, evidence_class=EvidenceClass.E2, evidence_ids=evs, **observed))
+            for target in r["applies_to"]:
+                g.assertion(Assertion.make(rid, Predicate.APPLIES_TO, target, qualifiers={"basis": "document_mention"}, evidence_ids=evs, **candidate))
+        for sc in d["schemas"]:
+            evs = cite(sc["evidence_ids"])
+            attributes = {"document": d["path"], "entity": sc["entity"], "fields": len(sc["fields"]), **({"documents_table": sc["documents_table"]} if sc.get("documents_table") else {})}
+            sid = g.entity(Entity.make(repo, EntityKind.DATA_SCHEMA, {"name": sc["name"]}, sc["name"], attributes=attributes, evidence_ids=evs))
+            g.assertion(Assertion.make(sid, Predicate.DEFINED_IN, doc_artifact, evidence_class=EvidenceClass.E1, evidence_ids=evs, **observed))
+            for f in sc["fields"]:
+                fevs = cite(f["evidence_ids"]) or evs
+                fid = g.entity(Entity.make(repo, EntityKind.FIELD, {"table": sc["name"], "name": f["name"]}, f["name"], attributes={k: f[k] for k in ("type", "nullable", "key", "description") if k in f}, evidence_ids=fevs))
+                g.assertion(Assertion.make(sid, Predicate.CONTAINS, fid, evidence_class=EvidenceClass.E1, evidence_ids=fevs, **observed))
+                g.assertion(Assertion.make(fid, Predicate.DEFINED_IN, doc_artifact, evidence_class=EvidenceClass.E1, evidence_ids=fevs, **observed))
+        for c in d["code_lists"]:
+            evs = cite(c["evidence_ids"])
+            attributes = {"document": d["path"], "section": c["heading"], "values": c["values"], **({"values_omitted": c["omitted"]} if c["omitted"] else {})}
+            cid = g.entity(Entity.make(repo, EntityKind.CODE_LIST, {"platform": "document", "name": c["name"]}, c["name"], attributes=attributes, evidence_ids=evs))
+            g.assertion(Assertion.make(cid, Predicate.DEFINED_IN, doc_artifact, evidence_class=EvidenceClass.E1, evidence_ids=evs, **observed))
+        lifted = 0
+        for r in d["rules"]:
+            if r["status"] == "rejected":
+                continue
+            lifted += 1
+            used.update(r["blocks"])
+            confirmed = r["status"] == "confirmed"
+            evs = [g.cite(ev) for ev in r["evidence"]]
+            attributes = {
+                "statement": r["statement"], "rule_kind": r["rule_kind"], "status": r["status"], "candidates": r["candidates"], "document": d["path"],
+                "trust_label": "untrusted_generated", "decision_ref": r["decision_ref"], **({"confirmation_ref": r["confirmation_ref"]} if confirmed else {}),
+            }
+            rid = g.entity(Entity.make(repo, EntityKind.BUSINESS_RULE, r["natural_key"], r["natural_key"]["name"], attributes=attributes, evidence_ids=evs))
+            how = dict(
+                assertion_kind=AssertionKind.INFERRED_RELATION if confirmed else AssertionKind.HYPOTHESIS,
+                epistemic_status=EpistemicStatus.SUPPORTED if confirmed else EpistemicStatus.INFERRED,
+                evidence_class=EvidenceClass.E5, evidence_ids=evs, resolution="exact" if confirmed else "candidate",
+                decision_ref=r["confirmation_ref"] if confirmed else r["decision_ref"], verification_ref="owner_override" if confirmed else None,
+            )
+            g.assertion(Assertion.make(rid, Predicate.DEFINED_IN, doc_artifact, qualifiers={"basis": "rule_lifting"}, **how))
+            for target in r["applies_to"]:
+                g.assertion(Assertion.make(rid, Predicate.APPLIES_TO, target, qualifiers={"basis": "rule_lifting"}, **how))
+        s["used"] += len(used)
+        for feature in d["features"]:
+            if feature == "requirements":
+                tally(s, feature, blocks=len(d["used"].get(feature, [])), entities=len(d["requirements"]))
+            elif feature == "schema":
+                tally(s, feature, blocks=len(d["used"].get(feature, [])), entities=len(d["schemas"]), fields=sum(len(x["fields"]) for x in d["schemas"]))
+            elif feature == "code_lists":
+                tally(s, feature, blocks=len(d["used"].get(feature, [])), entities=len(d["code_lists"]), values=sum(len(x["values"]) for x in d["code_lists"]))
+            else:
+                tally(s, feature, candidates=len(d["candidates"]) + d["omitted_candidates"], blocks=len({b for r in d["rules"] if r["status"] != "rejected" for b in r["blocks"]}), entities=lifted)
+
+    for u in documents["unreadable"]:
+        scope(u["unit"])["unreadable"].append({"path": u["path"], "reason": u["reason"], "export": u["export"]})
+        subject = artifact(u["path"]) if u["artifact"] else artifact(designation["path"])
+        unknown(subject, "document_read", f"{u['path']} is designated for {', '.join(u['features'])} and is not read: {u['reason']}; commit it as {u['export']}", u["unit"])
+    for p in documents["problems"]:
+        unknown(artifact(designation["path"]), "document_designation", f"{designation['path']}: {p['message']}", home)
+
+    out = []
+    for unit in sorted(scopes):
+        s = scopes[unit]
+        detail = {
+            "documents": s["documents"], "by_feature": dict(sorted(s["by_feature"].items())),
+            "unreadable": sorted(s["unreadable"], key=lambda u: u["path"]), "rule_lifting": documents["rule_lifting"],
+            **({"reading": dict(sorted(s["reading"].items()))} if s["reading"] else {}),
+            **({"designation": {"path": designation["path"], "blob_sha256": designation["blob_sha256"], "entries": len(documents["entries"]), "problems": len(documents["problems"])}} if unit == home else {}),
+        }
+        out.append(CoverageEntry(domain="documents", scope=unit, numerator=s["used"], denominator=s["blocks"], detail=detail).row())
+    return out
 
 
 def _preference(overrides: Mapping[str, Any], predicate: str, subject: str) -> str | None:

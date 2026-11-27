@@ -10,7 +10,8 @@ made without declaring it: it is kept only when the repository defines it.
   that `.cpy` files declare); `EXEC SQL` goes through the SQL lineage scanner and
   CICS `READ`/`WRITE` FILE name datasets. A `CALL` through a variable is counted
   as unresolved.
-- JCL (`.jcl`, `.prc`, `.proc`): `JOB` and `PROC` cards are Jobs; each `EXEC` step is
+- JCL (`.jcl`, `.prc`, `.proc`): `JOB` and `PROC` cards are Jobs, with the file's stem
+  upper-cased as `attributes.member` (the library member); each `EXEC` step is
   a Task that RUNS its program (or procedure, or the DB2 program run under
   IKJEFT01) and depends on the step before it; `DD DSN=` datasets are read
   (`DISP=SHR`/`OLD`) or written (`NEW`, `MOD`, `(+1)` generations). Temporary
@@ -227,7 +228,7 @@ def _param(operands: str, key: str) -> str | None:
 
 class Jcl:
     id = "legacy.jcl"
-    version = "1.0.0"
+    version = "1.1.0"
     SUFFIXES = (".jcl", ".prc", ".proc")
 
     def matches(self, path):
@@ -247,7 +248,10 @@ class Jcl:
             at = o.at(a, b)
             if verb in ("JOB", "PROC") and name and job is None:
                 job_name = name.upper()
-                job = o.entity(at, K.JOB, {"framework": "jcl", "name": job_name}, job_name, {"kind": verb.lower()}, E1)
+                # The library member a scheduler submits is the file's name; it need not equal
+                # the JOB statement's name, which keys the Job.
+                member = posixpath.splitext(posixpath.basename(path))[0].upper()
+                job = o.entity(at, K.JOB, {"framework": "jcl", "name": job_name}, job_name, {"kind": verb.lower(), "member": member}, E1)
             elif verb == "EXEC" and job is not None:
                 step = (name or f"STEP{i}").upper()
                 pgm = _param(operands, "PGM")

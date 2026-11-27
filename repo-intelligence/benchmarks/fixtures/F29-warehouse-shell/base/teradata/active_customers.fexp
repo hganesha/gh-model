@@ -1,0 +1,10 @@
+.LOGTABLE stg.exp_log;
+.LOGON tdprod/etl_user,$TD_LOGON_SECRET;
+.BEGIN EXPORT SESSIONS 4;
+.EXPORT OUTFILE /data/out/active_customers.dat MODE RECORD FORMAT TEXT;
+SELECT c.customer_id, c.name, SUM(o.amount) AS total
+FROM stg.customers c JOIN stg.orders o ON o.customer_id = c.customer_id
+WHERE c.segment = 'retail'
+GROUP BY c.customer_id, c.name;
+.END EXPORT;
+.LOGOFF;

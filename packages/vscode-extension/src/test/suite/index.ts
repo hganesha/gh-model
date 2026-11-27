@@ -3,8 +3,10 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { promises as fs } from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 import * as vscode from "vscode";
+import * as documents from "../../documents";
 import type { Api } from "../../extension";
 import type { Node } from "../../tree";
 
@@ -34,7 +36,71 @@ const cases: [string, () => Promise<void>][] = [
   ["contributes its commands", async () => {
     await api();
     const commands = await vscode.commands.getCommands(true);
-    for (const id of ["rkp.analyze", "rkp.refresh", "rkp.openExplorer", "rkp.openEvidence", "rkp.showOutput"]) assert.ok(commands.includes(id), id);
+    for (const id of ["rkp.analyze", "rkp.refresh", "rkp.openExplorer", "rkp.openEvidence", "rkp.showOutput", "rkp.useDocument"]) assert.ok(commands.includes(id), id);
+  }],
+  ["offers 'Use this document for...' on documents in the explorer and the editor title", async () => {
+    const manifest = vscode.extensions.getExtension(EXTENSION_ID)!.packageJSON as {
+      contributes: { commands: { command: string; title: string }[]; menus: Record<string, { command: string; when?: string }[]> };
+    };
+    assert.equal(manifest.contributes.commands.find((c) => c.command === "rkp.useDocument")?.title, "RKP: Use this document for...");
+    for (const menu of ["explorer/context", "editor/title"]) {
+      const entry = manifest.contributes.menus[menu]?.find((m) => m.command === "rkp.useDocument");
+      const when = entry?.when ?? "";
+      assert.ok(when.includes("resourceExtname"), `${menu} offers it on documents only`);
+      const pattern = /=~ \/(.+)\/i/.exec(when)![1]!;
+      for (const suffix of documents.DOCUMENT_SUFFIXES) assert.match(suffix, new RegExp(pattern, "i"), `${menu}: ${suffix}`);
+      assert.doesNotMatch(".py", new RegExp(pattern, "i"));
+    }
+  }],
+  ["builds `rkp documents set` and reads designations", async () => {
+    assert.deepEqual(documents.setArguments("docs/pricing.md", ["rules", "requirements", "bogus"]), ["documents", "set", "docs/pricing.md", "--feature", "requirements", "--feature", "rules"]);
+    assert.deepEqual(documents.setArguments("docs/pricing.md", []), ["documents", "set", "docs/pricing.md", "--clear"]);
+    assert.ok(documents.matches("specs/**/*.docx", "specs/a.docx") && documents.matches("specs/**/*.docx", "specs/x/y/a.docx"));
+    assert.ok(!documents.matches("specs/*.docx", "specs/x/a.docx") && !documents.matches("docs/a.md", "docs/a+md"));
+    const listed = documents.designationsOf({ event: "result", documents: [{ path: "docs/a.md", features: ["rules", "later_feature"] }, { path: "docs/**", features: ["schema"] }, { features: [] }] });
+    assert.deepEqual(listed?.map((d) => d.path), ["docs/a.md", "docs/**"]);
+    assert.equal(documents.designationsOf({ event: "result" }), undefined, "an older engine's answer holds no designations");
+    assert.deepEqual(documents.currentFeatures(listed!, "docs/a.md"), { own: ["rules"], fromGlobs: [{ path: "docs/**", features: ["schema"] }] });
+    assert.equal(documents.repositoryPath("/repo", "/elsewhere/a.md"), undefined);
+    assert.equal(documents.repositoryPath("/repo", path.join("/repo", "docs", "a.md")), "docs/a.md");
+    assert.ok(documents.isDocument("docs/Spec.DOCX") && !documents.isDocument("app/main.py"));
+  }],
+  ["saves a designation with `rkp documents set` through the engine runner", async () => {
+    const workspace = process.env.RKP_TEST_WORKSPACE!;
+    await api();
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "rkp-fake-engine-"));
+    const log = path.join(dir, "calls.log");
+    const fake = path.join(dir, "rkp");
+    // A stand-in engine: it records its arguments; `list` answers with one glob entry, and `set` fails for a path named fail.md.
+    await fs.writeFile(fake, [
+      "#!/bin/sh",
+      `echo "$*" >> '${log}'`,
+      'if [ "$2" = "list" ]; then echo \'{"event": "result", "documents": [{"path": "docs/**/*.md", "features": ["schema"]}]}\'; exit 0; fi',
+      'case "$3" in *fail.md) echo "error: cannot write .rkp/documents.json" >&2; exit 1;; esac',
+      "exit 0",
+    ].join("\n") + "\n", { mode: 0o755 });
+    await vscode.workspace.getConfiguration("rkp").update("engine.path", fake, vscode.ConfigurationTarget.Global);
+    try {
+      await fs.mkdir(path.join(workspace, "docs"), { recursive: true });
+      await fs.writeFile(path.join(workspace, "docs", "pricing.md"), "# Pricing\n\nREQ-1 An order must have a quantity of at least one.\n");
+      await fs.writeFile(path.join(workspace, "docs", "fail.md"), "# Nothing\n");
+      const saved = await vscode.commands.executeCommand<string[] | undefined>("rkp.useDocument", vscode.Uri.file(path.join(workspace, "docs", "pricing.md")), ["rules", "requirements"]);
+      assert.deepEqual(saved, ["documents", "set", "docs/pricing.md", "--feature", "requirements", "--feature", "rules"]);
+      // The extension also checks the status when its settings change: only the documents calls count here.
+      const calls = (await fs.readFile(log, "utf8")).trim().split("\n").filter((line) => line.startsWith("documents "));
+      assert.deepEqual(calls, ["documents list --json", "documents set docs/pricing.md --feature requirements --feature rules"], "set runs without --json");
+
+      const failed = await vscode.commands.executeCommand<string[] | undefined>("rkp.useDocument", vscode.Uri.file(path.join(workspace, "docs", "fail.md")), ["schema"]);
+      assert.equal(failed, undefined, "a failed save reports and returns nothing");
+      const notDocument = await vscode.commands.executeCommand<string[] | undefined>("rkp.useDocument", vscode.Uri.file(path.join(workspace, "app", "main.py")), ["rules"]);
+      assert.equal(notDocument, undefined, "a source file is not designated");
+      const nothing = await vscode.commands.executeCommand<string[] | undefined>("rkp.useDocument", vscode.Uri.file(path.join(workspace, "docs", "pricing.md")), []);
+      assert.equal(nothing, undefined, "no features and no entry of its own: nothing to clear");
+    } finally {
+      await vscode.workspace.getConfiguration("rkp").update("engine.path", undefined, vscode.ConfigurationTarget.Global);
+      await fs.rm(path.join(workspace, "docs"), { recursive: true, force: true });
+      await fs.rm(dir, { recursive: true, force: true });
+    }
   }],
   ["without a bundle the tree is empty and the engine is reported missing", async () => {
     await vscode.workspace.getConfiguration("rkp").update("engine.path", "/nonexistent/rkp", vscode.ConfigurationTarget.Global);

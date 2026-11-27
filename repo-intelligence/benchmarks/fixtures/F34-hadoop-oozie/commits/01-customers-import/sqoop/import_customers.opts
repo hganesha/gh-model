@@ -1,0 +1,18 @@
+# Import the customer extract to the landing area.
+import
+--connect
+jdbc:postgresql://crm.example.internal:5432/crm
+--username
+etl_reader
+--password-file
+/user/etl/crm.password
+--table
+public.customers
+--columns
+customer_id,name,region,email,signup
+--target-dir
+/data/raw/customers
+--fields-terminated-by
+,
+-m
+2

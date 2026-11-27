@@ -1,0 +1,23 @@
+.LOGTABLE stg.customers_mlog;
+.LOGON tdprod/etl_user,$TD_LOGON_SECRET;
+.SET region TO 'emea';
+.ACCEPT run_tag FROM ENV RUN_TAG;
+.BEGIN IMPORT MLOAD TABLES stg.customers
+   WORKTABLES stg.wt_customers
+   ERRORTABLES stg.et_customers stg.uv_customers;
+.LAYOUT cust_layout;
+.FIELD customer_id * VARCHAR(18);
+.FIELD name * VARCHAR(60);
+.FILLER junk * VARCHAR(2);
+.FIELD segment * VARCHAR(10) NULLIF segment = '';
+.DML LABEL upsert_cust DO INSERT FOR MISSING UPDATE ROWS;
+UPDATE stg.customers SET name = :name, segment = :segment WHERE customer_id = :customer_id;
+INSERT INTO stg.customers (customer_id, name, segment) VALUES (:customer_id, :name, :segment);
+.DML LABEL tag_rows;
+INSERT INTO stg.cust_&run_tag (customer_id) VALUES (:customer_id);
+.IMPORT INFILE /data/in/customers_&region..txt FORMAT VARTEXT '|' LAYOUT cust_layout APPLY upsert_cust APPLY tag_rows;
+.END MLOAD;
+.IF &SYSRC > 0 THEN;
+.DISPLAY 'failed' TO FILE errors.log;
+.ENDIF;
+.LOGOFF;

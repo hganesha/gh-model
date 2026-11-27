@@ -1,6 +1,6 @@
 # Solution IR contract
 
-Status: 2026-11-26, amended after the wave-1 review and extended for wave 2 (section 8). This is the contract every workstream building the solution IR follows, so that their work fits together without negotiation. It implements [Toward a complete solution IR](vscode-plugin-plan.md#toward-a-complete-solution-ir). The shared foundation it describes is built and tested (`tests/test_platforms.py`); everything else is built against it.
+Status: 2026-11-26, amended after the wave-1 review, extended for wave 2 (section 8) and for wave W7 (sections 9 and 10). This is the contract every workstream building the solution IR follows, so that their work fits together without negotiation. It implements [Toward a complete solution IR](vscode-plugin-plan.md#toward-a-complete-solution-ir). The shared foundation it describes is built and tested (`tests/test_platforms.py`); everything else is built against it.
 
 If something here is wrong or missing for your workstream, do not change a shared file. Write the request under **Requests for the foundation** in your report, with the reason, and work around it in your own files.
 
@@ -98,7 +98,7 @@ Exports of platform configuration (ColdFusion Administrator `neo-*.xml`, SAS `au
 
 ## 3. The behavioural IR
 
-`repo_intel/compile/behavior.py` defines it; `validate_unit` is the contract. A pack emits one `behavior` observation per function, page, DATA step, macro or procedure with `behavior_observation(blob, at, owner, language, body, params)`, where `owner` is the `ref(...)` of the `Symbol` or `Program` it belongs to. The function validates before emitting; invalid output raises.
+`repo_intel/compile/behavior.py` defines it; `validate_unit` is the contract. A pack emits one `behavior` observation per function, page, DATA step, macro or procedure with `behavior_observation(blob, at, owner, language, body, params)`, where `owner` is the `ref(...)` of the `Symbol` or `Program` it belongs to, or, for unit kinds `flow` and `open_code`, of the `Job` or `Task` (a workflow's order, a job step's inline commands). The function validates before emitting; invalid output raises.
 
 A unit may carry `kind` (`function`, `page`, `macro`, `data_step`, `sql_step`, `proc_step`, `open_code`, `handler`; pass `kind=` to `behavior_observation`) to tell apart several units of one owner, such as a SAS program's DATA steps.
 
@@ -276,3 +276,88 @@ Model output follows the DM08 pattern (`repo_intel/decisions/behavior.py`): a de
 Shared files: `compiler.py` is changed by W1, W2, W3 and W5, and `link.py` and `bundle.py` by two each; each keeps its change in its own function or a clearly separate block and touches nothing else, and the integrator merges them. A pack whose output changes raises its `version`; the integrator settles version bumps in `sas/__init__.py`. Fixture numbers are allocated above: `tests/test_fixtures.py` checks that numbering is contiguous, so on a single branch it fails while another branch's number is missing. That failure alone is expected; every other test must pass.
 
 Everything in section 4's shared, read-only list stays read-only, and so does this document.
+
+## 9. Wave W7, part one: designated documents and wave 2 follow-ups
+
+Wave W7 has eight workstreams: the six data-estate packs of section 10 and the two below. They branch from the commit that adds this section, which also makes the foundation changes listed in 9.3 and 10.1.
+
+### 9.1 Designated documents (W7.7)
+
+An owner marks which documents the engine reads, and for which features. Nothing undesignated is read for these features.
+
+- **The designation file** is `.rkp/documents.json`, committed by the owner:
+
+  ```json
+  {"schema": "rkp-documents/1",
+   "documents": [{"path": "docs/pricing-rules.md", "features": ["rules"], "note": "signed off by finance"},
+                 {"path": "specs/**/*.docx", "features": ["requirements", "schema"]}]}
+  ```
+
+  `path` is a repository path or a glob (`*`, `**`). `features` is a non-empty subset of `requirements`, `rules`, `schema` and `code_lists`. An entry with an unknown feature, or a path matching no file, is a diagnostic and is otherwise ignored. Entries are kept sorted by `path` when written. A file matched by several entries gets the union of their features. The file is a compile input, so its digest is part of the snapshot's input hash, as `.rkp/overrides.json` is.
+- **Reading.** A compile step (not an extractor, since it needs the designations and the file) reads each designated file's admitted bytes. Formats: Markdown, plain text, CSV, HTML, DOCX and XLSX (zip containers read from the file's bytes, as `egp.py` does; XLSX uses cached cell values and never evaluates formulas). PDF and images are inventoried and reported as a coverage gap naming the export needed (Markdown, DOCX or text). A file is cut into blocks `{kind: heading | paragraph | item | table_row | code, text, at: [start_byte, end_byte], heading_path, cells?, sheet?, cell?}`; blocks are not stored, only cited by span as evidence.
+- **requirements** (deterministic, `E2`). An item or paragraph that carries an identifier (`REQ-12`, `FR-3`, `BR-7`: two to six capitals, a hyphen, digits) or a modal statement (`shall`, `must`, `must not`, `should`) becomes `Requirement {scope: <document path>, name: <identifier lower-cased, or a slug of the first eight words, at most 60 characters>}` with attributes `statement` (at most 280 characters), `modality`, `identifier`, `section` (the heading path). `Requirement DEFINED_IN` the document's Artifact. When the statement names an existing Table, Field, Screen or Endpoint exactly (in backticks, or a qualified `schema.table`), `Requirement APPLIES_TO` it as an `E4` candidate.
+- **schema** (declared, `E1`). A table whose header has a field or column name column and a type column, under a heading or with an entity column, gives `DataSchema {name: "<document path>#<entity>"}` CONTAINS `Field {table: "<document path>#<entity>", name}` with attributes `type`, `nullable`, `key`, `description` where the columns give them. Mermaid `erDiagram` blocks give the same. When exactly one Table in the unit has the entity's name (case-insensitive), the DataSchema gets `attributes.documents_table` with that Table's entity id. An unqualified entity name also matches the last part of a qualified Table name (`orders` matches `sales.orders`) when only one Table matches.
+- **code_lists** (declared, `E1`). A two-column table of codes and meanings (header such as code, value, key; meaning, description, label) gives `CodeList {platform: "document", name: "<document path>#<heading slug>"}` with `attributes.values` `[{code, label}]`, at most 500 values.
+- **rules** (models, `E5`, behind `CompileSettings.business_rules`). Deterministic candidates are blocks with rule signals (`must`, `must not`, `only if`, `at least`, `no more than`, `cannot`, `if ... then`, a threshold or percentage). Spec `dm.document-rules` names and groups them, following 8.2: `BusinessRule {scope: <document path>, name: <slug>}`, `status` `hypothesis` until confirmed with a `decisions` override naming `dm.document-rules`. `BusinessRule DEFINED_IN` the document's Artifact; `APPLIES_TO` as for requirements. With the switch off, candidates are counted in coverage and no rule is produced.
+- **Coverage** domain `documents`, scope the unit: blocks a feature used over blocks in designated documents, with `detail.by_feature` and `detail.unreadable` (paths and the export needed).
+- **Tiers.** Requirement, BusinessRule, DataSchema, Field and CodeList entities are in every tier.
+- **Owner controls.** The local API serves `GET repositories/{id}/documents`, answering `{documents: [...entries], candidates: [{path, language}], problems: [...]}`, where candidates are the Artifacts whose language is one of `markdown`, `text`, `csv`, `html`, `docx`, `xlsx`, `pdf`; and `PUT repositories/{id}/documents` with `{documents: [...]}`, which validates and writes `.rkp/documents.json` the way overrides are written. The CLI has `rkp documents list [--json]` and `rkp documents set <path> --feature <f> ... | --clear`. A change takes effect at the next compile.
+
+### 9.2 Controls and wave 2 follow-ups (W7.8)
+
+- **Explorer.** A Documents view lists candidate documents with one checkbox per feature and saves through the API above; for designated documents it shows the counts of requirements, rules, schemas and code lists produced. The settings view gains switches for `business_rules` and `captured_screens`, saying that each sends repository content to the configured model provider. `explorer/lib/planes.ts` labels the `documents` domain and puts it on the business plane.
+- **VS Code.** A command "RKP: Use this document for..." on files in the explorer context menu and the editor title menu: a multi-select quick pick of the four features, saved with `rkp documents set`, then an offer to recompile.
+- **Bundle reader.** `packages/bundle/src/types.ts` declares the `Screen.captured` key of `detail_omitted` and the new entity kinds' attributes it reads.
+- **Rules owned by a file.** When a rule's owner is a Symbol with no containing Program, Component or Package, `ENFORCES` comes from the Artifact of the cited candidate's path (now allowed, 9.3).
+- **Form keys and `app`.** When compiler step 1b gives a unit's Screens `app`, the Forms on those Screens and every relation end naming them are rekeyed too, so two apps with a form on the same route no longer share a Form key. The UIControls on those Screens (and on their Forms) gain `app` the same way, with the relation ends naming them.
+- **Web Forms roots.** A `Web.config` is an application root unless its `system.web` holds only `authorization` (with or without `location` elements). Each application root is its own `component_root`, so two Web Forms apps in one unit do not merge equal routes.
+- **Language names.** `repo_intel/knowledge/profile.py` gains display names for `jsp`, `aspnet`, the W7 languages of 10.1 and the document languages.
+
+### 9.3 Foundation changes for documents
+
+- `Requirement` is emitted (it was reserved). `APPLIES_TO` allows `Requirement` as subject.
+- `ENFORCES` allows `Artifact` as subject.
+- `extractors/__init__.py` maps `.txt`, `.csv`, `.html`, `.htm`, `.docx`, `.xlsx` and `.pdf` to document languages.
+
+## 10. Wave W7, part two: the data estate
+
+Section "Wave W7: data estate" of [the legacy platform packs plan](legacy-platform-packs-plan.md) is binding for W7.1 to W7.6: what each pack reads and produces, its pack id and prefix, and the notes under the table. Checked against waves 1 and 2: nothing there is built yet. Teradata BTEQ scripts and T-SQL procedures stay with `sql_lineage`; W7.2's `teradata` pack reads the load and export utilities only.
+
+### 10.1 Foundation changes (made in the opening commit)
+
+1. **File types.** `LANGUAGES` maps `.pks`, `.pkb`, `.pls`, `.plb`, `.fnc`, `.trg` to `plsql` (`.prc` stays `jcl`; the `plsql` pack recognises an Oracle `.prc` by its content); `.fastload`, `.mload`, `.fexp` to `teradata`; `.ksh`, `.bash` to `shell`; `.bat`, `.cmd` to `batch`; `.ps1` to `powershell`; `.dtsx`, `.conmgr`, `.ispac` to `ssis`; `.dsx`, `.isx` to `datastage`; `.dml`, `.xfr` to `abinitio`; `.hql` to `hive`; `.pig` to `pig`. Generic suffixes (`.q`, `.item`, `.params`, `.xml`) are not mapped: the pack recognises its files by content or path.
+2. **SQL dialects.** `sql_lineage.DIALECT` has `oracle`, `hive`, `db2` (read as generic SQL: sqlglot has no DB2 dialect), `netezza` (read as `postgres`) and `sybase` (read as `tsql`). These are also the `Program.platform` values for those engines.
+3. **Transform languages.** `rkp-transform/1` accepts a registered pack id as `language`, besides `sql`, `sas` and `pyspark`.
+4. **Behaviour unit kinds.** `paragraph`, `trigger` and `flow` are added.
+5. **Transactions.** A scheduler-invoked entry point (and, in later waves, a CICS, IMS or SAP transaction) is an `Endpoint` with `method: "TRANSACTION"`, the transaction or entry id as `route` and `fidelity: lossy`.
+6. **Record fields.** A record layout declares `Field {table: "<platform>:<layout name>", name}`, as the web pack does for model types.
+7. **Triggers.** A database trigger is a `Program` with `attributes.on` `{table, events, timing}`, `READS_FROM` and `WRITES_TO` as its body shows, and `ENFORCES` any rule lifted from it. No new predicate.
+8. **Binary sources.** A pack never parses a proprietary binary. The owner commits the vendor's text or XML export under `.rkp/inputs/<pack id>/`; the binary is inventoried and reported as a coverage gap naming the export needed. Zip containers of text are read from the file's bytes.
+
+### 10.2 Workstreams (wave W7)
+
+| | Workstream | Branch | Fixture | May create or change |
+|---|---|---|---|---|
+| W7.1 | Oracle PL/SQL | `claude/ir7-plsql` | F28-oracle-plsql | `repo_intel/platforms/plsql/**`, `tests/test_platform_plsql.py` |
+| W7.2 | Warehouse utilities and SQL in shell | `claude/ir7-warehouse` | F29-warehouse-shell | `repo_intel/platforms/teradata/**`, `dbproc/**`, `shell/**`, `tests/test_platform_teradata.py`, `test_platform_dbproc.py`, `test_platform_shell.py` |
+| W7.3 | SSIS and Informatica | `claude/ir7-etl-ms-infa` | F30-ssis-package, F31-informatica-export | `repo_intel/platforms/ssis/**`, `informatica/**`, their test files |
+| W7.4 | DataStage, Talend and Ab Initio | `claude/ir7-etl-ibm-talend` | F32-datastage-job, F33-talend-job | `repo_intel/platforms/datastage/**`, `talend/**`, `abinitio/**`, their test files |
+| W7.5 | Hadoop | `claude/ir7-hadoop` | F34-hadoop-oozie | `repo_intel/platforms/hadoop/**`, `tests/test_platform_hadoop.py` |
+| W7.6 | Batch schedulers | `claude/ir7-scheduler` | F35-scheduler-exports | `repo_intel/platforms/scheduler/**`, `tests/test_platform_scheduler.py` |
+| W7.7 | Designated documents (9.1) | `claude/ir7-documents` | F36-designated-documents | `repo_intel/documents/**` (new), `repo_intel/compile/pipeline.py` (the documents step only), `repo_intel/compile/compiler.py` (writing document results only), `repo_intel/knowledge/local_api.py` (the documents endpoints only), `repo_intel/cli.py` (the `documents` command only), `tests/test_documents.py` |
+| W7.8 | Controls and wave 2 follow-ups (9.2) | `claude/ir7-controls` | none (F22 and F26 goldens change) | `explorer/**`, `packages/vscode-extension/**`, `packages/bundle/src/types.ts`, `repo_intel/decisions/rules.py`, `repo_intel/compile/compiler.py` (`_screen_apps` only), `repo_intel/platforms/aspnet/**`, `repo_intel/compile/link.py` (`link_app_relative_routes` only), `repo_intel/knowledge/profile.py`, `benchmarks/fixtures/F22-web-frontend/**`, `F26-aspnet-app/**`, and their tests |
+
+Each fixture directory is created by its workstream under `benchmarks/fixtures/`. The contiguous-numbering test may fail on a single branch only because another branch's fixture is missing. Pack versions start at 1.0.0; W7.8 raises the `aspnet` and `web` versions it changes.
+
+Shared files: `compiler.py` is changed by W7.7 and W7.8, each in its own block. `sql_lineage.py`, `transforms.py`, `behavior.py`, `ontology.py`, `extractors/__init__.py` and everything in section 4's read-only list stay read-only; a pack calls the shared SQL recognizer (`transforms.sql_query`, `sql_lineage`'s scanner) without changing it. A missing kind, relation or language is a request for the foundation, not a change.
+
+### 10.3 Foundation changes after the W7 review
+
+1. **Per-file supersession.** An extractor may set `supersedes_when_parsed = ("<extractor id>", ...)`. For a file on which it returns at least one observation, the observations and diagnostics of the extractors it names are dropped; on a file it does not read, theirs stand. `plsql.source` names `data.sql_lineage`, so a `.sql` file read as PL/SQL is not also read as generic SQL. `teradata.utilities` names `data.sql_lineage`, `hadoop.hive` names it and `data.sql_ddl`, and `dbproc.routines` names both and `plsql.source`; so a file gives one Program, under its engine, and no `ALIAS_OF` joins it to a generic reader's guess. Since a superseding reader drops the others' output, it reads only files that are surely its own: `plsql.source` takes a `.sql` procedure or function only with a sign only Oracle gives (`OR REPLACE`, `IS`, a `/` line, `%TYPE`, `:=`, `DBMS_`, `EXCEPTION WHEN`, `VARCHAR2`, `END <name>;`), so a bare `CREATE PROCEDURE p AS BEGIN ... END;` stays generic SQL, and it leaves a file with DB2 markers (`MODE DB2SQL`, `LANGUAGE SQL`, `BEGIN ATOMIC`, `SPECIFIC`, `--#SET TERMINATOR`) to `dbproc`.
+2. **Kinds.** `CONSUMES` allows `Job` and `Task` as subject (a scheduler Job CONSUMES the `TRANSACTION` Endpoint it starts); `EXPOSES` allows `Job` (a scheduled Job EXPOSES its `TRANSACTION` Endpoint). A construct may be `modelled_as` `transform:<op>`, naming an op of `rkp-transform/1`.
+3. **Shapes from behaviour.** `transforms.from_behavior` reads a unit's queries in its engine's dialect (`plsql` as `oracle`, `hive`, `teradata`, `netezza` as `postgres`, `sybase` as `tsql`, `db2` as generic SQL) and labels the shapes with the unit's language when it is a registered pack id, else `sql`.
+4. **Tables over a database link.** An Oracle table read or written over a database link (`orders@sales_link`) is `Table {datastore: <db link name>, name}`, beside the `{datastore: "default", name}` of a local table.
+5. **Paths a scheduler names.** Paths that a scheduler or job definition names (a script to run, a file to wait for, a log) may appear as written in attributes: they name the repository's or the target system's files, not the engine host's own paths, which section 6 item 7 still keeps out.
+6. **Script targets.** A job step that runs a script links it twice, both with `declare=False`: `RUNS Artifact` for the file, and `RUNS Program {platform: P, name: <repository path candidate>}`, where P is `shell` for `.sh`, `.ksh`, `.bash`, `.bat`, `.cmd` and `.ps1`, `hive` for `.hql` and `.q`, `sas` for `.sas`, and `pig` for `.pig`. Each links only when the repository defines that Program.
+7. **SQL lineage.** `sql_lineage` selects `teradata` for `REPLACE PROCEDURE` only at the start of a line, so Oracle `CREATE OR REPLACE PROCEDURE` stays generic SQL, and resolves a T-SQL `UPDATE <alias> SET ... FROM <table> AS <alias>` to the table the FROM clause binds.
+8. **Secret detectors.** `oracle_identified_by` (`IDENTIFIED BY <password>`, not `IDENTIFIED BY VALUES`) and `parameter_file_credential` (an Informatica parameter file line `$$<name>=<value>` whose name says password, passwd, pwd or secret). Neither flags a reference to another value (`&x`, `:x`, `$x`) or a short or plain-word value.

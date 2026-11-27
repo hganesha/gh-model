@@ -68,8 +68,9 @@ def screen(name: str) -> tuple:
     return key("Screen", platform="aspnet", name=name)
 
 
-def endpoint(route: str) -> tuple:
-    return key("Endpoint", component_root="@unit", protocol="http", method="ANY", route=route)
+def endpoint(route: str, root: str = "@unit") -> tuple:
+    """An Endpoint key; a Web Forms page's, which the linker keys, has its application root as `root`."""
+    return key("Endpoint", component_root=root, protocol="http", method="ANY", route=route)
 
 
 def role(name: str) -> tuple:
@@ -272,12 +273,12 @@ def test_web_forms_routes_are_rooted_at_the_nearest_web_config():
     ents, rels, unknowns = _link([_summary(p) for p in pages] + [_summary("desk/Web.config", extractor=AspNetConfig())])
     assert unknowns == []
     for page, route in zip(pages, ["/Default.aspx", "/Orders/Edit.aspx", "/Admin/Purge.aspx"]):
-        assert (prog(page), "EXPOSES", endpoint(route)) in rels
-        assert ents[endpoint(route)]["app_root"] == "desk" and ents[endpoint(route)]["platform_kind"] == "aspx:PageRequest"
+        assert (prog(page), "EXPOSES", endpoint(route, "desk")) in rels
+        assert ents[endpoint(route, "desk")]["app_root"] == "desk" and ents[endpoint(route, "desk")]["platform_kind"] == "aspx:PageRequest"
     # the route of a page is the name its <location path> rule gives the Permission
     config = entities(fixture("desk/Web.config", AspNetConfig()))
     assert key("Permission", realm="aspnet", name="/Orders/Edit.aspx") in config
-    assert endpoint("/desk/Orders/Edit.aspx") not in ents
+    assert endpoint("/desk/Orders/Edit.aspx", "") not in ents and endpoint("/desk/Orders/Edit.aspx") not in ents
 
 
 def test_web_forms_route_uses_the_deepest_web_config_and_the_repository_root():
@@ -286,10 +287,10 @@ def test_web_forms_route_uses_the_deepest_web_config_and_the_repository_root():
     summaries = [_summary("apps/a/inner/Report.aspx", page), _summary("apps/a/Home.aspx", page), _summary("Top.aspx", page),
                  _summary("apps/a/Web.config", config, False), _summary("apps/a/inner/web.config", config, False), _summary("Web.config", config, False)]
     ents, rels, unknowns = _link(summaries)
-    assert (prog("apps/a/inner/Report.aspx"), "EXPOSES", endpoint("/Report.aspx")) in rels
-    assert (prog("apps/a/Home.aspx"), "EXPOSES", endpoint("/Home.aspx")) in rels
-    assert (prog("Top.aspx"), "EXPOSES", endpoint("/Top.aspx")) in rels
-    assert ents[endpoint("/Top.aspx")]["app_root"] == "."
+    assert (prog("apps/a/inner/Report.aspx"), "EXPOSES", endpoint("/Report.aspx", "apps/a/inner")) in rels
+    assert (prog("apps/a/Home.aspx"), "EXPOSES", endpoint("/Home.aspx", "apps/a")) in rels
+    assert (prog("Top.aspx"), "EXPOSES", endpoint("/Top.aspx", "")) in rels
+    assert ents[endpoint("/Top.aspx", "")]["app_root"] == "."
     assert unknowns == []
 
 
@@ -299,6 +300,59 @@ def test_web_forms_route_without_a_web_config_is_not_keyed():
     assert not any(k[0] == "Endpoint" for k in ents) and not rels
     assert [(u["subject"]["natural_key"]["name"], u["predicate"]) for u in unknowns] == [("site/Orders/Edit.aspx", "EXPOSES")]
     assert "depends on the application root: not keyed" in unknowns[0]["reason"]
+
+
+FOLDER_RULES = b"""<?xml version="1.0"?>
+<configuration>
+  <!-- only who may read this folder -->
+  <system.web><authorization><allow roles="Admin" /><deny users="*" /></authorization></system.web>
+  <location path="Purge.aspx"><system.web><authorization><deny users="?" /></authorization></system.web></location>
+</configuration>
+"""
+
+
+@pytest.mark.parametrize("text, root", [
+    (FOLDER_RULES, False),
+    (b"<configuration><system.web><authorization><deny users='?' /></authorization></system.web></configuration>", False),
+    (b"<configuration><location path='a.aspx'><system.web><authorization><deny users='?' /></authorization></system.web></location></configuration>", False),
+    (b"<configuration />", True),
+    (b"<configuration><system.web /></configuration>", True),
+    (b"<configuration><system.web><authorization /><compilation debug='false' /></system.web></configuration>", True),
+    (b"<configuration><appSettings><add key='Mode' value='x' /></appSettings><system.web><authorization><deny users='?' /></authorization></system.web></configuration>", True),
+    (b"<configuration><system.webServer><security><authorization /></security></system.webServer></configuration>", True),
+    (b"<configuration><location path='a'><system.webServer /></location></configuration>", True),
+])
+def test_a_web_config_roots_an_application_unless_it_only_sets_authorization(text, root):
+    out = run(text, "site/Web.config", AspNetConfig())
+    [marker] = [o.payload for o in out.observations if o.kind == "app_root"]
+    assert marker == {"root": root}
+
+
+def test_a_folder_web_config_with_only_authorization_does_not_move_the_root():
+    pages = ["desk/Default.aspx", "desk/Admin/Purge.aspx"]
+    summaries = [_summary(p) for p in pages] + [_summary("desk/Web.config", extractor=AspNetConfig()), _summary("desk/Admin/Web.config", FOLDER_RULES, AspNetConfig())]
+    ents, rels, unknowns = _link(summaries)
+    assert unknowns == []
+    assert (prog("desk/Admin/Purge.aspx"), "EXPOSES", endpoint("/Admin/Purge.aspx", "desk")) in rels
+    assert endpoint("/Purge.aspx", "desk/Admin") not in ents and ents[endpoint("/Admin/Purge.aspx", "desk")]["app_root"] == "desk"
+    # The folder's rules are still read. The file does not know the application root, so
+    # its Permissions are named by repository path, never "/" (the application's own rule).
+    out = run(FOLDER_RULES, "desk/Admin/Web.config", AspNetConfig())
+    folder = entities(out)
+    assert {k for k in folder if k[0] == "Permission"} == {key("Permission", realm="aspnet", name="desk/Admin"), key("Permission", realm="aspnet", name="desk/Admin/Purge.aspx")}
+    assert (role("Admin"), "GRANTS", key("Permission", realm="aspnet", name="desk/Admin")) in relations(out)
+
+
+def test_two_web_forms_applications_in_one_unit_keep_their_routes_apart():
+    page = b'<%@ Page Language="C#" %><html><body><form id="f" runat="server"></form></body></html>'
+    config = b"<configuration><appSettings><add key='Mode' value='x' /></appSettings></configuration>"
+    summaries = [_summary("shop/Default.aspx", page), _summary("admin/Default.aspx", page),
+                 _summary("shop/Web.config", config, AspNetConfig()), _summary("admin/Web.config", config, AspNetConfig())]
+    ents, rels, unknowns = _link(summaries)
+    assert unknowns == []
+    assert {k for k in ents if k[0] == "Endpoint"} == {endpoint("/Default.aspx", "shop"), endpoint("/Default.aspx", "admin")}
+    assert (prog("shop/Default.aspx"), "EXPOSES", endpoint("/Default.aspx", "shop")) in rels
+    assert (prog("admin/Default.aspx"), "EXPOSES", endpoint("/Default.aspx", "admin")) in rels
 
 
 def test_master_page_and_user_control():

@@ -166,6 +166,18 @@ def _check_transform(t: Any, i: int, problems: list[str]) -> None:
         problems.append(f"{where}: a platform transform names its construct")
 
 
+def _known_language(language: Any) -> bool:
+    """`sql`, `sas`, `pyspark`, or the id of a registered platform pack, so an ETL mapping or
+    a DFSORT step is described in the same vocabulary (docs/solution-ir-contract.md, section 10)."""
+    if language in LANGUAGES:
+        return True
+    if not isinstance(language, str):
+        return False
+    from repo_intel.platforms import packs  # imported here: packs import this module
+
+    return language in packs()
+
+
 def validate_shape(unit: Any) -> list[str]:
     """Every way `unit` breaks the transform-shape contract; empty when it is valid."""
     if not isinstance(unit, dict):
@@ -174,8 +186,8 @@ def validate_shape(unit: Any) -> list[str]:
     owner = unit.get("owner")
     if not (owner in OWNER_STRINGS or (isinstance(owner, dict) and {"kind", "natural_key", "name"} <= set(owner))):
         problems.append("owner must be an entity reference {kind, natural_key, name}, '@package' or '@file'")
-    if unit.get("language") not in LANGUAGES:
-        problems.append(f"language must be one of {', '.join(LANGUAGES)}")
+    if not _known_language(unit.get("language")):
+        problems.append(f"language must be one of {', '.join(LANGUAGES)} or a registered platform pack id")
     if unit.get("schema", SCHEMA) != SCHEMA:
         problems.append(f"schema must be {SCHEMA}")
     transforms = unit.get("transforms")
@@ -1241,15 +1253,22 @@ def from_behavior(unit: Mapping[str, Any]) -> tuple[str, list[dict[str, Any]]] |
         node = next((n for n in body if n.get("op") == "call"), None)
         out = _sas_proc(node) if node is not None else None
         return ("sas", out) if out else None
+    # The engine's SQL dialect (sql_lineage.DIALECT, contract 10.1.2): an Oracle query over
+    # `name@dblink` or a Hive `INSERT OVERWRITE` does not parse as generic SQL.
+    language = unit.get("language")
+    dialects = {"plsql": "oracle", "db2": None, "netezza": "postgres", "sybase": "tsql", "hive": "hive", "teradata": "teradata"}
+    dialect = dialects.get(language) if isinstance(language, str) else None
     b = Builder()
     for node in walk(body):
         if node.get("op") == "query" and isinstance(node.get("sql"), str):
             at = node.get("at") or unit.get("at") or [0, 0]
-            sql_query(b, node["sql"], at, params=node.get("params") or [], qualify=_sas_name if sas else None, remote=node.get("remote") if isinstance(node.get("remote"), str) else None, sas=sas)
+            sql_query(b, node["sql"], at, dialect=dialect, params=node.get("params") or [], qualify=_sas_name if sas else None, remote=node.get("remote") if isinstance(node.get("remote"), str) else None, sas=sas)
         elif sas and node.get("op") == "platform" and node.get("construct") == "sas:sql_passthrough" and (node.get("detail") or {}).get("action") == "execute":
             b.add("platform", node.get("at") or [0, 0], [], construct="sas:sql_passthrough", dynamic=True)
     out = b.finish()
-    return ("sql", out) if out else None
+    # The shapes carry the unit's language when it is a registered pack id (contract 10.1.3).
+    label = language if not sas and isinstance(language, str) and language not in LANGUAGES and _known_language(language) else "sql"
+    return (label, out) if out else None
 
 
 # ------------------------------------------------------------------ SAS

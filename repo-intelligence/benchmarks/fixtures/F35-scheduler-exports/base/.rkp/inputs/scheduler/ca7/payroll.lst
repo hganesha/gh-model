@@ -1,0 +1,21 @@
+LJOB,JOB=PAYJ0*,LIST=ALL
+JOB=PAYJ0*     LIST=ALL                                        DATE=26.330   PAGE 0001
+
+ JOB     ----JCL----  SYSTEM   USR MAIN PROSE  SCHED  --NUMBER OF-  LAST-RUN
+ NAME    ID MEMBER    -NAME-   -ID -ID- DSNBR  DSNBR  STP DDS RUNS  DATE/TIME
+
+ PAYJ010 000 PAYJ010  PAYROLL  000 ALL  *NONE* 000012 001 002 0123  26329/2215
+        ------------------------------ SCHEDULE ------------------------------
+        SCHID=001 ROLL=D INDEX=+000 SCAL=PY DOTM=2300 LEADTM=0030 STARTM=2230
+                  WEEKLY DAYS=MON,TUE,WED,THU,FRI
+        ---------------------------- TRIGGERED JOBS ---------------------------
+        JOB=PAYJ020   SCHID=001  QTM=0010
+
+ JOB     ----JCL----  SYSTEM   USR MAIN PROSE  SCHED  --NUMBER OF-  LAST-RUN
+ NAME    ID MEMBER    -NAME-   -ID -ID- DSNBR  DSNBR  STP DDS RUNS  DATE/TIME
+
+ PAYJ020 000 PAYJ020  PAYROLL  000 ALL  *NONE* 000013 001 002 0122  26329/2240
+        ---------------------------- REQUIREMENTS -----------------------------
+        JOB=PAYJ010
+        DSN=PAY.MASTER.FILE
+        USR=CONFIRM THE BANK CUT-OFF WITH TREASURY

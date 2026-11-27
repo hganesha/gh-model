@@ -415,8 +415,8 @@ class _Index:
 
         First what CONTAINS it (a ColdFusion component's Program contains its functions). Else
         the Package its own key names (`{package, qualified_name}`), when its unit declares
-        exactly one Package of that name. Else nothing: an Artifact cannot be the subject of
-        ENFORCES (compile.ontology), so a Symbol with neither keeps only its own edge."""
+        exactly one Package of that name. Else nothing here: `lifted_rules` then lets the
+        Artifact of each cited candidate's path enforce the rule (contract section 9.2)."""
         kinds = (EntityKind.PROGRAM, EntityKind.COMPONENT, EntityKind.PACKAGE)
         found = sorted(c for c in self.contained_by.get(symbol, set()) if self.entities.get(c, {}).get("kind") in kinds)
         if found:
@@ -469,7 +469,7 @@ def _features(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, Any]:
             group = owners.setdefault(row["owner"], {"owner": row["owner"], "owner_kind": owner["kind"], "owner_name": owner["name"], "unit": unit, "raw": [], "transforms": shapes.get(row["owner"], [])})
             path = index.path_of(row["artifact"])
             for c in unit_candidates(row["body"]):
-                c.update(path=path, evidence_id=row["evidence_ids"][0], unit_kind=row.get("kind"))
+                c.update(path=path, artifact=row["artifact"], evidence_id=row["evidence_ids"][0], unit_kind=row.get("kind"))
                 group["raw"].append(c)
     groups = []
     for oid in sorted(owners):
@@ -480,7 +480,7 @@ def _features(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, Any]:
         candidates = []
         for n, c in enumerate(raw[:MAX_CANDIDATES], 1):
             candidates.append({
-                "id": f"c{n}", "kind": c["kind"], "path": c["path"], "at": c["at"], "unit_kind": c["unit_kind"],
+                "id": f"c{n}", "kind": c["kind"], "path": c["path"], "artifact": c["artifact"], "at": c["at"], "unit_kind": c["unit_kind"],
                 "condition": c["condition"], "effect": c["effect"], "evidence_id": c["evidence_id"],
                 "applies_to": _applies_to(c, oid, index),
             })
@@ -490,7 +490,7 @@ def _features(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, Any]:
     return {"groups": groups}
 
 
-FEATURES_BUILD = Step("features.rules", "0.2.0", _features)
+FEATURES_BUILD = Step("features.rules", "0.3.0", _features)
 
 
 def model_features(group: Mapping[str, Any]) -> dict[str, Any]:
@@ -514,7 +514,7 @@ def slug(name: Any) -> str | None:
     return s if s and len(s) <= 60 and SLUG.match(s) else None
 
 
-def _answered_rules(content: Mapping[str, Any], candidates: Mapping[str, Mapping[str, Any]]) -> list[tuple[str, str, str, list[str]]]:
+def answered_rules(content: Mapping[str, Any], candidates: Mapping[str, Mapping[str, Any]]) -> list[tuple[str, str, str, list[str]]]:
     """(rule_kind, name, statement, candidate ids) for each acceptable rule; first of a name wins."""
     kept: dict[str, tuple[str, str, str, list[str]]] = {}
     items = content.get("rules") if isinstance(content, Mapping) else None
@@ -531,6 +531,9 @@ def _answered_rules(content: Mapping[str, Any], candidates: Mapping[str, Mapping
         if name not in kept:
             kept[name] = (kind, name, " ".join(statement.split()), sorted(set(cited), key=lambda c: int(c[1:])))
     return [kept[n] for n in sorted(kept)][:MAX_RULES]
+
+
+_answered_rules = answered_rules  # the earlier private name, kept for existing callers
 
 
 def call_llm(spec: DecisionSpec, scope_entity: str, features: Mapping[str, Any], *, ledger: Ledger, evidence_ids: tuple[str, ...], gateway: Gateway | None, budget: Budget | None, instructions: str, schema: Mapping[str, Any], accept: Any, label: str) -> DecisionResult:
@@ -595,7 +598,7 @@ def lift(group: Mapping[str, Any], *, ledger: Ledger, gateway: Gateway | None, b
     by_id = {c["id"]: c for c in group["candidates"]}
 
     def accept(content: Mapping[str, Any]) -> tuple[list[Hypothesis], list[str]] | None:
-        rules = _answered_rules(content, by_id)
+        rules = answered_rules(content, by_id)
         if not rules:
             return None
         hypotheses = [Hypothesis(statement=statement, evidence_ids=sorted({by_id[c]["evidence_id"] for c in cited})) for _, _, statement, cited in rules]
@@ -645,8 +648,12 @@ def lifted_rules(repository_id: str, group: Mapping[str, Any], decision: Mapping
     A rule cites the candidates it names; its evidence is their units' evidence, its
     `applies_to` the entities their conditions read. A rule a Symbol enforces also names the
     Symbol's `containers` (`_Index.symbol_containers`), which enforce it through the Symbol.
+    A Symbol with no Program, Component or Package has the Artifacts of the paths its rule's
+    cited candidates come from as containers instead (contract section 9.2), so the rule
+    keeps an owner in the architecture tier, which leaves Symbols out.
     """
     by_id = {c["id"]: c for c in group["candidates"]}
+    by_file = group.get("owner_kind") == EntityKind.SYMBOL and not group.get("containers")
     evidence_rows = {ev["id"]: ev for ev in group["evidence"]}
     out, made = [], []
     for r in rules_of(decision):
@@ -662,7 +669,8 @@ def lifted_rules(repository_id: str, group: Mapping[str, Any], decision: Mapping
         if confirmed is not None:
             made.append(confirmed.row())
         out.append({
-            "id": rid, "natural_key": key, "owner": group["owner"], "containers": list(group.get("containers", [])),
+            "id": rid, "natural_key": key, "owner": group["owner"],
+            "containers": sorted({c["artifact"] for c in cited if c.get("artifact")}) if by_file else list(group.get("containers", [])),
             "statement": r["statement"], "rule_kind": r["rule_kind"],
             "status": "rejected" if confirmed and confirmed.selected_label == "rejected" else "confirmed" if confirmed else "hypothesis",
             "candidates": [{"id": c["id"], "kind": c["kind"], "path": c["path"], "at": c["at"]} for c in cited],

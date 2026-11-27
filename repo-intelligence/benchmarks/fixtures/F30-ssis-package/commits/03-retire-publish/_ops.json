@@ -1,0 +1,1 @@
+{"message": "The marts publish from the warehouse now: retire the publish package", "delete": ["etl/SalesLoad/Publish.dtsx"]}

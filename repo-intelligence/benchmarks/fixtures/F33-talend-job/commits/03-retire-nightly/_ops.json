@@ -1,0 +1,1 @@
+{"message": "The scheduler now runs the loads: retire the nightly job", "delete": ["DWH/process/Nightly_0.1.item", "DWH/process/Nightly_0.1.properties"]}
