@@ -1,0 +1,1088 @@
+{
+ "fixture": "F38-zos-definitions",
+ "description": "Daily account posting on z/OS: a job whose member name (ACCTDLY) differs from its JOB name (ACCTD01), with a SET, an in-stream procedure whose defaults name a SET symbolic and that the job calls with an override of a symbolic and of a procedure step's DD, an IDCAMS step (DELETE, DEFINE CLUSTER with keys and record size, REPRO), a DFSORT step (INCLUDE, INREC, SORT, SUM) reading the procedure step's output by referback and writing a data set named through a symbolic with no value, an IKJEFT01 step (RUN PROGRAM with a plan, a REXX exec), IF/THEN/ELSE around a call of the cataloged procedure in jcl/ACCTARCH.prc (a GDG generation from a symbolic) and a program; small COBOL programs; and under .rkp/inputs/zos/ a CICS CSD export (a transaction, its program, a file, a DB2ENTRY), a DCLGEN member, BIND PACKAGE and PLAN cards, DB2 DDL in a .ddl member and a DFSORT control member. Only what the zos pack emits is asserted; RUNS and EXPOSES name the COBOL programs by the shared key (contract 11.1 item 2). 'since' names the milestone whose compiler must produce the item.",
+ "entities": [
+  {
+   "kind": "Job",
+   "natural_key": {
+    "framework": "jcl",
+    "name": "ACCTD01"
+   },
+   "since": "M2",
+   "attributes": {
+    "kind": "job",
+    "member": "ACCTDLY",
+    "platform_kind": "zos:Job",
+    "jcllib": [
+     "PROD.ACCT.PROCLIB"
+    ],
+    "in_stream_procs": [
+     "EXTRACT"
+    ]
+   }
+  },
+  {
+   "kind": "Job",
+   "natural_key": {
+    "framework": "jcl",
+    "name": "ACCTDLY"
+   },
+   "since": "M2",
+   "attributes": {
+    "kind": "member",
+    "platform_kind": "zos:Member",
+    "job": "ACCTD01"
+   }
+  },
+  {
+   "kind": "Job",
+   "natural_key": {
+    "framework": "jcl",
+    "name": "EXTRACT"
+   },
+   "since": "M2",
+   "attributes": {
+    "kind": "proc",
+    "in_stream": true,
+    "platform_kind": "zos:Proc",
+    "symbols": [
+     "CYCLE",
+     "HLQ"
+    ]
+   }
+  },
+  {
+   "kind": "Job",
+   "natural_key": {
+    "framework": "jcl",
+    "name": "ACCTARCH"
+   },
+   "since": "M2",
+   "attributes": {
+    "kind": "proc",
+    "member": "ACCTARCH",
+    "platform_kind": "zos:Proc",
+    "symbols": [
+     "GEN"
+    ]
+   }
+  },
+  {
+   "kind": "Task",
+   "natural_key": {
+    "framework": "jcl",
+    "job": "ACCTD01",
+    "name": "RELOAD"
+   },
+   "since": "M2",
+   "attributes": {
+    "program": "IDCAMS",
+    "utility": true,
+    "platform_kind": "zos:Step"
+   }
+  },
+  {
+   "kind": "Task",
+   "natural_key": {
+    "framework": "jcl",
+    "job": "ACCTD01",
+    "name": "EXTRACT1"
+   },
+   "since": "M2",
+   "attributes": {
+    "procedure": "EXTRACT",
+    "symbols": [
+     "CYCLE"
+    ],
+    "overrides": [
+     "EXTR.ACCTLOG"
+    ]
+   }
+  },
+  {
+   "kind": "Task",
+   "natural_key": {
+    "framework": "jcl",
+    "job": "EXTRACT",
+    "name": "EXTR"
+   },
+   "since": "M2",
+   "attributes": {
+    "program": "ACCTEXT"
+   }
+  },
+  {
+   "kind": "Task",
+   "natural_key": {
+    "framework": "jcl",
+    "job": "ACCTD01",
+    "name": "SORTSUM"
+   },
+   "since": "M2",
+   "attributes": {
+    "program": "SORT",
+    "cond": "(4,LT)"
+   }
+  },
+  {
+   "kind": "Task",
+   "natural_key": {
+    "framework": "jcl",
+    "job": "ACCTD01",
+    "name": "POST"
+   },
+   "since": "M2",
+   "attributes": {
+    "program": "IKJEFT01",
+    "plan": "ACCTPLN",
+    "execs": [
+     "ACCTRPT"
+    ]
+   }
+  },
+  {
+   "kind": "Task",
+   "natural_key": {
+    "framework": "jcl",
+    "job": "ACCTD01",
+    "name": "ARCHIVE"
+   },
+   "since": "M2",
+   "attributes": {
+    "procedure": "ACCTARCH",
+    "conditions": [
+     {
+      "if": "(POST.RC = 0)",
+      "branch": "then"
+     }
+    ]
+   }
+  },
+  {
+   "kind": "Task",
+   "natural_key": {
+    "framework": "jcl",
+    "job": "ACCTD01",
+    "name": "ALERT"
+   },
+   "since": "M2",
+   "attributes": {
+    "program": "ACCTALRT",
+    "conditions": [
+     {
+      "if": "(POST.RC = 0)",
+      "branch": "else"
+     }
+    ]
+   }
+  },
+  {
+   "kind": "Task",
+   "natural_key": {
+    "framework": "jcl",
+    "job": "ACCTARCH",
+    "name": "COPY"
+   },
+   "since": "M2",
+   "attributes": {
+    "program": "IEBGENER"
+   }
+  },
+  {
+   "kind": "Dataset",
+   "natural_key": {
+    "name": "prod.acct.master"
+   },
+   "since": "M2",
+   "attributes": {
+    "platform": "mainframe",
+    "vsam": "ksds",
+    "key_length": 10,
+    "key_offset": 0,
+    "record_length": 200,
+    "average_record_length": 200
+   }
+  },
+  {
+   "kind": "Dataset",
+   "natural_key": {
+    "name": "prod.acct.master.backup"
+   },
+   "since": "M2",
+   "attributes": {
+    "platform": "mainframe"
+   }
+  },
+  {
+   "kind": "Dataset",
+   "natural_key": {
+    "name": "prod.acct.daily.extract"
+   },
+   "since": "M2",
+   "attributes": {
+    "platform": "mainframe"
+   }
+  },
+  {
+   "kind": "Dataset",
+   "natural_key": {
+    "name": "prod.acct.extract.log"
+   },
+   "since": "M2",
+   "attributes": {
+    "platform": "mainframe"
+   }
+  },
+  {
+   "kind": "Dataset",
+   "natural_key": {
+    "name": "prod.acct.archive"
+   },
+   "since": "M2",
+   "attributes": {
+    "platform": "mainframe",
+    "gdg": true
+   }
+  },
+  {
+   "kind": "Dataset",
+   "natural_key": {
+    "name": "prod.acct.summary.{rundate}"
+   },
+   "since": "M2",
+   "attributes": {
+    "platform": "mainframe",
+    "parameterized": true
+   }
+  },
+  {
+   "kind": "Dataset",
+   "natural_key": {
+    "name": "prod.acct.alerts"
+   },
+   "since": "M2",
+   "attributes": {
+    "platform": "mainframe"
+   }
+  },
+  {
+   "kind": "Dataset",
+   "natural_key": {
+    "name": "acctmst"
+   },
+   "since": "M2",
+   "attributes": {
+    "access": "cics_file",
+    "cics_group": "ACCTGRP",
+    "operations": [
+     "browse",
+     "read"
+    ]
+   }
+  },
+  {
+   "kind": "Endpoint",
+   "natural_key": {
+    "component_root": "",
+    "protocol": "cics",
+    "method": "TRANSACTION",
+    "route": "ACIN"
+   },
+   "since": "M2",
+   "attributes": {
+    "platform_kind": "zos:Transaction",
+    "program": "ACCTINQ",
+    "program_language": "COBOL",
+    "plan": "ACCTPLN",
+    "group": "ACCTGRP"
+   }
+  },
+  {
+   "kind": "DataSchema",
+   "natural_key": {
+    "kind": "dclgen",
+    "name": "DACCT"
+   },
+   "since": "M2",
+   "attributes": {
+    "platform_kind": "zos:Dclgen",
+    "table": "acct.account",
+    "record": "DCLACCOUNT",
+    "columns": 4,
+    "fields": 6
+   }
+  },
+  {
+   "kind": "Field",
+   "natural_key": {
+    "table": "zos:DACCT",
+    "name": "ACCT-ID"
+   },
+   "since": "M2",
+   "attributes": {
+    "level": 10,
+    "pic": "X(10)",
+    "offset": 0,
+    "length": 10,
+    "column": "ACCT_ID",
+    "sql_type": "CHAR(10)",
+    "nullable": false
+   }
+  },
+  {
+   "kind": "Field",
+   "natural_key": {
+    "table": "zos:DACCT",
+    "name": "ACCT-NAME"
+   },
+   "since": "M2",
+   "attributes": {
+    "level": 10,
+    "group": true,
+    "offset": 10,
+    "length": 42,
+    "column": "ACCT_NAME",
+    "sql_type": "VARCHAR(40)"
+   }
+  },
+  {
+   "kind": "Field",
+   "natural_key": {
+    "table": "zos:DACCT",
+    "name": "ACCT-NAME-TEXT"
+   },
+   "since": "M2",
+   "attributes": {
+    "level": 49,
+    "pic": "X(40)",
+    "offset": 12,
+    "length": 40
+   }
+  },
+  {
+   "kind": "Field",
+   "natural_key": {
+    "table": "zos:DACCT",
+    "name": "BALANCE"
+   },
+   "since": "M2",
+   "attributes": {
+    "level": 10,
+    "pic": "S9(9)V9(2)",
+    "usage": "COMP-3",
+    "offset": 52,
+    "length": 6,
+    "sql_type": "DECIMAL(11, 2)",
+    "nullable": true
+   }
+  },
+  {
+   "kind": "Program",
+   "natural_key": {
+    "platform": "db2-package",
+    "name": "ACCTCOLL.ACCTPOST"
+   },
+   "since": "M2",
+   "attributes": {
+    "platform_kind": "zos:Db2Package",
+    "collection": "ACCTCOLL",
+    "member": "ACCTPOST"
+   }
+  },
+  {
+   "kind": "Program",
+   "natural_key": {
+    "platform": "db2-package",
+    "name": "ACCTCOLL.ACCTINQ"
+   },
+   "since": "M2",
+   "attributes": {
+    "platform_kind": "zos:Db2Package"
+   }
+  },
+  {
+   "kind": "Program",
+   "natural_key": {
+    "platform": "db2-plan",
+    "name": "ACCTPLN"
+   },
+   "since": "M2",
+   "attributes": {
+    "platform_kind": "zos:Db2Plan",
+    "collections": [
+     "ACCTCOLL"
+    ]
+   }
+  },
+  {
+   "kind": "Table",
+   "natural_key": {
+    "datastore": "default",
+    "name": "ACCT.ACCOUNT"
+   },
+   "since": "M2"
+  },
+  {
+   "kind": "Field",
+   "natural_key": {
+    "table": "ACCT.ACCOUNT",
+    "name": "BALANCE"
+   },
+   "since": "M2",
+   "attributes": {
+    "type": "DECIMAL(11, 2)"
+   }
+  }
+ ],
+ "edges": [
+  {
+   "subject": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "jcl",
+     "name": "ACCTDLY"
+    }
+   },
+   "predicate": "ALIAS_OF",
+   "object": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "jcl",
+     "name": "ACCTD01"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "jcl",
+     "name": "ACCTD01"
+    }
+   },
+   "predicate": "CONTAINS",
+   "object": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "jcl",
+     "name": "EXTRACT"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "jcl",
+     "name": "ACCTD01"
+    }
+   },
+   "predicate": "CONTAINS",
+   "object": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "jcl",
+     "job": "ACCTD01",
+     "name": "RELOAD"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "jcl",
+     "name": "EXTRACT"
+    }
+   },
+   "predicate": "CONTAINS",
+   "object": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "jcl",
+     "job": "EXTRACT",
+     "name": "EXTR"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "jcl",
+     "name": "ACCTARCH"
+    }
+   },
+   "predicate": "CONTAINS",
+   "object": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "jcl",
+     "job": "ACCTARCH",
+     "name": "COPY"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "jcl",
+     "job": "ACCTD01",
+     "name": "EXTRACT1"
+    }
+   },
+   "predicate": "DEPENDS_ON",
+   "object": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "jcl",
+     "job": "ACCTD01",
+     "name": "RELOAD"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "jcl",
+     "job": "ACCTD01",
+     "name": "POST"
+    }
+   },
+   "predicate": "DEPENDS_ON",
+   "object": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "jcl",
+     "job": "ACCTD01",
+     "name": "SORTSUM"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "jcl",
+     "job": "ACCTD01",
+     "name": "EXTRACT1"
+    }
+   },
+   "predicate": "RUNS",
+   "object": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "jcl",
+     "name": "EXTRACT"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "jcl",
+     "job": "EXTRACT",
+     "name": "EXTR"
+    }
+   },
+   "predicate": "RUNS",
+   "object": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "mainframe",
+     "name": "ACCTEXT"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "jcl",
+     "job": "ACCTD01",
+     "name": "POST"
+    }
+   },
+   "predicate": "RUNS",
+   "object": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "mainframe",
+     "name": "ACCTPOST"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "jcl",
+     "job": "ACCTD01",
+     "name": "ARCHIVE"
+    }
+   },
+   "predicate": "RUNS",
+   "object": {
+    "kind": "Job",
+    "natural_key": {
+     "framework": "jcl",
+     "name": "ACCTARCH"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "jcl",
+     "job": "ACCTD01",
+     "name": "POST"
+    }
+   },
+   "predicate": "DEPENDS_ON",
+   "object": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "db2-plan",
+     "name": "ACCTPLN"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "jcl",
+     "job": "ACCTD01",
+     "name": "RELOAD"
+    }
+   },
+   "predicate": "READS_FROM",
+   "object": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "prod.acct.master.backup"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "jcl",
+     "job": "ACCTD01",
+     "name": "RELOAD"
+    }
+   },
+   "predicate": "WRITES_TO",
+   "object": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "prod.acct.master"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "jcl",
+     "job": "ACCTD01",
+     "name": "EXTRACT1"
+    }
+   },
+   "predicate": "READS_FROM",
+   "object": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "prod.acct.master"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "jcl",
+     "job": "ACCTD01",
+     "name": "EXTRACT1"
+    }
+   },
+   "predicate": "WRITES_TO",
+   "object": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "prod.acct.daily.extract"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "jcl",
+     "job": "ACCTD01",
+     "name": "EXTRACT1"
+    }
+   },
+   "predicate": "WRITES_TO",
+   "object": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "prod.acct.extract.log"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "jcl",
+     "job": "ACCTD01",
+     "name": "SORTSUM"
+    }
+   },
+   "predicate": "READS_FROM",
+   "object": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "prod.acct.daily.extract"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "jcl",
+     "job": "ACCTD01",
+     "name": "SORTSUM"
+    }
+   },
+   "predicate": "WRITES_TO",
+   "object": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "prod.acct.summary.{rundate}"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "jcl",
+     "job": "ACCTD01",
+     "name": "POST"
+    }
+   },
+   "predicate": "READS_FROM",
+   "object": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "prod.acct.master"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "jcl",
+     "job": "ACCTARCH",
+     "name": "COPY"
+    }
+   },
+   "predicate": "WRITES_TO",
+   "object": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "prod.acct.archive"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Task",
+    "natural_key": {
+     "framework": "jcl",
+     "job": "ACCTD01",
+     "name": "ALERT"
+    }
+   },
+   "predicate": "WRITES_TO",
+   "object": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "prod.acct.alerts"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "acctmst"
+    }
+   },
+   "predicate": "ALIAS_OF",
+   "object": {
+    "kind": "Dataset",
+    "natural_key": {
+     "name": "prod.acct.master"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "mainframe",
+     "name": "ACCTINQ"
+    }
+   },
+   "predicate": "EXPOSES",
+   "object": {
+    "kind": "Endpoint",
+    "natural_key": {
+     "component_root": "",
+     "protocol": "cics",
+     "method": "TRANSACTION",
+     "route": "ACIN"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "db2-package",
+     "name": "ACCTCOLL.ACCTPOST"
+    }
+   },
+   "predicate": "DEPENDS_ON",
+   "object": {
+    "kind": "Program",
+    "natural_key": {
+     "platform": "mainframe",
+     "name": "ACCTPOST"
+    }
+   },
+   "since": "M2"
+  },
+  {
+   "subject": {
+    "kind": "DataSchema",
+    "natural_key": {
+     "kind": "dclgen",
+     "name": "DACCT"
+    }
+   },
+   "predicate": "CONTAINS",
+   "object": {
+    "kind": "Field",
+    "natural_key": {
+     "table": "zos:DACCT",
+     "name": "BALANCE"
+    }
+   },
+   "since": "M2"
+  }
+ ],
+ "absent_entities": [
+  {
+   "kind": "Dataset",
+   "natural_key": {
+    "name": "prod.acct.loadlib"
+   },
+   "why": "a STEPLIB is a load library, not data"
+  },
+  {
+   "kind": "Dataset",
+   "natural_key": {
+    "name": "prod.acct.master.data"
+   },
+   "why": "the DATA and INDEX components of a cluster are parts of it, not data sets of their own"
+  },
+  {
+   "kind": "Dataset",
+   "natural_key": {
+    "name": "prod.acct.master.index"
+   },
+   "why": "the DATA and INDEX components of a cluster are parts of it, not data sets of their own"
+  },
+  {
+   "kind": "Dataset",
+   "natural_key": {
+    "name": "prod.acct.weekly.extract"
+   },
+   "why": "the call's CYCLE=DAILY replaces the PROC default WEEKLY"
+  },
+  {
+   "kind": "Dataset",
+   "natural_key": {
+    "name": "&hlq..acct.master"
+   },
+   "why": "a symbolic with a literal value is resolved, not kept as written"
+  },
+  {
+   "kind": "Program",
+   "natural_key": {
+    "platform": "mainframe",
+    "name": "IDCAMS"
+   },
+   "why": "a system utility, not an application program"
+  },
+  {
+   "kind": "Program",
+   "natural_key": {
+    "platform": "mainframe",
+    "name": "IKJEFT01"
+   },
+   "why": "the TSO terminal monitor program: the program it runs is what the step runs"
+  },
+  {
+   "kind": "Program",
+   "natural_key": {
+    "platform": "tso",
+    "name": "ACCTRPT"
+   },
+   "why": "a REXX exec the job runs is referred to, not declared: the repository does not hold it"
+  },
+  {
+   "kind": "Task",
+   "natural_key": {
+    "framework": "jcl",
+    "job": "ACCTD01",
+    "name": "EXTR"
+   },
+   "why": "the steps of an in-stream procedure belong to the procedure; the calling step carries their data sets"
+  },
+  {
+   "kind": "Table",
+   "natural_key": {
+    "datastore": "default",
+    "name": "ACCTTS"
+   },
+   "why": "a table space is storage, not a table"
+  }
+ ],
+ "exclusions": [],
+ "forbidden_kinds": [
+  "Package",
+  "Component"
+ ],
+ "expected_unknowns": [
+  {
+   "since": "M2",
+   "detail": "SORTSUM's SORTOUT names its data set through &RUNDATE, which nothing in the file sets: kept as prod.acct.summary.{rundate}, parameterized, counted unresolved, with a diagnostic"
+  },
+  {
+   "since": "M2",
+   "detail": "POST runs the REXX exec ACCTRPT, which the repository does not hold: RUNS Program {tso, ACCTRPT} is kept only when another file declares it"
+  },
+  {
+   "since": "M2",
+   "detail": "the COBOL programs' DD names join to these data sets through link_dd_datasets only once a pack emits dd_file observations (W8.1)"
+  }
+ ],
+ "expected_conflicts": [],
+ "secret_probes": [],
+ "commits": [
+  {
+   "dir": "01-reconcile-step",
+   "expect": "A reconcile step runs after posting and writes a report",
+   "added_entities": [
+    {
+     "kind": "Task",
+     "natural_key": {
+      "framework": "jcl",
+      "job": "ACCTD01",
+      "name": "RECON"
+     },
+     "since": "M2"
+    },
+    {
+     "kind": "Dataset",
+     "natural_key": {
+      "name": "prod.acct.recon.report"
+     },
+     "since": "M2"
+    }
+   ],
+   "removed_entities": []
+  },
+  {
+   "dir": "02-summary-by-day",
+   "expect": "The summary DD names a GDG instead of a data set named at run time",
+   "added_entities": [
+    {
+     "kind": "Dataset",
+     "natural_key": {
+      "name": "prod.acct.summary.daily"
+     },
+     "since": "M2"
+    }
+   ],
+   "removed_entities": [
+    {
+     "kind": "Dataset",
+     "natural_key": {
+      "name": "prod.acct.summary.{rundate}"
+     },
+     "since": "M2"
+    }
+   ]
+  },
+  {
+   "dir": "03-update-transaction",
+   "expect": "The CSD defines the account update transaction",
+   "added_entities": [
+    {
+     "kind": "Endpoint",
+     "natural_key": {
+      "component_root": "",
+      "protocol": "cics",
+      "method": "TRANSACTION",
+      "route": "ACUP"
+     },
+     "since": "M2"
+    }
+   ],
+   "removed_entities": []
+  }
+ ],
+ "decision_cases": [],
+ "granularity": {
+  "label": null,
+  "why": "batch JCL, COBOL and resource definitions with no build file or deployment a repository shows",
+  "source": "fixture design"
+ }
+}
