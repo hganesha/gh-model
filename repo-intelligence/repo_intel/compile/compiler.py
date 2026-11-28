@@ -30,6 +30,7 @@ from repo_intel.compile.patterns import SERVERLESS_DEPLOYMENT_KINDS, Graph, Patt
 from repo_intel.compile.planning import plan_units
 from repo_intel.decisions import architecture as dm_architecture
 from repo_intel.extractors.manifests import effective_declarations
+from repo_intel.platforms.boomi.link import link_components as link_boomi_components
 
 ROOT_UNIT = "@root"
 GLOBAL_UNIT = "@global"
@@ -1088,6 +1089,7 @@ def _repo_compile(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, An
                 g.unknowns[row["id"]] = row
     coverage.append(CoverageEntry(domain="deployment_refs", scope="@repo", numerator=deploy_resolved, denominator=deploy_refs).row())
     coverage += link_repo(shards, g)  # GI-016: CONFIGURED_BY, image BUILT_BY and ALIAS_OF
+    coverage += link_boomi_components(shards, g)
 
     dependency_decisions, dependency_coverage = _dependency_capabilities(
         repo, shards, g, inputs["capability_catalogue"],

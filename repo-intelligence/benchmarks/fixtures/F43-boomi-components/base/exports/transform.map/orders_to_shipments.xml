@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bns:Component xmlns:bns="http://api.platform.boomi.com/" componentId="00000006-1234-4321-8000-000000000001"
+    name="Orders to shipments" type="transform.map" version="1" currentVersion="true">
+  <bns:encryptedValues/>
+  <bns:object>
+    <Map fromProfile="00000007-1234-4321-8000-000000000001" toProfile="00000008-1234-4321-8000-000000000001">
+      <Mappings>
+        <Mapping fromKey="3" fromType="profile" toKey="3" toType="profile"/>
+      </Mappings>
+      <Functions/>
+      <Defaults/>
+      <DocumentCacheJoins/>
+    </Map>
+  </bns:object>
+</bns:Component>

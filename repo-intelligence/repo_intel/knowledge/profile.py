@@ -68,6 +68,7 @@ LANGUAGES = {
     # Server pages (wave 2) and the data estate's file types (contract section 10.1).
     "jsp": "JSP", "aspnet": "ASP.NET", "plsql": "Oracle PL/SQL", "teradata": "Teradata load and export scripts", "batch": "Windows batch",
     "powershell": "PowerShell", "ssis": "SSIS packages", "datastage": "IBM DataStage", "abinitio": "Ab Initio", "hive": "HiveQL", "pig": "Pig Latin",
+    "boomi": "Boomi AtomSphere",
 }
 # The Languages field counts only the languages named above. Everything else a file can be
 # (a manifest, a contract, configuration, an infrastructure template, a document) is not

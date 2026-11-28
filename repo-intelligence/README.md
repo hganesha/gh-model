@@ -28,6 +28,14 @@ Without the server: `rkp compile` writes a repository's knowledge to `.rkp/knowl
 .venv/bin/rkp compile path/to/repository
 ```
 
+### Boomi AtomSphere exports
+
+Open a folder of Boomi Integration component XML in VS Code and choose **Analyze Repository**, or run `.venv/bin/rkp compile path/to/exports`. A standalone folder works without a Git repository. RKP scans subfolders, identifies Boomi components by their XML namespace, and writes the bundle to the folder's `.rkp/knowledge/`. Use `rkp status path/to/exports` to check for changes. For exports inside a Git repository, use `--working-tree` to include uncommitted files.
+
+The Boomi pack reads processes, steps and branch paths, connections, operations, maps, and profiles. It resolves connector, map, profile and subprocess references across files, including direct field mappings. Missing or ambiguous component references appear in coverage. Use XML from **Revision History → View Component XML** or the Boomi Platform API's **Component** GET. Connection setting names are included in the graph. Runtime endpoints depend on environment configuration.
+
+### Bundle contents
+
 What the bundle holds beside the entities and relations:
 
 - `.rkp/knowledge/exports.json` lists what links the repository to others: the contract `operations` it declares and the HTTP calls no endpoint of its own serves (`unresolved_calls`), each with its HTTP `method` where the source states one. It is committed in every tier, named in `manifest.json` with its digest, and checked by `rkp verify`; `rkp solution` reads it, so members link without a local compile. Bundles written before it existed still read.

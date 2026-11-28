@@ -14,7 +14,7 @@ import "@fontsource-variable/jetbrains-mono";
 import "@/app/globals.css";
 import "./webview.css";
 
-import { FileCode2, GitBranch, RefreshCw, Search } from "lucide-react";
+import { FileCode2, FolderOpen, GitBranch, RefreshCw, Search } from "lucide-react";
 import { StrictMode, useCallback, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { DecisionsView } from "@/components/decisions-view";
@@ -57,6 +57,7 @@ interface Local {
   repository_id: string;
   rkp_hash: string;
   commit_sha: string;
+  source_kind?: "folder";
   working_tree: boolean;
   status: string;
 }
@@ -122,7 +123,7 @@ function Snapshot({ local }: { local: Local }) {
             <h1>{name}</h1>
             <p>
               <span className="topbar-commit">
-                <GitBranch size={12} aria-hidden="true" />
+                {local.source_kind === "folder" ? <FolderOpen size={12} aria-label="Folder snapshot" /> : <GitBranch size={12} aria-hidden="true" />}
                 <code>{shortSha(local.commit_sha)}</code>
                 {local.working_tree && <span>with uncommitted changes</span>}
               </span>

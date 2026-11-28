@@ -280,6 +280,43 @@ def snapshot_worktree(store: ObjectStore, repo_path: str | os.PathLike[str], bas
         elif stat.S_ISREG(info.st_mode):
             listing.append((name, "100755" if info.st_mode & stat.S_IXUSR else "100644", "blob", file, info.st_size))
 
+    return {"commit_sha": base_commit, "working_tree": True, **_disk_manifest(store, listing, gitlinks)}
+
+
+def snapshot_folder(store: ObjectStore, folder: Path) -> dict[str, Any]:
+    """Pin a folder's files without making a Git repository or following symlinks."""
+    listing = []
+    for parent, dirs, files in os.walk(folder, followlinks=False, onerror=_raise_walk_error):
+        root = Path(parent)
+        # Prune Git metadata and RKP's own output before descending, including nested Git metadata.
+        dirs[:] = [name for name in dirs if name != ".git" and not in_bundle((root / name).relative_to(folder).as_posix() + "/")]
+        for name in files + dirs:
+            file = root / name
+            relative = file.relative_to(folder).as_posix()
+            if name == ".git" or in_bundle(relative):
+                continue
+            try:
+                info = file.lstat()
+            except FileNotFoundError:
+                continue
+            if stat.S_ISLNK(info.st_mode):
+                listing.append((relative, "120000", "blob", file, 0))
+            elif stat.S_ISREG(info.st_mode):
+                mode = "100755" if info.st_mode & stat.S_IXUSR else "100644"
+                listing.append((relative, mode, "blob", file, info.st_size))
+    manifest = _disk_manifest(store, listing, {})
+    # The bundle protocol uses commit_sha as the revision ID. Folders use their full
+    # content digest so the same files produce the same revision on every scan.
+    return {"commit_sha": manifest["source_tree_hash"].split(":", 1)[1], **manifest}
+
+
+def _raise_walk_error(error: OSError) -> None:
+    raise error
+
+
+def _disk_manifest(
+    store: ObjectStore, listing: list[tuple[str, str, str, Path | None, int]], gitlinks: dict[str, str],
+) -> dict[str, Any]:
     def read(file: Path, mode: str) -> bytes:
         return os.fsencode(os.readlink(file)) if mode == "120000" else file.read_bytes()
 
@@ -298,7 +335,7 @@ def snapshot_worktree(store: ObjectStore, repo_path: str | os.PathLike[str], bas
         else:
             tree.append((name, mode, typ, _git_blob_oid_of_file(file, size)))  # type: ignore[arg-type]
     tree.sort()
-    return {"commit_sha": base_commit, "working_tree": True, **_path_manifest(store, tree, blobs)}
+    return _path_manifest(store, tree, blobs)
 
 
 def _path_manifest(store: ObjectStore, tree: list[tuple[str, str, str, str]], blobs: dict[str, bytes]) -> dict[str, Any]:

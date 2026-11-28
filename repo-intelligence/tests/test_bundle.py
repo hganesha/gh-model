@@ -373,9 +373,10 @@ def test_cli_json_lines(repo, capsys):
     assert error["event"] == "error" and error["message"]
 
 
-def test_cli_outside_a_repository(tmp_path, capsys):
-    assert cli.main(["status", str(tmp_path)]) == 1
-    assert "rkp:" in capsys.readouterr().err
+def test_cli_status_for_a_folder_without_a_bundle(tmp_path, capsys):
+    assert cli.main(["status", str(tmp_path), "--json"]) == 0
+    status = json.loads(capsys.readouterr().out)
+    assert status["state"] == "missing" and status["source_kind"] == "folder"
 
 
 def test_rkp_console_script(repo):

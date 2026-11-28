@@ -30,8 +30,9 @@ export async function openEvidence(bundle: Bundle, evidenceIds: readonly string[
       editor.selection = new vscode.Selection(range(location).start, range(location).end);
       editor.revealRange(range(location), vscode.TextEditorRevealType.InCenterIfOutsideViewport);
       if (!found.unchanged) {
+        const revision = bundle.manifest.source_kind === "folder" ? "" : ` (commit ${bundle.manifest.commit_sha.slice(0, 12)})`;
         void vscode.window.showWarningMessage(
-          `${location.path} has changed since the analysis (commit ${bundle.manifest.commit_sha.slice(0, 12)}); lines ${location.startLine}–${location.endLine} may have moved.`,
+          `${location.path} has changed since the analysis${revision}. Lines ${location.startLine}–${location.endLine} may have moved.`,
         );
       }
       return true;

@@ -7,9 +7,10 @@ rendered for a consumer or a model passes through `mask`.
 from __future__ import annotations
 
 import re
+from collections.abc import Iterator
 from typing import Any
 
-SCAN_VERSION = "5"
+SCAN_VERSION = "6"
 # URL user information `scheme://user:password@`: group 1 is the user, group 2 the password.
 URL_CREDENTIALS = re.compile(rb"://([^/\s:@]+):([^@\s/]{3,})@")
 # Passwords that come with a product and are published in its documentation (the `postgres`
@@ -147,6 +148,41 @@ _MATCH_CHECKS = {
     "env_assignment": lambda m: not _names_itself(m),
 }
 
+_BOOMI_URIS = (b"http://api.platform.boomi.com/", b"http://api.boomi.com/")
+_XML_TAG = re.compile(rb"""<(?:[\w.-]+:)?([\w.-]+)(?=[\s/>])((?:[^<>"']|"[^"]*"|'[^']*')*)>""")
+_XML_ATTR = re.compile(rb"""([\w.-]+)\s*=\s*(?:"([^"]*)"|'([^']*)')""")
+_BOOMI_CREDENTIAL = re.compile(rb"(?:authorization|password|passwd|pwd|clientsecret|apikey|accesstoken|refreshtoken|privatekey|credential)$")
+
+
+def _boomi_values(data: bytes) -> Iterator[tuple[int, int, str]]:
+    # Boomi's names, namespace and XML syntax are ASCII. Project UTF-16 code units
+    # onto their low byte so finding offsets still point into the original bytes.
+    width = 1
+    if data.startswith(b"\xfe\xff"):
+        data, width = data[1::2], 2
+    elif data.startswith((b"\xff\xfe", b"<\x00")):
+        data, width = data[::2], 2
+    if not any(uri in data for uri in _BOOMI_URIS):
+        return
+    for tag in _XML_TAG.finditer(data):
+        attrs = {match[1].lower(): match for match in _XML_ATTR.finditer(data, *tag.span(2))}
+        element = tag[1].lower()
+        for name, match in attrs.items():
+            group = 2 if match[2] is not None else 3
+            value = match[group].strip()
+            if len(value) < 8 or value.lower() in _DEFAULT_PASSWORDS or _PLACEHOLDER.match(value):
+                continue
+            sensitive = _BOOMI_CREDENTIAL.fullmatch(_NOT_ALNUM.sub(b"", name))
+            if name == b"value" and element in (b"field", b"properties", b"encryptedvalue"):
+                selector = attrs.get(b"id") or attrs.get(b"key")
+                field = (selector[2] or selector[3] or b"").lower() if selector is not None else b""
+                typ = attrs.get(b"type")
+                field_type = (typ[2] or typ[3] or b"").lower() if typ is not None else b""
+                sensitive = element == b"encryptedvalue" or field_type == b"password" or _BOOMI_CREDENTIAL.search(_NOT_ALNUM.sub(b"", field))
+            if sensitive:
+                start, end = match.span(group)
+                yield start * width, end * width, "boomi_credential"
+
 
 def _finding(name: str, match: re.Match[bytes], group: int) -> bool:
     check = _MATCH_CHECKS.get(name)
@@ -155,10 +191,9 @@ def _finding(name: str, match: re.Match[bytes], group: int) -> bool:
 
 def scan(data: bytes) -> list[dict[str, Any]]:
     """Non-overlapping findings, ordered by position: {detector, start_byte, end_byte}."""
-    found = sorted(
-        ((m.start(g), m.end(g), name) for name, pattern, g in _DETECTORS for m in pattern.finditer(data) if _finding(name, m, g)),
-        key=lambda f: (f[0], -f[1]),
-    )
+    found = [(m.start(g), m.end(g), name) for name, pattern, g in _DETECTORS for m in pattern.finditer(data) if _finding(name, m, g)]
+    found.extend(_boomi_values(data))
+    found.sort(key=lambda f: (f[0], -f[1]))
     out: list[dict[str, Any]] = []
     for start, end, name in found:
         if out and start < out[-1]["end_byte"]:

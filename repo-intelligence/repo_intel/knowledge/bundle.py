@@ -51,7 +51,7 @@ from repo_intel.compile.contracts import Manifest, ShardRef
 from repo_intel.compile.pipeline import load_shards, stage_compile, stage_snapshot, toolchain_hash
 from repo_intel.decisions.gateway import Gateway
 from repo_intel.decisions.overrides import EMPTY, OverrideDocument, Overrides
-from repo_intel.ingest.snapshot import snapshot_commit, snapshot_worktree
+from repo_intel.ingest.snapshot import snapshot_commit, snapshot_folder, snapshot_worktree
 from repo_intel.storage.hashing import digest, sha256_hex
 from repo_intel.storage.store import ObjectStore
 
@@ -123,6 +123,17 @@ def _git(repo: Path, *args: str) -> str:
 
 def repository_root(path: str | os.PathLike[str]) -> Path:
     return Path(_git(Path(path), "rev-parse", "--show-toplevel"))
+
+
+def source_root(path: str | os.PathLike[str]) -> tuple[Path, bool]:
+    """Return the local source root and whether it is a plain folder."""
+    try:
+        return repository_root(path), False
+    except BundleError:
+        folder = Path(path).resolve()
+        if not folder.is_dir() or any((parent / ".git").exists() for parent in (folder, *folder.parents)):
+            raise
+        return folder, True
 
 
 def resolve_commit(repo: Path, ref: str = "HEAD") -> str:
@@ -275,7 +286,7 @@ def _omitted_attributes(shards: dict[str, dict[str, Any]]) -> dict[str, int]:
     return {k: n for k, n in counts.items() if n}
 
 
-def write_bundle(repo: Path, store: ObjectStore, manifest: Manifest, *, working_tree: bool = False, tier: str = "full") -> dict[str, Any]:
+def write_bundle(repo: Path, store: ObjectStore, manifest: Manifest, *, working_tree: bool = False, folder: bool = False, tier: str = "full") -> dict[str, Any]:
     """Write `.rkp/knowledge/` for a published manifest, replacing what is there. Returns manifest.json.
 
     Rows keep the engine's order, so `hydrate` can rebuild every stored object from the
@@ -325,6 +336,7 @@ def write_bundle(repo: Path, store: ObjectStore, manifest: Manifest, *, working_
         "bundle_format": FORMAT,
         "engine": {"name": "repo-intel", "version": engine_version()},
         "repository_id": manifest.repository_id, "commit_sha": manifest.commit_sha, "working_tree": working_tree,
+        **({"source_kind": "folder"} if folder else {}),
         "source_tree_hash": manifest.source_tree_hash, "toolchain_hash": manifest.toolchain_hash,
         "override_set_hash": manifest.override_set_hash, "rkp_hash": manifest.rkp_hash, "status": manifest.status,
         "row_defaults": ROW_DEFAULTS,
@@ -506,28 +518,36 @@ def has_snapshot(store: ObjectStore, manifest: Manifest) -> bool:
 # ------------------------------------------------------------------ commands
 
 
-def _snapshot(store: ObjectStore, repo: Path, sha: str, working_tree: bool) -> str:
-    """Pin the source (the commit, or the working tree on top of it); the path manifest digest."""
-    if not working_tree:
+def _snapshot(store: ObjectStore, repo: Path, sha: str, working_tree: bool, folder: bool) -> str:
+    """Pin the local source and return the path manifest digest."""
+    if not working_tree and not folder:
         return stage_snapshot(store, repo, sha)
-    pm = snapshot_worktree(store, repo, sha)
+    pm = snapshot_folder(store, repo) if folder else snapshot_worktree(store, repo, sha)
     digest_ = store.put_json(pm)
     store.index_put("path_manifests", pm["source_tree_hash"], digest_)
     return digest_
 
 
 def compile_bundle(path: str | os.PathLike[str], ref: str = "HEAD", *, working_tree: bool = False, gateway: Gateway | None = None, progress: Callable[[str, dict[str, Any]], None] | None = None) -> dict[str, Any]:
-    """Compile `ref` (or, with `working_tree`, the files on disk on top of it) and write the bundle."""
-    repo = repository_root(path)
+    """Compile a local folder, Git ref, or Git working tree and write its bundle."""
+    repo, folder = source_root(path)
+    sha = _source_revision(repo, ref, folder)
     config = ensure_layout(repo)
-    sha = resolve_commit(repo, ref)
     store = store_for(repo)
     overrides = load_overrides(repo)
-    result = stage_compile(store, config["repository_id"], _snapshot(store, repo, sha, working_tree), gateway=gateway, overrides=overrides, progress=progress)
-    document = write_bundle(repo, store, result.manifest, working_tree=working_tree, tier=commit_tier(config))
+    result = stage_compile(store, config["repository_id"], _snapshot(store, repo, sha, working_tree, folder), gateway=gateway, overrides=overrides, progress=progress)
+    document = write_bundle(repo, store, result.manifest, working_tree=working_tree and not folder, folder=folder, tier=commit_tier(config))
     if progress:
         progress("written", {"path": str(repo / BUNDLE / "knowledge"), "steps_executed": result.stats.total_executed, "steps_reused": sum(result.stats.hits.values())})
     return document
+
+
+def _source_revision(repo: Path, ref: str, folder: bool) -> str:
+    if not folder:
+        return resolve_commit(repo, ref)
+    if ref != "HEAD":
+        raise BundleError("a Git ref can only be selected in a Git repository")
+    return ""  # the folder's revision is produced by its snapshot
 
 
 def read_manifest(repo: Path) -> dict[str, Any] | None:
@@ -552,17 +572,24 @@ def bundle_status(path: str | os.PathLike[str], ref: str = "HEAD", *, working_tr
     `complete` for a full bundle or when the cache holds the compiled snapshot, else
     `architecture` (a fresh clone of an architecture-tier bundle, until a local compile).
     """
-    repo = repository_root(path)
-    sha = resolve_commit(repo, ref)
-    dirty = bool(_git(repo, "status", "--porcelain", "--untracked-files=normal", "--", ".", f":(exclude){BUNDLE}"))
+    repo, folder = source_root(path)
+    sha = _source_revision(repo, ref, folder)
+    working_tree = working_tree and not folder
+    dirty = not folder and bool(_git(repo, "status", "--porcelain", "--untracked-files=normal", "--", ".", f":(exclude){BUNDLE}"))
     document = read_manifest(repo)
     base = {"repository": str(repo), "ref": ref, "commit_sha": sha, "working_tree": working_tree, "uncommitted_changes": dirty}
+    if folder:
+        base["source_kind"] = "folder"
     if document is None:
         return {**base, "state": "missing", "reasons": ["no bundle has been written"]}
     store = store_for(repo)
-    tree = (snapshot_worktree(store, repo, sha) if working_tree else snapshot_commit(store, repo, sha))["source_tree_hash"]
+    if folder:
+        source = snapshot_folder(store, repo)
+        base["commit_sha"] = source["commit_sha"]
+    else:
+        source = snapshot_worktree(store, repo, sha) if working_tree else snapshot_commit(store, repo, sha)
     reasons = []
-    if tree != document["source_tree_hash"]:
+    if source["source_tree_hash"] != document["source_tree_hash"] or folder != (document.get("source_kind") == "folder"):
         reasons.append("source changed")
     if toolchain_hash(gateway) != document["toolchain_hash"]:
         reasons.append("toolchain changed")

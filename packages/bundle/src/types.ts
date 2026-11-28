@@ -162,6 +162,7 @@ export interface BundleManifest {
   engine: { name: string; version: string };
   repository_id: string;
   commit_sha: string;
+  source_kind?: "folder";
   source_tree_hash: string;
   toolchain_hash: string;
   override_set_hash: string;

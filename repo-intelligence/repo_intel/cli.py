@@ -54,7 +54,9 @@ def _emit(event: str, **fields: Any) -> None:
 
 
 def _print_status(status: dict[str, Any]) -> None:
-    print(f"{status['state']}: {status['repository']} at {status['commit_sha'][:12]}")
+    revision = status["commit_sha"][:12]
+    version = f" at {revision}" if revision else ""
+    print(f"{status['state']}: {status['repository']}{version}")
     for reason in status["reasons"]:
         print(f"  {reason}")
     if status["uncommitted_changes"] and not status["working_tree"]:
@@ -104,9 +106,9 @@ def main(argv: list[str] | None = None) -> int:
         return step_worker.main(argv[1:])
     parser = argparse.ArgumentParser(prog="rkp", description="Compile a repository into its .rkp/ knowledge bundle.")
     commands = parser.add_subparsers(dest="command", required=True)
-    for name, text in (("compile", "compile a commit and write .rkp/knowledge/"), ("status", "say whether .rkp/knowledge/ describes a commit")):
+    for name, text in (("compile", "compile a local folder or Git commit and write .rkp/knowledge/"), ("status", "check whether .rkp/knowledge/ is current")):
         command = commands.add_parser(name, help=text)
-        command.add_argument("path", nargs="?", default=".", help="a directory inside the repository (default: .)")
+        command.add_argument("path", nargs="?", default=".", help="a local folder or a directory inside a Git repository (default: .)")
         command.add_argument("--ref", default="HEAD", help="commit, branch or tag (default: HEAD)")
         command.add_argument("--working-tree", action="store_true", help="analyse the files on disk, uncommitted changes included")
         command.add_argument("--json", action="store_true", help="JSON lines on stdout, for editor shells")
@@ -145,14 +147,14 @@ def main(argv: list[str] | None = None) -> int:
             if args.json:
                 _emit("progress", stage="start", path=os.path.abspath(args.path), ref=args.ref, working_tree=args.working_tree)
             document = bundle.compile_bundle(args.path, args.ref, working_tree=args.working_tree, gateway=gateway, progress=progress)
-            summary = {key: document[key] for key in ("repository_id", "commit_sha", "working_tree", "rkp_hash", "status", "counts")}
+            summary = {key: document[key] for key in ("repository_id", "commit_sha", "working_tree", "rkp_hash", "status", "counts", "source_kind") if key in document}
             if args.json:
                 _emit("result", **summary)
             else:
                 counts = document["counts"]
                 print(f"{document['status']}: {document['repository_id']} at {document['commit_sha'][:12]}{' with uncommitted changes' if document['working_tree'] else ''}")
                 print(f"  {counts['entities']} entities, {counts['assertions']} assertions, {counts['conflicts']} conflicts, {counts['unknowns'] + counts['repository_unknowns']} unknowns")
-                print(f"  written to {bundle.repository_root(args.path) / bundle.BUNDLE / 'knowledge'}")
+                print(f"  written to {bundle.source_root(args.path)[0] / bundle.BUNDLE / 'knowledge'}")
         else:
             status = bundle.bundle_status(args.path, args.ref, working_tree=args.working_tree, gateway=gateway)
             if args.json:

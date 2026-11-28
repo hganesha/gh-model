@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bns:Component xmlns:bns="http://api.platform.boomi.com/" componentId="00000007-1234-4321-8000-000000000001"
+    name="Order response (old)" type="profile.json" version="0" currentVersion="false">
+  <bns:encryptedValues/>
+  <bns:object>
+    <JSONProfile strict="false">
+      <DataElements>
+        <JSONRootValue name="Root" dataType="character" key="1">
+          <JSONObject name="Object" key="2" isMappable="false">
+            <JSONObjectEntry name="legacyOrderId" key="3" dataType="character"/>
+          </JSONObject>
+        </JSONRootValue>
+      </DataElements>
+      <tagLists/>
+    </JSONProfile>
+  </bns:object>
+</bns:Component>

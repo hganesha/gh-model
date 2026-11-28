@@ -43,6 +43,7 @@ class Extraction:
     observations: list[Observation] = field(default_factory=list)
     diagnostics: list[Diagnostic] = field(default_factory=list)
     parsed: bool = True
+    language: str | None = None  # format identified from content, when a suffix is shared
 
 
 class Extractor(Protocol):
