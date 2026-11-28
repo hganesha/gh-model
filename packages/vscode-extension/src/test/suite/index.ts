@@ -223,6 +223,32 @@ if (engine) {
     await analysed(extension);
     assert.equal(await written(), before, "analysing rewrites the same knowledge");
   }]);
+
+  cases.push(["analyses a standalone Boomi export folder through the VS Code command", async () => {
+    const workspace = process.env.RKP_TEST_WORKSPACE!;
+    const extension = await api();
+    const extensionPath = vscode.extensions.getExtension(EXTENSION_ID)!.extensionPath;
+    const exports = path.resolve(extensionPath, "../../repo-intelligence/benchmarks/fixtures/F43-boomi-components/base/exports");
+    const git = path.join(workspace, ".git");
+    const backup = await fs.mkdtemp(path.join(os.tmpdir(), "rkp-vscode-git-"));
+    const moved = path.join(backup, ".git");
+    await fs.rename(git, moved);
+    try {
+      await fs.cp(exports, path.join(workspace, "nested", "exports"), { recursive: true });
+      await analysed(extension);
+      const bundle = extension.bundle()!;
+      assert.equal(bundle.manifest.source_kind, "folder");
+      assert.ok([...bundle.entities.values()].some((entity) => entity.kind === "Job" && entity.name === "Ship orders"));
+      const query = await extension.request("POST", "knowledge/query", {
+        rkp_hash: bundle.manifest.rkp_hash, seed_selector: { kind: "Field", name: "externalOrderId" }, max_depth: 1,
+      });
+      assert.equal(query.status, 200, JSON.stringify(query.body));
+      assert.ok((query.body as { assertions: { predicate: string }[] }).assertions.some((edge) => edge.predicate === "BINDS_TO"));
+    } finally {
+      await fs.rename(moved, git);
+      await fs.rmdir(backup);
+    }
+  }]);
 }
 
 export async function run(): Promise<void> {

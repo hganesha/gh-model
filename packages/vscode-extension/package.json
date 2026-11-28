@@ -130,7 +130,7 @@
     "viewsWelcome": [
       {
         "view": "rkp.knowledge",
-        "contents": "This repository has no compiled knowledge yet.\n[Analyze Repository](command:rkp.analyze)\nThe result is written to .rkp/knowledge/ in the repository and reused the next time it is opened.",
+        "contents": "This workspace has no compiled knowledge yet.\n[Analyze Repository](command:rkp.analyze)\nThe result is written to .rkp/knowledge/ in the workspace.",
         "when": "workspaceFolderCount > 0 && isWorkspaceTrusted"
       },
       {
@@ -140,7 +140,7 @@
       },
       {
         "view": "rkp.knowledge",
-        "contents": "Open a folder that is a Git repository to analyse it.",
+        "contents": "Open a workspace folder to analyse it.",
         "when": "workspaceFolderCount == 0"
       }
     ],

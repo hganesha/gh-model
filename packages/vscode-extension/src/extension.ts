@@ -42,7 +42,7 @@ export function activate(context: vscode.ExtensionContext): Api {
   let server: { folder: string; engine: EngineServer } | undefined;
   function engineServer(): EngineServer {
     const folder = root();
-    if (!folder) throw new EngineError("Open a folder that is a Git repository.");
+    if (!folder) throw new EngineError("Open a workspace folder.");
     if (server?.folder !== folder) {
       server?.engine.dispose();
       server = { folder, engine: new EngineServer(folder, output) };
@@ -101,7 +101,8 @@ export function activate(context: vscode.ExtensionContext): Api {
     show(bundle ? "Knowledge…" : "No knowledge", "Checking whether the knowledge is current…");
     try {
       const result = (await runEngine(["status", folder, ...sourceArgs()], folder, output)) as unknown as StatusResult;
-      const what = result.working_tree && result.uncommitted_changes ? `the files on disk (commit ${result.commit_sha.slice(0, 12)} with uncommitted changes)` : `commit ${result.commit_sha.slice(0, 12)}`;
+      const what = result.source_kind === "folder" ? "the files in this folder" :
+        result.working_tree && result.uncommitted_changes ? `the files on disk (commit ${result.commit_sha.slice(0, 12)} with uncommitted changes)` : `commit ${result.commit_sha.slice(0, 12)}`;
       const uncommitted = result.uncommitted_changes && !result.working_tree ? " Uncommitted changes are not analysed (rkp.analysis.includeUncommittedChanges is off)." : "";
       const architectureOnly =
         result.detail === "architecture"
@@ -110,7 +111,7 @@ export function activate(context: vscode.ExtensionContext): Api {
       if (result.state === "fresh" && architectureOnly) show("Knowledge current (architecture)", `The knowledge describes ${what}.${architectureOnly}${uncommitted}`);
       else if (result.state === "fresh") show("Knowledge current", `The knowledge describes ${what}.${uncommitted}`);
       else if (result.state === "stale") show("Knowledge stale", `Out of date: ${result.reasons.join(", ")}. Click to analyse again.${uncommitted}`, true);
-      else show("No knowledge", "Click to analyse this repository.", true);
+      else show("No knowledge", "Click to analyse this workspace.", true);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       output.appendLine(message);
@@ -126,7 +127,7 @@ export function activate(context: vscode.ExtensionContext): Api {
   async function analyze(): Promise<void> {
     const folder = root();
     if (!folder) {
-      void vscode.window.showWarningMessage("Open a folder that is a Git repository to analyse it.");
+      void vscode.window.showWarningMessage("Open a workspace folder to analyse it.");
       return;
     }
     if (!vscode.workspace.isTrusted) {
@@ -142,8 +143,10 @@ export function activate(context: vscode.ExtensionContext): Api {
             progress.report({ message: `${String(event.stage).replace(/_/g, " ")}${done}` });
           }, token);
           const counts = (result.counts ?? {}) as Record<string, number>;
+          const source = result.source_kind === "folder" ? "workspace folder" :
+            String(result.commit_sha).slice(0, 12) + (result.working_tree ? " with uncommitted changes" : "");
           void vscode.window.showInformationMessage(
-            `Analysed ${String(result.commit_sha).slice(0, 12)}${result.working_tree ? " with uncommitted changes" : ""}: ${counts.entities ?? 0} entities, ${counts.conflicts ?? 0} conflicts. Written to .rkp/knowledge/.`,
+            `Analysed ${source}. Found ${counts.entities ?? 0} entities and ${counts.conflicts ?? 0} conflicts. Written to .rkp/knowledge/.`,
           );
         } catch (error) {
           if (error instanceof vscode.CancellationError) return;

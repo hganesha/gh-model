@@ -19,6 +19,7 @@ export interface EngineEvent {
 
 export interface StatusResult {
   state: "missing" | "fresh" | "stale";
+  source_kind?: "folder";
   reasons: string[];
   commit_sha: string;
   bundle_commit_sha?: string;

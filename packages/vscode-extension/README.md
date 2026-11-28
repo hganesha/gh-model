@@ -20,6 +20,7 @@ Set the two settings in user settings: an untrusted workspace's settings cannot 
 ## Use
 
 - **Analyze Repository** (view toolbar, status bar or Command Palette) compiles the repository and writes `.rkp/knowledge/`. By default it reads the files on disk, uncommitted changes included; turn off `rkp.analysis.includeUncommittedChanges` to analyse only the last commit. Nothing is written to `.git` either way.
+- For a standalone folder of Boomi AtomSphere exports, open the folder and use the same command. RKP scans its subfolders and links process steps, connections, operations, maps, and profiles. The Git setting applies only to Git workspaces.
 - The status bar says whether the knowledge is current, and why not: the source, the toolchain, the owner overrides or the bundle format changed. It is checked again after you save, create, delete or rename files, and when the window regains focus. Knowledge compiled from uncommitted files stays current once exactly those files are committed.
 - The **Knowledge** view lists what was found. Selecting an item opens the lines it rests on.
 - **Open Explorer** shows the Explorer's views in an editor tab: the map of planes, each plane's entities, the graph, quality and the decision ledger, with an entity drawer that shows evidence excerpts (secret-masked) and **Open source** to jump to the code. Owner corrections made in the Decisions view are saved to `.rkp/overrides.json`. History across commits and the cross-repository business map are not available in the editor.

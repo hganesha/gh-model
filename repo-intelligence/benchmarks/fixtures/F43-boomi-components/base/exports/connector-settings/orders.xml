@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bns:Component xmlns:bns="http://api.platform.boomi.com/" componentId="00000002-1234-4321-8000-000000000001"
+    name="Orders service" type="connector-settings" version="1" currentVersion="true" subType="officialboomi-X3979C-rest-prod">
+  <bns:encryptedValues/>
+  <bns:object>
+    <GenericConnectionConfig>
+      <field id="url" type="string" value="https://orders.example.invalid"/>
+      <field value="fixture-boomi-credential-0043" id="authValue" type="password"/>
+    </GenericConnectionConfig>
+  </bns:object>
+</bns:Component>

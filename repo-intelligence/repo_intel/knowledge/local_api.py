@@ -180,7 +180,7 @@ class LocalApi:
     """Answers the Explorer's requests for one repository's bundle."""
 
     def __init__(self, repo: str | Path):
-        self.repo = bundle.repository_root(repo)
+        self.repo, _ = bundle.source_root(repo)
         self._snapshot: Snapshot | None = None
         self._key: tuple[str, float] | None = None
 
@@ -279,6 +279,7 @@ class LocalApi:
         return {
             "repository": str(self.repo), "repository_id": snap.manifest.repository_id, "rkp_hash": snap.manifest.rkp_hash,
             "commit_sha": snap.manifest.commit_sha, "working_tree": document.get("working_tree", False), "status": snap.manifest.status,
+            **({"source_kind": "folder"} if document.get("source_kind") == "folder" else {}),
             "tier": document.get("tier", "full"), "detail": snap.detail,
         }
 

@@ -1,0 +1,38 @@
+{
+  "fixture": "F43-boomi-components",
+  "description": "Boomi process XML and connector, map, and profile components across export folders.",
+  "entities": [
+    {"kind": "Job", "natural_key": {"framework": "boomi", "name": "00000001-1234-4321-8000-000000000001~~1"}, "since": "M2", "attributes": {"platform_kind": "boomi:Process"}},
+    {"kind": "Task", "natural_key": {"framework": "boomi", "job": "00000001-1234-4321-8000-000000000001~~1", "name": "shape1"}, "since": "M2", "attributes": {"entry": true}},
+    {"kind": "Task", "natural_key": {"framework": "boomi", "job": "00000001-1234-4321-8000-000000000001~~1", "name": "shape2"}, "since": "M2", "attributes": {"action_type": "GET"}},
+    {"kind": "Task", "natural_key": {"framework": "boomi", "job": "00000001-1234-4321-8000-000000000001~~1", "name": "shape4"}, "since": "M2", "attributes": {"type": "map"}},
+    {"kind": "ConfigKey", "natural_key": {"name": "boomi:connection:00000002-1234-4321-8000-000000000001~~1"}, "since": "M2", "attributes": {"setting_names": ["authValue", "url"]}},
+    {"kind": "Program", "natural_key": {"platform": "boomi", "name": "operation:00000004-1234-4321-8000-000000000001~~1"}, "since": "M2", "attributes": {"action_type": "GET"}},
+    {"kind": "Program", "natural_key": {"platform": "boomi", "name": "map:00000006-1234-4321-8000-000000000001~~1"}, "since": "M2", "attributes": {"field_mappings": [{"from_key": "3", "to_key": "3"}]}},
+    {"kind": "DataSchema", "natural_key": {"kind": "boomi_profile", "name": "boomi:profile:00000007-1234-4321-8000-000000000001~~1"}, "since": "M2", "attributes": {"component_type": "profile.json"}},
+    {"kind": "Field", "natural_key": {"table": "boomi:profile:00000008-1234-4321-8000-000000000001~~1", "name": "3"}, "since": "M2", "attributes": {"data_type": "character"}}
+  ],
+  "edges": [
+    {"subject": {"kind": "Job", "natural_key": {"framework": "boomi", "name": "00000001-1234-4321-8000-000000000001~~1"}}, "predicate": "CONTAINS", "object": {"kind": "Task", "natural_key": {"framework": "boomi", "job": "00000001-1234-4321-8000-000000000001~~1", "name": "shape2"}}, "since": "M2"},
+    {"subject": {"kind": "Task", "natural_key": {"framework": "boomi", "job": "00000001-1234-4321-8000-000000000001~~1", "name": "shape4"}}, "predicate": "DEPENDS_ON", "object": {"kind": "Task", "natural_key": {"framework": "boomi", "job": "00000001-1234-4321-8000-000000000001~~1", "name": "shape3"}}, "since": "M2"},
+    {"subject": {"kind": "Task", "natural_key": {"framework": "boomi", "job": "00000001-1234-4321-8000-000000000001~~1", "name": "shape7"}}, "predicate": "DEPENDS_ON", "object": {"kind": "Task", "natural_key": {"framework": "boomi", "job": "00000001-1234-4321-8000-000000000001~~1", "name": "shape3"}}, "since": "M2"},
+    {"subject": {"kind": "Task", "natural_key": {"framework": "boomi", "job": "00000001-1234-4321-8000-000000000001~~1", "name": "shape2"}}, "predicate": "REFERENCES_CONFIG", "object": {"kind": "ConfigKey", "natural_key": {"name": "boomi:connection:00000002-1234-4321-8000-000000000001~~1"}}, "since": "M2"},
+    {"subject": {"kind": "Task", "natural_key": {"framework": "boomi", "job": "00000001-1234-4321-8000-000000000001~~1", "name": "shape2"}}, "predicate": "DEPENDS_ON", "object": {"kind": "Program", "natural_key": {"platform": "boomi", "name": "operation:00000004-1234-4321-8000-000000000001~~1"}}, "since": "M2"},
+    {"subject": {"kind": "Task", "natural_key": {"framework": "boomi", "job": "00000001-1234-4321-8000-000000000001~~1", "name": "shape4"}}, "predicate": "RUNS", "object": {"kind": "Program", "natural_key": {"platform": "boomi", "name": "map:00000006-1234-4321-8000-000000000001~~1"}}, "since": "M2"},
+    {"subject": {"kind": "Program", "natural_key": {"platform": "boomi", "name": "operation:00000004-1234-4321-8000-000000000001~~1"}}, "predicate": "WRITES_TO", "object": {"kind": "DataSchema", "natural_key": {"kind": "boomi_profile", "name": "boomi:profile:00000007-1234-4321-8000-000000000001~~1"}}, "since": "M2"},
+    {"subject": {"kind": "Program", "natural_key": {"platform": "boomi", "name": "map:00000006-1234-4321-8000-000000000001~~1"}}, "predicate": "READS_FROM", "object": {"kind": "DataSchema", "natural_key": {"kind": "boomi_profile", "name": "boomi:profile:00000007-1234-4321-8000-000000000001~~1"}}, "since": "M2"},
+    {"subject": {"kind": "Program", "natural_key": {"platform": "boomi", "name": "map:00000006-1234-4321-8000-000000000001~~1"}}, "predicate": "WRITES_TO", "object": {"kind": "DataSchema", "natural_key": {"kind": "boomi_profile", "name": "boomi:profile:00000008-1234-4321-8000-000000000001~~1"}}, "since": "M2"},
+    {"subject": {"kind": "Field", "natural_key": {"table": "boomi:profile:00000008-1234-4321-8000-000000000001~~1", "name": "3"}}, "predicate": "BINDS_TO", "object": {"kind": "Field", "natural_key": {"table": "boomi:profile:00000007-1234-4321-8000-000000000001~~1", "name": "3"}}, "since": "M2"}
+  ],
+  "absent_entities": [
+    {"kind": "Job", "natural_key": {"framework": "boomi", "name": "00000009-1234-4321-8000-000000000001~~1"}, "why": "A process call is unresolved until the target XML is available."}
+  ],
+  "exclusions": [],
+  "forbidden_kinds": [],
+  "commits": [
+    {"dir": "01-export-audit-process", "expect": "The target of the Process Call becomes available.", "added_entities": [{"kind": "Job", "natural_key": {"framework": "boomi", "name": "00000009-1234-4321-8000-000000000001~~1"}, "since": "M2"}], "removed_entities": []},
+    {"dir": "02-revise-create-operation", "expect": "The operation definition moves to revision 2.", "added_entities": [{"kind": "Program", "natural_key": {"platform": "boomi", "name": "operation:00000005-1234-4321-8000-000000000001~~2"}, "since": "M2"}], "removed_entities": [{"kind": "Program", "natural_key": {"platform": "boomi", "name": "operation:00000005-1234-4321-8000-000000000001~~1"}, "since": "M2"}]},
+    {"dir": "03-add-historical-profile", "expect": "Both exported profile revisions are inventoried.", "added_entities": [{"kind": "DataSchema", "natural_key": {"kind": "boomi_profile", "name": "boomi:profile:00000007-1234-4321-8000-000000000001~~0"}, "since": "M2"}], "removed_entities": []}
+  ],
+  "granularity": {"label": null, "why": "component XML without deployment records", "source": "fixture design"}
+}

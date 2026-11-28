@@ -127,7 +127,8 @@ def _file_extract(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, An
     path: str = inputs["path"]
     data: bytes = inputs["blob"]
     blob = sha256_hex(data)
-    observations = [obs("file", blob, whole_file(data), {"language": detect_language(path), "size": len(data)}, EvidenceClass.E2)]
+    language = detect_language(path)
+    observations = []
     diagnostics = []
     parsed = False
     if not config.get("parse", True):
@@ -154,8 +155,9 @@ def _file_extract(inputs: StepInputs, config: Mapping[str, Any]) -> dict[str, An
             observations += result.observations
             diagnostics += result.diagnostics
             parsed = parsed or result.parsed
-    interface = [o.row() for o in observations if o.kind != "file"]
-    return FileSummary(path=path, blob_sha256=blob, language=detect_language(path), parsed=parsed, observations=observations, diagnostics=diagnostics, interface_hash=digest(interface), body_hash="sha256:" + blob).row()
+            language = result.language or language
+    file_observation = obs("file", blob, whole_file(data), {"language": language, "size": len(data)}, EvidenceClass.E2)
+    return FileSummary(path=path, blob_sha256=blob, language=language, parsed=parsed, observations=[file_observation, *observations], diagnostics=diagnostics, interface_hash=digest([o.row() for o in observations]), body_hash="sha256:" + blob).row()
 
 
 # The extractor list is versioned per extractor, through the config, not through this step's code.

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bns:Component xmlns:bns="http://api.platform.boomi.com/" componentId="00000005-1234-4321-8000-000000000001"
+    name="Create shipment" type="connector-action" version="2" currentVersion="true" subType="officialboomi-X3979C-rest-prod">
+  <bns:encryptedValues/>
+  <bns:object>
+    <Operation>
+      <Configuration>
+        <GenericOperationConfig customOperationType="POST" operationType="EXECUTE" requestProfile="00000008-1234-4321-8000-000000000001" requestProfileType="json">
+          <field id="followRedirects" type="string" value="NONE"/>
+        </GenericOperationConfig>
+      </Configuration>
+    </Operation>
+  </bns:object>
+</bns:Component>

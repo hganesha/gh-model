@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bns:Component xmlns:bns="http://api.platform.boomi.com/" componentId="00000009-1234-4321-8000-000000000001"
+    name="Audit shipment" type="process" version="1" currentVersion="true">
+  <bns:encryptedValues/>
+  <bns:object>
+    <process>
+      <shapes>
+        <shape name="shape1" shapetype="start">
+          <configuration><passthroughaction/></configuration>
+          <dragpoints><dragpoint name="shape1.dragpoint1" toShape="shape2"/></dragpoints>
+        </shape>
+        <shape name="shape2" shapetype="stop"><configuration><stop continue="true"/></configuration><dragpoints/></shape>
+      </shapes>
+    </process>
+  </bns:object>
+</bns:Component>
